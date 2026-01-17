@@ -1,0 +1,7 @@
+# Python version: 3.x
+
+# tkinter is typically included with Python on Windows/macOS.
+# On Raspberry Pi OS (Linux), install it via:
+# sudo apt-get install python3-tk
+
+# No external pip packages are currently used in the ui_prototype.py
