@@ -1,5 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+import csv
+import datetime
+import os
 
 class VotingApp:
     def __init__(self, root):
@@ -18,13 +21,8 @@ class VotingApp:
         self.style.configure('Mode.TButton', font=('Helvetica', 24, 'bold'), padding=30)
 
         # Data
-        self.candidates_base = [
-            {"id": 1, "name": "Narendra Modi", "party": "Bharatiya Janata Party (BJP)"},
-            {"id": 2, "name": "Rahul Gandhi", "party": "Indian National Congress (INC)"},
-            {"id": 3, "name": "Arvind Kejriwal", "party": "Aam Aadmi Party (AAP)"},
-            {"id": 4, "name": "Mamata Banerjee", "party": "Trinamool Congress (TMC)"},
-            {"id": 5, "name": "M.K. Stalin", "party": "Dravida Munnetra Kazhagam (DMK)"},
-        ]
+        # Data
+        self.load_candidates()
         self.nota_candidate = {"id": 0, "name": "None of the Above (NOTA)", "party": "NOTA"}
         
         # State
@@ -36,7 +34,28 @@ class VotingApp:
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
 
+
         self.show_mode_selection_screen()
+
+    def load_candidates(self):
+        self.candidates_base = []
+        filename = "candidates.csv"
+        if not os.path.exists(filename):
+            messagebox.showerror("Error", "candidates.csv not found!")
+            return
+
+        try:
+            with open(filename, mode='r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # Ensure properly typed dictionary
+                    self.candidates_base.append({
+                        "id": int(row["id"]),
+                        "name": row["name"],
+                        "party": row["party"]
+                    })
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load candidates: {e}")
 
     def get_all_candidates(self):
         return self.candidates_base + [self.nota_candidate]
@@ -161,8 +180,8 @@ class VotingApp:
                 pady=10,
                 bd=2,
                 relief=tk.RAISED,
-                justify=tk.CENTER,
-                width=20 # Fixed width for uniformity
+                justify=tk.CENTER
+                # Removed fixed width to allow dynamic sizing
             )
             rb.pack(fill=tk.BOTH, expand=True)
 
@@ -262,6 +281,34 @@ class VotingApp:
         self.show_selection_screen()
 
     def cast_vote(self):
+        # Log the vote
+        timestamp = datetime.datetime.now().isoformat()
+        log_file = "votes.log"
+        
+        try:
+            # Prepare rows to write
+            # Log format: Timestamp, Mode, Rank, CandidateID, CandidateName
+            # For preferential, we might have multiple lines or one line per rank. 
+            # Let's do one line per rank selection for clarity, sharing the same timestamp.
+            
+            with open(log_file, "a", newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                
+                # Write header if new file (optional, but good practice if we check generic logic, 
+                # but appending blind is faster. keeping it simple.)
+                
+                if self.voting_mode == 'normal':
+                    cid = self.selections.get(1)
+                    cand = self.get_candidate_by_id(cid)
+                    writer.writerow([timestamp, self.voting_mode, 1, cid, cand['name']])
+                else:
+                    for rank, cid in self.selections.items():
+                        cand = self.get_candidate_by_id(cid)
+                        writer.writerow([timestamp, self.voting_mode, rank, cid, cand['name']])
+                        
+        except Exception as e:
+            print(f"Error saving vote: {e}") # Fallback logging to console
+
         messagebox.showinfo("Vote Cast", "Your vote has been recorded successfully!\n\nPrinting VVPAT and Receipt...")
         self.show_mode_selection_screen()
 
