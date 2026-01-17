@@ -139,12 +139,31 @@ class VotingApp:
                 if not is_selected_elsewhere:
                     available_candidates.append(cand)
 
+
+
+
         # Layout: Grid or Packed list. 6 items.
         # To fit 6 items on one screen easily, we can use a 2-column grid if height is an issue,
         # or just tight vertical packing. Let's try 2 columns for better touch targets.
         
-        rows_per_col = (len(available_candidates) + 1) // 2
+        total_options = len(available_candidates)
+        rows_per_col = (total_options + 1) // 2
         
+        # Dynamic Scaling Logic
+        # If we have many candidates (e.g. > 8), we need to reduce size to fit
+        if total_options > 8:
+            btn_font = ('Helvetica', 14)
+            btn_pady = 5
+            frame_pady = 5
+        elif total_options > 6:
+            btn_font = ('Helvetica', 16)
+            btn_pady = 8
+            frame_pady = 8
+        else:
+            btn_font = ('Helvetica', 18)
+            btn_pady = 10
+            frame_pady = 10
+
         for idx, cand in enumerate(available_candidates):
             cand_text = f"{cand['name']}"
             if cand['party']:
@@ -161,7 +180,7 @@ class VotingApp:
             
             # Using Frame as a wrapper for margins
             frame = tk.Frame(content, bg="white")
-            frame.grid(row=row, column=col, padx=20, pady=10, sticky="nsew")
+            frame.grid(row=row, column=col, padx=20, pady=frame_pady, sticky="nsew")
             content.grid_columnconfigure(col, weight=1)
             content.grid_rowconfigure(row, weight=1)
 
@@ -171,13 +190,13 @@ class VotingApp:
                 variable=self.current_selection_var, 
                 value=cand['id'],
                 indicatoron=0, 
-                font=('Helvetica', 18),
+                font=btn_font,
                 bg='white',
                 fg=fg_color,
                 selectcolor='#e8f5e9', 
                 activebackground='#f5f5f5',
                 padx=10,
-                pady=10,
+                pady=btn_pady,
                 bd=2,
                 relief=tk.RAISED,
                 justify=tk.CENTER
