@@ -369,7 +369,8 @@ class VotingApp:
                     p.text(f"Candidate No: {cand['id']}\n")
                     p.set(align='center', bold=False, width=1, height=1)
                     # Name REMOVED as per request
-                    p.text(f"{cand['party']}\n")
+                    # Party REMOVED as per request
+                    p.text("\n")
             else:
                 for rank, cid in selections.items():
                     cand = self.get_candidate_by_id(cid)
@@ -382,7 +383,7 @@ class VotingApp:
                          p.text(f"  Cand No: {cand['id']}\n")
                          
                     p.set(align='left', bold=False)
-                    p.text(f"  ({cand['party']})\n")
+                    # Party REMOVED
                     p.text("\n")
 
             # Footer
