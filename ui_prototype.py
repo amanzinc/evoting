@@ -10,6 +10,10 @@ except ImportError:
     print("Warning: python-escpos not installed. Printing will fail silently or log errors.")
     File = None # Handle optional dependency for dev machines
 
+# Image processing for side-by-side QRs
+import qrcode
+from PIL import Image, ImageDraw, ImageFont
+
 class VotingApp:
     def __init__(self, root):
         self.root = root
@@ -339,28 +343,84 @@ class VotingApp:
         try:
             p = self.printer
             
+            p = self.printer
+            
             # --- CONFIGURATION ---
             # Standard 58mm printer width alignment
             TOP_BAR = "_" * 32
             BOTTOM_BAR = "_" * 32
             
-            # 1. Generate QR Data
+            # 1. Generate Data
+            # Ballot ID
+            ballot_id = uuid.uuid4().hex[:8].upper()
+            
+            # Choice Data
             if mode == 'normal':
-                qr_data = str(selections.get(1))
+                qr_choice_data = str(selections.get(1))
             else:
                 ranks = sorted(selections.keys())
-                qr_data = "_".join([str(selections[r]) for r in ranks])
+                qr_choice_data = "_".join([str(selections[r]) for r in ranks])
             
-            # 2. Print QR Code (Top)
-            p.set(align='center')
+            # 2. GENERATE SIDE-BY-SIDE QR IMAGE
             try:
-                p.qr(qr_data, native=False, size=6, center=True)
+                # Create QR objects
+                qr_c = qrcode.make(qr_choice_data)
+                qr_b = qrcode.make(ballot_id)
+                
+                # Resize QRs to be small enough (e.g. 150px)
+                qr_size = 140
+                qr_c = qr_c.resize((qr_size, qr_size))
+                qr_b = qr_b.resize((qr_size, qr_size))
+                
+                # Create composite image (Width ~384px for 58mm printer)
+                # Layout: [ Margin(10) | Choice(160) | Gap(40) | Ballot(160) | Margin(10) ] roughly
+                # Let's target 384px width
+                total_width = 384
+                height = qr_size + 30 # +30 for title text
+                
+                img = Image.new('RGB', (total_width, height), 'white')
+                draw = ImageDraw.Draw(img)
+                
+                # Load default font (or better if available, but default is safe)
+                # Default font is tiny, let's try to load a truetype or just generic
+                try:
+                    font = ImageFont.truetype("arial.ttf", 16)
+                except IOError:
+                    font = ImageFont.load_default()
+
+                # Positions
+                # Left Block (Choice) center ~ 96
+                # Right Block (Ballot) center ~ 288
+                
+                x_c = 30
+                x_b = 214
+                
+                # Draw Titles
+                draw.text((x_c + 40, 0), "Choice", font=font, fill="black")
+                draw.text((x_b + 35, 0), "Ballot ID", font=font, fill="black")
+                
+                # Paste QRs
+                img.paste(qr_c, (x_c, 25))
+                img.paste(qr_b, (x_b, 25))
+                
+                # Save temp file to print
+                temp_img = "temp_qr_composite.png"
+                img.save(temp_img)
+                
+                # Print Image
+                p.set(align='center')
+                p.image(temp_img)
+                p.text("\n") # Spacer
+                
+                # Cleanup
+                os.remove(temp_img)
+                
             except Exception as qr_e:
-                print(f"QR Print Error: {qr_e}")
-                p.text(f"QR: {qr_data}\n")
+                print(f"QR Gen Error: {qr_e}")
+                # Fallback text
+                p.text(f"Choice: {qr_choice_data} | Ballot: {ballot_id}\n")
 
             # 3. Print Header 
-            # REMOVED NEWLINE before TOP_BAR to tighten QR gap
             p.set(align='center', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
             p.text("STUDENT GENERAL\n")
@@ -373,7 +433,7 @@ class VotingApp:
             # 4. Meta Data
             station_id = "PS-105-DELHI"
             timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
-            ballot_id = uuid.uuid4().hex[:8].upper()
+            # ballot_id generated above
 
             p.set(align='left')
             p.text(f"Station: {station_id}\n") 
