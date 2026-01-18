@@ -15,10 +15,16 @@ echo "============================================="
 echo "[*] Updating package lists..."
 sudo apt-get update
 
-echo "[*] Installing dependencies (python3-tk, unclutter, git)..."
-sudo apt-get install -y python3-tk unclutter git
+echo "[*] Installing dependencies (python3-tk, unclutter, git, python3-pip)..."
+sudo apt-get install -y python3-tk unclutter git python3-pip libjpeg-dev zlib1g-dev libusb-1.0-0-dev
 
-# 2. Configure Screen Blanking (Disable Sleep)
+# 2. Install Python Packages
+echo "[*] Installing Python libraries (escpos)..."
+# Get the absolute path of the current directory (project root)
+PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+pip3 install -r "$PROJECT_DIR/requirements.txt" --break-system-packages
+
+# 3. Configure Screen Blanking (Disable Sleep)
 echo "[*] Disabling screen blanking (Sleep Mode)..."
 # Using raspi-config non-interactive mode
 # 0 = enable, 1 = disable. Confusingly, command is 'do_blanking'

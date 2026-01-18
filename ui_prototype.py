@@ -2,7 +2,13 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import csv
 import datetime
+import datetime
 import os
+try:
+    from escpos.printer import File
+except ImportError:
+    print("Warning: python-escpos not installed. Printing will fail silently or log errors.")
+    File = None # Handle optional dependency for dev machines
 
 class VotingApp:
     def __init__(self, root):
@@ -299,6 +305,66 @@ class VotingApp:
         self.current_rank = 1
         self.show_selection_screen()
 
+    def print_receipt(self, mode, selections):
+        """
+        Prints a VVPAT receipt using the attached thermal printer.
+        Expects a valid /dev/usb/lp0 connection.
+        """
+        if not File:
+            print("VVPAT Error: escpos library not found.")
+            return
+
+        try:
+            # Connect to printer (Linux specific path usually)
+            # Using File printer as per user request/sample
+            p = File("/dev/usb/lp0")
+            
+            # Header
+            p.text("\n")
+            p.set(align='center', bold=True, width=2, height=2)
+            p.text("GENERAL ELECTION\n")
+            p.text("2026\n")
+            p.set(align='center', bold=False, width=1, height=1)
+            p.text("--------------------------------\n")
+            p.text("VVPAT SLIP\n")
+            p.text("--------------------------------\n")
+            
+            # Details
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            p.text(f"Date: {timestamp}\n")
+            p.text(f"Mode: {mode}\n")
+            p.text("--------------------------------\n\n")
+
+            if mode == 'normal':
+                cid = selections.get(1)
+                cand = self.get_candidate_by_id(cid)
+                p.set(align='center', bold=True, width=2, height=2)
+                p.text(f"{cand['name']}\n")
+                p.set(align='center', bold=False, width=1, height=1)
+                p.text(f"{cand['party']}\n")
+            else:
+                for rank, cid in selections.items():
+                    cand = self.get_candidate_by_id(cid)
+                    p.text(f"Pref {rank}:\n")
+                    p.set(align='left', bold=True)
+                    p.text(f"  {cand['name']}\n")
+                    p.set(align='left', bold=False)
+                    p.text(f"  ({cand['party']})\n")
+                    p.text("\n")
+
+            # Footer
+            p.text("\n--------------------------------\n")
+            p.text("VERIFIED\n")
+            p.text("\n\n\n") # Feed
+            p.cut()
+            
+            print("VVPAT Receipt printed successfully.")
+
+        except Exception as e:
+            # Log error but do not stop the voting process
+            print(f"VVPAT Print Error: {e}")
+            # Optional: messagebox.showwarning("Printer Error", "Could not print receipt.")
+
     def cast_vote(self):
         # Log the vote
         timestamp = datetime.datetime.now().isoformat()
@@ -327,6 +393,9 @@ class VotingApp:
                         
         except Exception as e:
             print(f"Error saving vote: {e}") # Fallback logging to console
+
+        # Print VVPAT
+        self.print_receipt(self.voting_mode, self.selections)
 
         messagebox.showinfo("Vote Cast", "Your vote has been recorded successfully!\n\nPrinting VVPAT and Receipt...")
         self.show_mode_selection_screen()

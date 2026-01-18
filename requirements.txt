@@ -4,4 +4,6 @@
 # On Raspberry Pi OS (Linux), install it via:
 # sudo apt-get install python3-tk
 
-# No external pip packages are currently used in the ui_prototype.py
+# No external pip packages are currently used in the ui_prototype.py, but VVPAT needs escpos
+python-escpos
+Pillow
