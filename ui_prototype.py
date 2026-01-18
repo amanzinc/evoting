@@ -40,6 +40,14 @@ class VotingApp:
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
 
+        # Connect to Printer (Singleton)
+        self.printer = None
+        if File:
+            try:
+                self.printer = File("/dev/usb/lp0")
+                print("Printer connected successfully.")
+            except Exception as e:
+                print(f"Printer Connection Failed: {e}")
 
         self.show_mode_selection_screen()
 
@@ -171,7 +179,7 @@ class VotingApp:
             frame_pady = 6
 
         for idx, cand in enumerate(available_candidates):
-            cand_text = f"{cand['name']}"
+            cand_text = f"#{cand['id']} {cand['name']}"
             if cand['party']:
                 cand_text += f"\n{cand['party']}"
             
@@ -268,8 +276,9 @@ class VotingApp:
             
             f = tk.Frame(content, bg="#e8f5e9", bd=2, relief=tk.SOLID, padx=30, pady=15)
             f.pack(pady=10)
-            tk.Label(f, text=cand['name'], font=('Helvetica', 26, 'bold'), bg="#e8f5e9").pack()
-            tk.Label(f, text=cand['party'], font=('Helvetica', 20), bg="#e8f5e9").pack()
+            tk.Label(f, text=f"Candidate No: {cand['id']}", font=('Helvetica', 28, 'bold'), bg="#e8f5e9", fg="#333").pack()
+            tk.Label(f, text=cand['name'], font=('Helvetica', 22), bg="#e8f5e9").pack(pady=5)
+            tk.Label(f, text=cand['party'], font=('Helvetica', 18), bg="#e8f5e9").pack()
 
         else:
             # Preferential list
@@ -282,7 +291,7 @@ class VotingApp:
                 
                 if cand:
                     tk.Label(row, text=f"{rank}.", font=('Helvetica', 20, 'bold'), fg="#666", width=4, bg="white").pack(side=tk.LEFT)
-                    tk.Label(row, text=f"{cand['name']}", font=('Helvetica', 20), bg="white").pack(side=tk.LEFT, padx=10)
+                    tk.Label(row, text=f"#{cand['id']} {cand['name']}", font=('Helvetica', 20), bg="white").pack(side=tk.LEFT, padx=10)
                     if cand['party']:
                         tk.Label(row, text=f"({cand['party']})", font=('Helvetica', 16, 'italic'), fg="#666", bg="white").pack(side=tk.LEFT, padx=10)
                 else:
@@ -308,16 +317,14 @@ class VotingApp:
     def print_receipt(self, mode, selections):
         """
         Prints a VVPAT receipt using the attached thermal printer.
-        Expects a valid /dev/usb/lp0 connection.
+        Uses the persistent printer connection.
         """
-        if not File:
-            print("VVPAT Error: escpos library not found.")
+        if not self.printer:
+            print("VVPAT Skipped: Printer not connected.")
             return
 
         try:
-            # Connect to printer (Linux specific path usually)
-            # Using File printer as per user request/sample
-            p = File("/dev/usb/lp0")
+            p = self.printer
             
             # Header
             p.text("\n")
@@ -338,16 +345,21 @@ class VotingApp:
             if mode == 'normal':
                 cid = selections.get(1)
                 cand = self.get_candidate_by_id(cid)
+                
+                # Print Candidate Number Prominently
                 p.set(align='center', bold=True, width=2, height=2)
-                p.text(f"{cand['name']}\n")
+                p.text(f"Cand No: {cand['id']}\n")
+                
+                # Name smaller
                 p.set(align='center', bold=False, width=1, height=1)
+                p.text(f"{cand['name']}\n")
                 p.text(f"{cand['party']}\n")
             else:
                 for rank, cid in selections.items():
                     cand = self.get_candidate_by_id(cid)
                     p.text(f"Pref {rank}:\n")
                     p.set(align='left', bold=True)
-                    p.text(f"  {cand['name']}\n")
+                    p.text(f"  #{cand['id']} {cand['name']}\n")
                     p.set(align='left', bold=False)
                     p.text(f"  ({cand['party']})\n")
                     p.text("\n")
