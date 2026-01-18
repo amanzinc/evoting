@@ -13,12 +13,12 @@ class VotingApp:
 
         # Style configuration
         self.style = ttk.Style()
-        self.style.configure('TLabel', font=('Helvetica', 16))
-        self.style.configure('Header.TLabel', font=('Helvetica', 24, 'bold'))
-        self.style.configure('SubHeader.TLabel', font=('Helvetica', 20))
-        self.style.configure('Nav.TButton', font=('Helvetica', 20, 'bold'), padding=20)
-        self.style.configure('Confirm.TButton', font=('Helvetica', 24, 'bold'), background='#4CAF50', foreground='white', padding=20)
-        self.style.configure('Mode.TButton', font=('Helvetica', 24, 'bold'), padding=30)
+        self.style.configure('TLabel', font=('Helvetica', 14))
+        self.style.configure('Header.TLabel', font=('Helvetica', 20, 'bold'))
+        self.style.configure('SubHeader.TLabel', font=('Helvetica', 18))
+        self.style.configure('Nav.TButton', font=('Helvetica', 16, 'bold'), padding=10)
+        self.style.configure('Confirm.TButton', font=('Helvetica', 20, 'bold'), background='#4CAF50', foreground='white', padding=10)
+        self.style.configure('Mode.TButton', font=('Helvetica', 20, 'bold'), padding=15)
 
         # Data
         # Data
@@ -70,20 +70,20 @@ class VotingApp:
 
     def show_mode_selection_screen(self):
         self.clear_container()
-        header = tk.Frame(self.main_container, bg="#f0f0f0", pady=30)
+        header = tk.Frame(self.main_container, bg="#f0f0f0", pady=15)
         header.pack(fill=tk.X)
-        tk.Label(header, text="Dev Mode: Select Voting Type", font=('Helvetica', 32, 'bold'), bg="#f0f0f0").pack()
+        tk.Label(header, text="Dev Mode: Select Voting Type", font=('Helvetica', 24, 'bold'), bg="#f0f0f0").pack()
 
         content = tk.Frame(self.main_container, bg="white")
         content.pack(expand=True)
         
         btn_frame = tk.Frame(content, bg="white")
-        btn_frame.pack(pady=50)
+        btn_frame.pack(pady=20)
 
-        tk.Button(btn_frame, text="Normal Voting\n(Single Choice)", font=('Helvetica', 24, 'bold'), command=self.start_normal_voting, padx=40, pady=30, bg="#2196F3", fg="white").pack(pady=20, fill=tk.X)
-        tk.Button(btn_frame, text="Preferential Voting\n(Ranked)", font=('Helvetica', 24, 'bold'), command=self.start_preferential_voting, padx=40, pady=30, bg="#9C27B0", fg="white").pack(pady=20, fill=tk.X)
+        tk.Button(btn_frame, text="Normal Voting\n(Single Choice)", font=('Helvetica', 20, 'bold'), command=self.start_normal_voting, padx=30, pady=20, bg="#2196F3", fg="white").pack(pady=10, fill=tk.X)
+        tk.Button(btn_frame, text="Preferential Voting\n(Ranked)", font=('Helvetica', 20, 'bold'), command=self.start_preferential_voting, padx=30, pady=20, bg="#9C27B0", fg="white").pack(pady=10, fill=tk.X)
         
-        tk.Button(btn_frame, text="Exit App", font=('Helvetica', 16), command=self.exit_app).pack(pady=20)
+        tk.Button(btn_frame, text="Exit App", font=('Helvetica', 14), command=self.exit_app).pack(pady=10)
 
     def start_normal_voting(self):
         self.voting_mode = 'normal'
@@ -102,15 +102,15 @@ class VotingApp:
         
         # Header
         header_bg = "#E3F2FD" if self.voting_mode == 'normal' else "#F3E5F5"
-        header = tk.Frame(self.main_container, bg=header_bg, pady=10)
+        header = tk.Frame(self.main_container, bg=header_bg, pady=5)
         header.pack(fill=tk.X)
         
         mode_text = "Single Choice Vote" if self.voting_mode == 'normal' else f"Select Preference #{self.current_rank}"
-        tk.Label(header, text="General Election 2026", font=('Helvetica', 14), bg=header_bg).pack()
-        tk.Label(header, text=mode_text, font=('Helvetica', 24, 'bold'), bg=header_bg, fg="#333").pack(pady=5)
+        tk.Label(header, text="General Election 2026", font=('Helvetica', 12), bg=header_bg).pack()
+        tk.Label(header, text=mode_text, font=('Helvetica', 20, 'bold'), bg=header_bg, fg="#333").pack(pady=2)
         
         # Content Frame (No Scroll)
-        content = tk.Frame(self.main_container, bg="#ffffff", pady=10, padx=50)
+        content = tk.Frame(self.main_container, bg="#ffffff", pady=5, padx=20)
         content.pack(expand=True, fill=tk.BOTH)
         
         self.current_selection_var = tk.IntVar(value=-1) # Default to -1 (no selection)
@@ -152,17 +152,17 @@ class VotingApp:
         # Dynamic Scaling Logic
         # If we have many candidates (e.g. > 8), we need to reduce size to fit
         if total_options > 8:
-            btn_font = ('Helvetica', 14)
-            btn_pady = 5
-            frame_pady = 5
+            btn_font = ('Helvetica', 12)
+            btn_pady = 2
+            frame_pady = 2
         elif total_options > 6:
+            btn_font = ('Helvetica', 14)
+            btn_pady = 4
+            frame_pady = 4
+        else:
             btn_font = ('Helvetica', 16)
             btn_pady = 8
-            frame_pady = 8
-        else:
-            btn_font = ('Helvetica', 18)
-            btn_pady = 10
-            frame_pady = 10
+            frame_pady = 6
 
         for idx, cand in enumerate(available_candidates):
             cand_text = f"{cand['name']}"
@@ -180,7 +180,7 @@ class VotingApp:
             
             # Using Frame as a wrapper for margins
             frame = tk.Frame(content, bg="white")
-            frame.grid(row=row, column=col, padx=20, pady=frame_pady, sticky="nsew")
+            frame.grid(row=row, column=col, padx=10, pady=frame_pady, sticky="nsew")
             content.grid_columnconfigure(col, weight=1)
             content.grid_rowconfigure(row, weight=1)
 
@@ -206,21 +206,21 @@ class VotingApp:
 
         # Footer
         footer = tk.Frame(self.main_container, bg="#f0f0f0")
-        footer.pack(fill=tk.X, side=tk.BOTTOM, pady=20)
+        footer.pack(fill=tk.X, side=tk.BOTTOM, pady=10)
 
         # BUTTONS
         if self.voting_mode == 'normal':
-             confirm_btn = tk.Button(footer, text="Review Vote", font=('Helvetica', 20, 'bold'), bg="#4CAF50", fg="white", command=self.go_next, padx=20, pady=10)
-             confirm_btn.pack(side=tk.RIGHT, padx=50)
-             tk.Button(footer, text="< Back", font=('Helvetica', 20), command=self.show_mode_selection_screen, padx=20, pady=10).pack(side=tk.LEFT, padx=50)
+             confirm_btn = tk.Button(footer, text="Review Vote", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.go_next, padx=15, pady=8)
+             confirm_btn.pack(side=tk.RIGHT, padx=30)
+             tk.Button(footer, text="< Back", font=('Helvetica', 16), command=self.show_mode_selection_screen, padx=15, pady=8).pack(side=tk.LEFT, padx=30)
         else:
             if self.current_rank > 1:
-                tk.Button(footer, text="< Previous", font=('Helvetica', 20), command=self.go_previous, padx=20, pady=10).pack(side=tk.LEFT, padx=50)
+                tk.Button(footer, text="< Previous", font=('Helvetica', 16), command=self.go_previous, padx=15, pady=8).pack(side=tk.LEFT, padx=30)
             else:
-                 tk.Button(footer, text="Cancel", font=('Helvetica', 20), command=self.show_mode_selection_screen, padx=20, pady=10, fg="red").pack(side=tk.LEFT, padx=50)
+                 tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.show_mode_selection_screen, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
 
             next_text = "Next >" if self.current_rank < self.max_ranks else "Finish"
-            tk.Button(footer, text=next_text, font=('Helvetica', 20, 'bold'), bg="#2196F3", fg="white", command=self.go_next, padx=20, pady=10).pack(side=tk.RIGHT, padx=50)
+            tk.Button(footer, text=next_text, font=('Helvetica', 16, 'bold'), bg="#2196F3", fg="white", command=self.go_next, padx=15, pady=8).pack(side=tk.RIGHT, padx=30)
 
     def go_next(self):
         selection = self.current_selection_var.get()
@@ -247,23 +247,23 @@ class VotingApp:
     def show_confirmation_screen(self):
         self.clear_container()
         
-        header = tk.Frame(self.main_container, bg="#f0f0f0", pady=20)
+        header = tk.Frame(self.main_container, bg="#f0f0f0", pady=10)
         header.pack(fill=tk.X)
-        tk.Label(header, text="Confirm Your Vote", font=('Helvetica', 28, 'bold'), bg="#f0f0f0").pack()
+        tk.Label(header, text="Confirm Your Vote", font=('Helvetica', 24, 'bold'), bg="#f0f0f0").pack()
 
-        content = tk.Frame(self.main_container, bg="#ffffff", pady=40)
+        content = tk.Frame(self.main_container, bg="#ffffff", pady=10)
         content.pack(expand=True)
 
         # Display Logic
         if self.voting_mode == 'normal':
             cid = self.selections.get(1)
             cand = self.get_candidate_by_id(cid)
-            tk.Label(content, text="You have selected:", font=('Helvetica', 20), bg="white").pack(pady=10)
+            tk.Label(content, text="You have selected:", font=('Helvetica', 16), bg="white").pack(pady=5)
             
-            f = tk.Frame(content, bg="#e8f5e9", bd=2, relief=tk.SOLID, padx=40, pady=20)
-            f.pack(pady=20)
-            tk.Label(f, text=cand['name'], font=('Helvetica', 32, 'bold'), bg="#e8f5e9").pack()
-            tk.Label(f, text=cand['party'], font=('Helvetica', 24), bg="#e8f5e9").pack()
+            f = tk.Frame(content, bg="#e8f5e9", bd=2, relief=tk.SOLID, padx=30, pady=15)
+            f.pack(pady=10)
+            tk.Label(f, text=cand['name'], font=('Helvetica', 26, 'bold'), bg="#e8f5e9").pack()
+            tk.Label(f, text=cand['party'], font=('Helvetica', 20), bg="#e8f5e9").pack()
 
         else:
             # Preferential list
@@ -271,29 +271,29 @@ class VotingApp:
                 cid = self.selections.get(rank)
                 cand = self.get_candidate_by_id(cid)
                 
-                row = tk.Frame(content, bg="white", pady=10)
+                row = tk.Frame(content, bg="white", pady=5)
                 row.pack(fill=tk.X)
                 
                 if cand:
-                    tk.Label(row, text=f"{rank}.", font=('Helvetica', 24, 'bold'), fg="#666", width=5, bg="white").pack(side=tk.LEFT)
-                    tk.Label(row, text=f"{cand['name']}", font=('Helvetica', 24), bg="white").pack(side=tk.LEFT, padx=10)
+                    tk.Label(row, text=f"{rank}.", font=('Helvetica', 20, 'bold'), fg="#666", width=4, bg="white").pack(side=tk.LEFT)
+                    tk.Label(row, text=f"{cand['name']}", font=('Helvetica', 20), bg="white").pack(side=tk.LEFT, padx=10)
                     if cand['party']:
-                        tk.Label(row, text=f"({cand['party']})", font=('Helvetica', 18, 'italic'), fg="#666", bg="white").pack(side=tk.LEFT, padx=10)
+                        tk.Label(row, text=f"({cand['party']})", font=('Helvetica', 16, 'italic'), fg="#666", bg="white").pack(side=tk.LEFT, padx=10)
                 else:
-                     tk.Label(row, text=f"{rank}.  [No Selection]", font=('Helvetica', 24), fg="#aaa", bg="white").pack(side=tk.LEFT, padx=10)
+                     tk.Label(row, text=f"{rank}.  [No Selection]", font=('Helvetica', 20), fg="#aaa", bg="white").pack(side=tk.LEFT, padx=10)
 
 
         # Footer
-        footer = tk.Frame(self.main_container, bg="#f0f0f0", pady=30)
+        footer = tk.Frame(self.main_container, bg="#f0f0f0", pady=15)
         footer.pack(fill=tk.X, side=tk.BOTTOM)
 
         edit_cmd = self.show_selection_screen if self.voting_mode == 'normal' else self.restart_editing
         
-        edit_btn = tk.Button(footer, text="Edit", font=('Helvetica', 20), command=edit_cmd, padx=30, pady=15)
-        edit_btn.pack(side=tk.LEFT, padx=50)
+        edit_btn = tk.Button(footer, text="Edit", font=('Helvetica', 16), command=edit_cmd, padx=20, pady=10)
+        edit_btn.pack(side=tk.LEFT, padx=30)
 
-        confirm_btn = tk.Button(footer, text="CONFIRM & CAST VOTE", font=('Helvetica', 20, 'bold'), bg="#4CAF50", fg="white", command=self.cast_vote, padx=30, pady=15)
-        confirm_btn.pack(side=tk.RIGHT, padx=50)
+        confirm_btn = tk.Button(footer, text="CONFIRM & CAST VOTE", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.cast_vote, padx=20, pady=10)
+        confirm_btn.pack(side=tk.RIGHT, padx=30)
 
     def restart_editing(self):
         self.current_rank = 1
