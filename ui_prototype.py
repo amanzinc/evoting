@@ -373,35 +373,55 @@ class VotingApp:
                 qr_b = qr_b.resize((qr_size, qr_size))
                 
                 # Create composite image (Width ~384px for 58mm printer)
-                # Layout: [ Margin(10) | Choice(160) | Gap(40) | Ballot(160) | Margin(10) ] roughly
-                # Let's target 384px width
+                # Layout idea:
+                # [ Margin(10) | Choice Block(162) | Gap(40) | Ballot Block(162) | Margin(10) ]
+                # Total width = 384
+                
                 total_width = 384
-                height = qr_size + 30 # +30 for title text
+                # Title height needs more room for larger font
+                title_height = 40 
+                height = qr_size + title_height
                 
                 img = Image.new('RGB', (total_width, height), 'white')
                 draw = ImageDraw.Draw(img)
                 
-                # Load default font (or better if available, but default is safe)
-                # Default font is tiny, let's try to load a truetype or just generic
+                # Load Font - Increased size to 24 (Bold preferred if available, but stick to arial/default)
+                font_size = 24
                 try:
-                    font = ImageFont.truetype("arial.ttf", 16)
+                    font = ImageFont.truetype("arial.ttf", font_size)
+                    # For Linux/RPi, arial might not exist. Try standard paths or fallback
+                    # On RPi, typically /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
+                    if not os.path.exists("arial.ttf") and os.path.exists("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
+                         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
                 except IOError:
+                    # Fallback to default (which is usually tiny and fixed size, can't resize)
+                    # But we can try to load a PIL default that scales? No, default is bitmap.
+                    # We'll just hope for the best or rely on valid path.
                     font = ImageFont.load_default()
 
                 # Positions
-                # Left Block (Choice) center ~ 96
-                # Right Block (Ballot) center ~ 288
+                # Left Block (Choice) x ~ 30
+                # Right Block (Ballot) x ~ 214
                 
                 x_c = 30
                 x_b = 214
                 
                 # Draw Titles
-                draw.text((x_c + 40, 0), "Choice", font=font, fill="black")
-                draw.text((x_b + 35, 0), "Ballot ID", font=font, fill="black")
+                # Adjust text centering roughly within the 140px block
+                # "Choice" is short. "Ballot ID" is longer.
+                # Center of block C is 30 + 70 = 100
+                # Center of block B is 214 + 70 = 284
+                
+                # Simple heuristic centering assuming avg char width ~ half font size
+                # Choice (6 chars) ~ 72px wide -> Start ~ 100 - 36 = 64
+                # Ballot ID (9 chars) ~ 108px wide -> Start ~ 284 - 54 = 230
+                
+                draw.text((x_c + 35, 0), "Choice", font=font, fill="black")
+                draw.text((x_b + 20, 0), "Ballot ID", font=font, fill="black")
                 
                 # Paste QRs
-                img.paste(qr_c, (x_c, 25))
-                img.paste(qr_b, (x_b, 25))
+                img.paste(qr_c, (x_c, title_height))
+                img.paste(qr_b, (x_b, title_height))
                 
                 # Save temp file to print
                 temp_img = "temp_qr_composite.png"
