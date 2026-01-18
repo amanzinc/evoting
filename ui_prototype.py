@@ -330,7 +330,7 @@ class VotingApp:
     def print_receipt(self, mode, selections):
         """
         Prints a VVPAT receipt using the attached thermal printer.
-        Minimal layout: No dashes, no 'Official Use' text, reduced feed.
+        Final Layout: No side borders, Bold Header/Choice, Adjusted Spacing.
         """
         if not self.printer:
             print("VVPAT Skipped: Printer not connected.")
@@ -341,19 +341,8 @@ class VotingApp:
             
             # --- CONFIGURATION ---
             # Standard 58mm printer width alignment
-            LINE_WIDTH = 32
-            BORDER = "|"
-            TOP_BAR = "_" * LINE_WIDTH
-            BOTTOM_BAR = "_" * LINE_WIDTH
+            TOP_BAR = "_" * 32
             
-            def padded_line(text, align='left'):
-                # Content width is LINE_WIDTH - 2 borders
-                content_width = LINE_WIDTH - 2
-                if align == 'center':
-                    return f"{BORDER}{text:^{content_width}}{BORDER}\n"
-                else: # left
-                    return f"{BORDER} {text:<{content_width-1}}{BORDER}\n"
-
             # 1. Generate QR Data
             if mode == 'normal':
                 qr_data = str(selections.get(1))
@@ -369,14 +358,17 @@ class VotingApp:
                 print(f"QR Print Error: {qr_e}")
                 p.text(f"QR: {qr_data}\n")
 
-            # 3. Print Box Header
-            p.set(align='center', font='a', width=1, height=1)
+            # 3. Print Header 
+            # Reduced space from QR (no extra newline)
+            p.set(align='center', font='a', width=1, height=1, bold=True)
             
             p.text(TOP_BAR + "\n")
-            p.text(padded_line(""))
-            p.text(padded_line("STUDENT GENERAL", 'center'))
-            p.text(padded_line("ELECTION 2026", 'center'))
-            # No inner separator
+            p.text("STUDENT GENERAL\n")
+            p.text("ELECTION 2026\n")
+            p.set(align='center', bold=False)
+            
+            # Slight space between election and station
+            p.text("\n") 
 
             # 4. Meta Data
             station_id = "PS-105-DELHI"
@@ -384,10 +376,9 @@ class VotingApp:
             ballot_id = uuid.uuid4().hex[:8].upper()
 
             p.set(align='left')
-            # Reduced whitespace by removing spacer lines
-            p.text(padded_line(f"Station: {station_id}")) 
-            p.text(padded_line(f"Session: {timestamp}"))
-            p.text(padded_line(f"Ballot : {ballot_id}"))
+            p.text(f"Station: {station_id}\n") 
+            p.text(f"Session: {timestamp}\n")
+            p.text(f"Ballot : {ballot_id}\n")
 
             # 5. Choice Selection
             if mode == 'normal':
@@ -400,19 +391,20 @@ class VotingApp:
                     vals.append("NOTA" if cid == 0 else str(cid))
                 sel_str = ", ".join(vals)
             
+            p.text("\n") # Spacer
             p.set(align='left', bold=True)
-            p.text(padded_line(f"Choice : {sel_str}"))
+            p.text(f"Choice : {sel_str}\n")
             p.set(align='left', bold=False)
             
             # 6. Footer
+            p.text("\n")
+            p.text("_" * 32 + "\n") # Bottom bar
             p.set(align='center', bold=True)
-            p.text(padded_line("VERIFIED VOTE", 'center'))
+            p.text("VERIFIED VOTE\n")
             p.set(align='center', bold=False)
-            # Removed 'NOT FOR OFFICIAL USE'
-            p.text(padded_line(""))
-            p.text(BOTTOM_BAR + "\n")
+            p.text("_" * 32 + "\n")
             
-            # Reduced feed (from 3 to 1 or 2 newlines depending on cutter pos)
+            # Minimal feed
             p.text("\n\n") 
             p.cut()
             
