@@ -179,7 +179,11 @@ class VotingApp:
             frame_pady = 6
 
         for idx, cand in enumerate(available_candidates):
-            cand_text = f"#{cand['id']} {cand['name']}"
+            if cand['id'] == 0:
+                cand_text = cand['name'] # Just "None of the Above..."
+            else:
+                cand_text = f"{cand['id']}. {cand['name']}"
+            
             if cand['party']:
                 cand_text += f"\n{cand['party']}"
             
@@ -276,7 +280,10 @@ class VotingApp:
             
             f = tk.Frame(content, bg="#e8f5e9", bd=2, relief=tk.SOLID, padx=30, pady=15)
             f.pack(pady=10)
-            tk.Label(f, text=f"Candidate No: {cand['id']}", font=('Helvetica', 28, 'bold'), bg="#e8f5e9", fg="#333").pack()
+            
+            if cand['id'] != 0:
+                tk.Label(f, text=f"Candidate No: {cand['id']}", font=('Helvetica', 28, 'bold'), bg="#e8f5e9", fg="#333").pack()
+            
             tk.Label(f, text=cand['name'], font=('Helvetica', 22), bg="#e8f5e9").pack(pady=5)
             tk.Label(f, text=cand['party'], font=('Helvetica', 18), bg="#e8f5e9").pack()
 
@@ -291,7 +298,13 @@ class VotingApp:
                 
                 if cand:
                     tk.Label(row, text=f"{rank}.", font=('Helvetica', 20, 'bold'), fg="#666", width=4, bg="white").pack(side=tk.LEFT)
-                    tk.Label(row, text=f"#{cand['id']} {cand['name']}", font=('Helvetica', 20), bg="white").pack(side=tk.LEFT, padx=10)
+                    
+                    if cand['id'] == 0:
+                        t = cand['name']
+                    else:
+                        t = f"{cand['id']}. {cand['name']}"
+                        
+                    tk.Label(row, text=t, font=('Helvetica', 20), bg="white").pack(side=tk.LEFT, padx=10)
                     if cand['party']:
                         tk.Label(row, text=f"({cand['party']})", font=('Helvetica', 16, 'italic'), fg="#666", bg="white").pack(side=tk.LEFT, padx=10)
                 else:
@@ -346,20 +359,28 @@ class VotingApp:
                 cid = selections.get(1)
                 cand = self.get_candidate_by_id(cid)
                 
-                # Print Candidate Number Prominently
                 p.set(align='center', bold=True, width=2, height=2)
-                p.text(f"Cand No: {cand['id']}\n")
                 
-                # Name smaller
-                p.set(align='center', bold=False, width=1, height=1)
-                p.text(f"{cand['name']}\n")
-                p.text(f"{cand['party']}\n")
+                if cand['id'] == 0:
+                    p.text("NOTA\n")
+                    p.set(align='center', bold=False, width=1, height=1)
+                    p.text("(None of the Above)\n")
+                else:
+                    p.text(f"Candidate No: {cand['id']}\n")
+                    p.set(align='center', bold=False, width=1, height=1)
+                    # Name REMOVED as per request
+                    p.text(f"{cand['party']}\n")
             else:
                 for rank, cid in selections.items():
                     cand = self.get_candidate_by_id(cid)
                     p.text(f"Pref {rank}:\n")
                     p.set(align='left', bold=True)
-                    p.text(f"  #{cand['id']} {cand['name']}\n")
+                    
+                    if cand['id'] == 0:
+                         p.text("  NOTA\n")
+                    else:
+                         p.text(f"  Cand No: {cand['id']}\n")
+                         
                     p.set(align='left', bold=False)
                     p.text(f"  ({cand['party']})\n")
                     p.text("\n")
