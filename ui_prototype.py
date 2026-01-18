@@ -331,216 +331,238 @@ class VotingApp:
         self.current_rank = 1
         self.show_selection_screen()
 
-    def print_receipt(self, mode, selections):
+    def print_receipt_async(self, mode, selections, result_queue):
         """
-        Prints a VVPAT receipt using the attached thermal printer.
-        Final Layout: No side borders, Bold Header/Choice, Adjusted Spacing.
+        Background thread worker for printing.
+        Puts result (True/False/Error) into result_queue.
         """
-        # Retry loop for printing
-        while True:
+        try:
+            # We reuse the logic from print_receipt but adapted for being in a thread
+            # NOTE: Tkinter GUI updates must NOT happen here. They must be scheduled or done by main thread.
+            # We will use self.printer directly.
+            
+            # --- CONNECTION CHECK (Thread Safe-ish if we just read) ---
             if not self.printer:
-                # Try to reconnect just in case it was plugged in late
+                 # Try to reconnect
                 if File and os.path.exists("/dev/usb/lp0"):
                     try:
                         self.printer = File("/dev/usb/lp0")
-                        print("Printer connected on retry.")
-                    except Exception as e:
-                        print(f"Re-connection failed: {e}")
-
+                    except:
+                        pass
+            
             if not self.printer:
-                retry = messagebox.askretrycancel("Printer Error", "Printer not connected. Check cable.\n\nRetry?")
-                if not retry:
-                    print("VVPAT Skipped by user.")
-                    return
-                continue
+                result_queue.put(Exception("Printer not connected"))
+                return
 
+            p = self.printer
+            if not os.path.exists("/dev/usb/lp0"):
+                 result_queue.put(Exception("Device file not found"))
+                 return
+
+            # --- GENERATION ---
+             # Standard 58mm printer width alignment
+            TOP_BAR = "_" * 32
+            BOTTOM_BAR = "_" * 32
+            
+            ballot_id = uuid.uuid4().hex[:8].upper()
+            
+            if mode == 'normal':
+                qr_choice_data = str(selections.get(1))
+            else:
+                ranks = sorted(selections.keys())
+                qr_choice_data = "_".join([str(selections[r]) for r in ranks])
+            
+            # QR Image Gen
             try:
-                p = self.printer
-                # Check if device file exists before trying to write
-                # This might catch "Unplugged" scenarios on Linux
-                if not os.path.exists("/dev/usb/lp0"):
-                     raise IOError("Printer device file /dev/usb/lp0 not found.")
+                qr_c = qrcode.make(qr_choice_data)
+                qr_b = qrcode.make(ballot_id)
+                qr_size = 140
+                qr_c = qr_c.resize((qr_size, qr_size))
+                qr_b = qr_b.resize((qr_size, qr_size))
+                
+                total_width = 384
+                title_height = 45 
+                height = qr_size + title_height
+                
+                img = Image.new('RGB', (total_width, height), 'white')
+                draw = ImageDraw.Draw(img)
+                
+                font_size = 30
+                font = None
+                font_candidates = [
+                    "arial.ttf", 
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 
+                    "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf", 
+                    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+                ]
+                for fpath in font_candidates:
+                    try:
+                        font = ImageFont.truetype(fpath, font_size)
+                        break
+                    except IOError:
+                        continue
+                if font is None:
+                    font = ImageFont.load_default()
 
+                x_c = 30
+                x_b = 214
+                draw.text((x_c + 20, 0), "Choice", font=font, fill="black")
+                draw.text((x_b + 5, 0), "Ballot ID", font=font, fill="black")
+                img.paste(qr_c, (x_c, title_height))
+                img.paste(qr_b, (x_b, title_height))
                 
-                # --- CONFIGURATION ---
-                # Standard 58mm printer width alignment
-                TOP_BAR = "_" * 32
-                BOTTOM_BAR = "_" * 32
+                # Unique temp file for thread safety
+                temp_img = f"temp_qr_{uuid.uuid4().hex}.png"
+                img.save(temp_img)
                 
-                # 1. Generate Data
-                # Ballot ID
-                ballot_id = uuid.uuid4().hex[:8].upper()
-                
-                # Choice Data
-                if mode == 'normal':
-                    qr_choice_data = str(selections.get(1))
-                else:
-                    ranks = sorted(selections.keys())
-                    qr_choice_data = "_".join([str(selections[r]) for r in ranks])
-                
-                # 2. GENERATE SIDE-BY-SIDE QR IMAGE
-                try:
-                    # Create QR objects
-                    qr_c = qrcode.make(qr_choice_data)
-                    qr_b = qrcode.make(ballot_id)
-                    
-                    # Resize QRs to be small enough (e.g. 150px)
-                    qr_size = 140
-                    qr_c = qr_c.resize((qr_size, qr_size))
-                    qr_b = qr_b.resize((qr_size, qr_size))
-                    
-                    # Create composite image (Width ~384px for 58mm printer)
-                    # Layout idea:
-                    # [ Margin(10) | Choice Block(162) | Gap(40) | Ballot Block(162) | Margin(10) ]
-                    # Total width = 384
-                    
-                    total_width = 384
-                    # Title height needs more room for larger font (30px)
-                    title_height = 45 
-                    height = qr_size + title_height
-                    
-                    img = Image.new('RGB', (total_width, height), 'white')
-                    draw = ImageDraw.Draw(img)
-                    
-                    # Load Font - Maximizing to 30px
-                    font_size = 30
-                    font = None
-                    
-                    # List of candidate font paths (Windows, RPi/Linux)
-                    font_candidates = [
-                        "arial.ttf", # Windows
-                        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", # RPi Default
-                        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",  # RPi Alternative
-                        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" # RPi Alternative
-                    ]
-                    
-                    for fpath in font_candidates:
-                        try:
-                            font = ImageFont.truetype(fpath, font_size)
-                            # If successful, break
-                            break
-                        except IOError:
-                            continue
-                    
-                    if font is None:
-                        print("Warning: No TTF font found. Using default bitmap font (tiny).")
-                        font = ImageFont.load_default()
-
-                    # Positions
-                    # Left Block (Choice) x ~ 30
-                    # Right Block (Ballot) x ~ 214
-                    
-                    x_c = 30
-                    x_b = 214
-                    
-                    # Draw Titles
-                    # Adjust text centering roughly within the 140px block
-                    # Font 30px -> roughly 15-17px width per char
-                    # Choice (6 chars) ~ 90px wide -> Start ~ 100 - 45 = 55
-                    # Ballot ID (9 chars) ~ 135px wide -> Start ~ 284 - 67 = 217
-                    # Tuned coordinates for visual balance
-                    
-                    draw.text((x_c + 20, 0), "Choice", font=font, fill="black")
-                    draw.text((x_b + 5, 0), "Ballot ID", font=font, fill="black")
-                    
-                    # Paste QRs
-                    img.paste(qr_c, (x_c, title_height))
-                    img.paste(qr_b, (x_b, title_height))
-                    
-                    # Save temp file to print
-                    temp_img = "temp_qr_composite.png"
-                    img.save(temp_img)
-                    
-                    # Print Image
-                    p.set(align='center')
-                    p.image(temp_img)
-                    p.text("\n") # Spacer
-                    
-                    # Cleanup
+                p.set(align='center')
+                p.image(temp_img)
+                p.text("\n")
+                if os.path.exists(temp_img):
                     os.remove(temp_img)
-                    
-                except Exception as qr_e:
-                    print(f"QR Gen Error: {qr_e}")
-                    # Fallback text
-                    p.text(f"Choice: {qr_choice_data} | Ballot: {ballot_id}\n")
-
-                # 3. Print Header 
-                # REMOVED NEWLINE before TOP_BAR to tighten QR gap
-                p.set(align='center', font='a', width=1, height=1, bold=True)
-                p.text(TOP_BAR + "\n")
-                p.text("STUDENT GENERAL\n")
-                p.text("ELECTION 2026\n")
-                p.set(align='center', bold=False)
-                
-                # Slight space between election and station
-                p.text("\n") 
-
-                # 4. Meta Data
-                station_id = "PS-105-DELHI"
-                timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
-                # ballot_id generated above
-
-                p.set(align='left')
-                p.text(f"Station: {station_id}\n") 
-                p.text(f"Session: {timestamp}\n")
-                p.text(f"Ballot : {ballot_id}\n")
-
-                # 5. Choice Selection
-                if mode == 'normal':
-                    cid = selections.get(1)
-                    sel_str = "NOTA" if cid == 0 else str(cid)
-                else:
-                    vals = []
-                    for r in sorted(selections.keys()):
-                        cid = selections[r]
-                        vals.append("NOTA" if cid == 0 else str(cid))
-                    sel_str = ", ".join(vals)
-                
-                p.text("\n") # Spacer
-                p.set(align='left', bold=True)
-                p.text(f"Choice : {sel_str}\n")
-                p.set(align='left', bold=False)
-                
-                # 6. Footer
-                # Removed extra spacers
-                p.text(BOTTOM_BAR + "\n") # Line above verified vote? (User context unclear, keeping one bar)
-                p.set(align='center', bold=True)
-                p.text("VERIFIED VOTE\n")
-                p.set(align='center', bold=False)
-                p.text(BOTTOM_BAR + "\n") # Line below
-                
-                # Minimal feed (1 newline)
-                p.text("\n") 
-                p.cut()
-                
-                print("VVPAT Receipt printed successfully.")
-                break # Success, exit retry loop
-
             except Exception as e:
-                print(f"VVPAT Print Error: {e}")
-                # For file backend, some errors might not raise exception immediately if buffer is small?
-                # But usually unplugging raises IOError or similar.
-                retry = messagebox.askretrycancel("Printer Error", f"Printing Failed!\n\nCheck Paper / Connection.\nError: {e}\n\nRetry?")
-                if not retry:
-                    break
-       
+                print(f"QR Error: {e}")
+                p.text(f"Choice: {qr_choice_data} | Ballot: {ballot_id}\n")
+
+            # Text
+            p.set(align='center', font='a', width=1, height=1, bold=True)
+            p.text(TOP_BAR + "\n")
+            p.text("STUDENT GENERAL\n")
+            p.text("ELECTION 2026\n")
+            p.set(align='center', bold=False)
+            p.text("\n") 
+
+            station_id = "PS-105-DELHI"
+            timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
+            p.set(align='left')
+            p.text(f"Station: {station_id}\n") 
+            p.text(f"Session: {timestamp}\n")
+            p.text(f"Ballot : {ballot_id}\n")
+
+            if mode == 'normal':
+                cid = selections.get(1)
+                sel_str = "NOTA" if cid == 0 else str(cid)
+            else:
+                vals = []
+                for r in sorted(selections.keys()):
+                    cid = selections[r]
+                    vals.append("NOTA" if cid == 0 else str(cid))
+                sel_str = ", ".join(vals)
+            
+            p.text("\n")
+            p.set(align='left', bold=True)
+            p.text(f"Choice : {sel_str}\n")
+            p.set(align='left', bold=False)
+            
+            p.text(BOTTOM_BAR + "\n")
+            p.set(align='center', bold=True)
+            p.text("VERIFIED VOTE\n")
+            p.set(align='center', bold=False)
+            p.text(BOTTOM_BAR + "\n")
+            
+            p.text("\n") 
+            p.cut()
+            
+            result_queue.put(True) # Success
+
+        except Exception as e:
+            result_queue.put(e)
+
     def cast_vote(self):
-        # Log the vote
+        # UI Feedback: Show Printing Modal
+        self.show_printing_modal()
+
+        # Start Async Print
+        import threading
+        import queue
+        self.print_queue = queue.Queue()
+        
+        self.print_thread = threading.Thread(
+            target=self.print_receipt_async, 
+            args=(self.voting_mode, self.selections, self.print_queue)
+        )
+        self.print_thread.daemon = True # Kill if app closes
+        self.print_thread.start()
+
+        # Start Timeout Checker
+        self.print_start_time = datetime.datetime.now()
+        self.check_print_status()
+
+    def show_printing_modal(self):
+        # Simple overlay for "Printing..."
+        self.printing_overlay = tk.Toplevel(self.root)
+        self.printing_overlay.title("Printing VVPAT")
+        # Center it
+        w, h = 400, 200
+        x = (self.root.winfo_screenwidth() // 2) - (w // 2)
+        y = (self.root.winfo_screenheight() // 2) - (h // 2)
+        self.printing_overlay.geometry(f"{w}x{h}+{x}+{y}")
+        self.printing_overlay.transient(self.root)
+        self.printing_overlay.grab_set() # Modal
+        self.printing_overlay.overrideredirect(True) # No close buttons
+        
+        f = tk.Frame(self.printing_overlay, bg="#E3F2FD", bd=2, relief=tk.RAISED)
+        f.pack(fill=tk.BOTH, expand=True)
+        
+        tk.Label(f, text="Printing VVPAT Receipt...", font=('Helvetica', 16, 'bold'), bg="#E3F2FD").pack(pady=30)
+        tk.Label(f, text="Please Wait", font=('Helvetica', 14), bg="#E3F2FD").pack(pady=10)
+
+    def close_printing_modal(self):
+        if hasattr(self, 'printing_overlay') and self.printing_overlay:
+            self.printing_overlay.destroy()
+            self.printing_overlay = None
+
+    def check_print_status(self):
+        # Check Queue
+        try:
+            # Non-blocking get
+            result = self.print_queue.get_nowait()
+            
+            # Thread finished
+            self.close_printing_modal()
+            
+            if result is True:
+                self.save_vote()
+                messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
+                self.show_mode_selection_screen()
+            else:
+                # Error Case
+                retry = messagebox.askretrycancel("Printer Error", f"Printing Failed: {result}\n\nRetry?")
+                if retry:
+                    self.cast_vote() # Restart process
+                else:
+                    # Cancelled
+                    pass # Stay on confirmation screen?
+            return
+
+        except queue.Empty:
+            # Still running
+            pass
+
+        # Check Timeout (20 seconds)
+        elapsed = (datetime.datetime.now() - self.print_start_time).total_seconds()
+        if elapsed > 20:
+            self.close_printing_modal()
+            # If thread is stuck, we can't easily kill it in Python. 
+            # We just abandon it and warn the user.
+            retry = messagebox.askretrycancel("Printer Timeout", "Printer is taking too long (Paper/Jam?).\n\nRetry?")
+            if retry:
+                self.cast_vote()
+            else:
+                pass # Return to confirm screen
+            return
+
+        # Schedule next check
+        self.root.after(500, self.check_print_status)
+
+    def save_vote(self):
+        # Only called AFTER successful print
         timestamp = datetime.datetime.now().isoformat()
         log_file = "votes.log"
         
         try:
-            # Prepare rows to write
-            # Log format: Timestamp, Mode, Rank, CandidateID, CandidateName
-            # For preferential, we might have multiple lines or one line per rank. 
-            # Let's do one line per rank selection for clarity, sharing the same timestamp.
-            
             with open(log_file, "a", newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                
-                # Write header if new file (optional, but good practice if we check generic logic, 
-                # but appending blind is faster. keeping it simple.)
-                
                 if self.voting_mode == 'normal':
                     cid = self.selections.get(1)
                     cand = self.get_candidate_by_id(cid)
@@ -549,15 +571,10 @@ class VotingApp:
                     for rank, cid in self.selections.items():
                         cand = self.get_candidate_by_id(cid)
                         writer.writerow([timestamp, self.voting_mode, rank, cid, cand['name']])
-                        
+            print("Vote saved to log.")
         except Exception as e:
-            print(f"Error saving vote: {e}") # Fallback logging to console
-
-        # Print VVPAT
-        self.print_receipt(self.voting_mode, self.selections)
-
-        messagebox.showinfo("Vote Cast", "Your vote has been recorded successfully!\n\nPrinting VVPAT and Receipt...")
-        self.show_mode_selection_screen()
+            print(f"Error saving vote: {e}") 
+            messagebox.showerror("System Error", "Vote printed but failed to save to disk!")
 
     def exit_app(self, event=None):
         self.root.quit()
@@ -566,3 +583,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = VotingApp(root)
     root.mainloop()
+
