@@ -336,171 +336,194 @@ class VotingApp:
         Prints a VVPAT receipt using the attached thermal printer.
         Final Layout: No side borders, Bold Header/Choice, Adjusted Spacing.
         """
-        if not self.printer:
-            print("VVPAT Skipped: Printer not connected.")
-            return
-
-        try:
-            p = self.printer
-            
-            p = self.printer
-            
-            # --- CONFIGURATION ---
-            # Standard 58mm printer width alignment
-            TOP_BAR = "_" * 32
-            BOTTOM_BAR = "_" * 32
-            
-            # 1. Generate Data
-            # Ballot ID
-            ballot_id = uuid.uuid4().hex[:8].upper()
-            
-            # Choice Data
-            if mode == 'normal':
-                qr_choice_data = str(selections.get(1))
-            else:
-                ranks = sorted(selections.keys())
-                qr_choice_data = "_".join([str(selections[r]) for r in ranks])
-            
-            # 2. GENERATE SIDE-BY-SIDE QR IMAGE
-            try:
-                # Create QR objects
-                qr_c = qrcode.make(qr_choice_data)
-                qr_b = qrcode.make(ballot_id)
-                
-                # Resize QRs to be small enough (e.g. 150px)
-                qr_size = 140
-                qr_c = qr_c.resize((qr_size, qr_size))
-                qr_b = qr_b.resize((qr_size, qr_size))
-                
-                # Create composite image (Width ~384px for 58mm printer)
-                # Layout idea:
-                # [ Margin(10) | Choice Block(162) | Gap(40) | Ballot Block(162) | Margin(10) ]
-                # Total width = 384
-                
-                total_width = 384
-                # Title height needs more room for larger font (30px)
-                title_height = 45 
-                height = qr_size + title_height
-                
-                img = Image.new('RGB', (total_width, height), 'white')
-                draw = ImageDraw.Draw(img)
-                
-                # Load Font - Maximizing to 30px
-                font_size = 30
-                font = None
-                
-                # List of candidate font paths (Windows, RPi/Linux)
-                font_candidates = [
-                    "arial.ttf", # Windows
-                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", # RPi Default
-                    "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",  # RPi Alternative
-                    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" # RPi Alternative
-                ]
-                
-                for fpath in font_candidates:
+        # Retry loop for printing
+        while True:
+            if not self.printer:
+                # Try to reconnect just in case it was plugged in late
+                if File and os.path.exists("/dev/usb/lp0"):
                     try:
-                        font = ImageFont.truetype(fpath, font_size)
-                        # If successful, break
-                        break
-                    except IOError:
-                        continue
-                
-                if font is None:
-                    print("Warning: No TTF font found. Using default bitmap font (tiny).")
-                    font = ImageFont.load_default()
+                        self.printer = File("/dev/usb/lp0")
+                        print("Printer connected on retry.")
+                    except Exception as e:
+                        print(f"Re-connection failed: {e}")
 
-                # Positions
-                # Left Block (Choice) x ~ 30
-                # Right Block (Ballot) x ~ 214
+            if not self.printer:
+                retry = messagebox.askretrycancel("Printer Error", "Printer not connected. Check cable.\n\nRetry?")
+                if not retry:
+                    print("VVPAT Skipped by user.")
+                    return
+                continue
+
+            try:
+                p = self.printer
+                # Check if device file exists before trying to write
+                # This might catch "Unplugged" scenarios on Linux
+                if not os.path.exists("/dev/usb/lp0"):
+                     raise IOError("Printer device file /dev/usb/lp0 not found.")
+
                 
-                x_c = 30
-                x_b = 214
+                # --- CONFIGURATION ---
+                # Standard 58mm printer width alignment
+                TOP_BAR = "_" * 32
+                BOTTOM_BAR = "_" * 32
                 
-                # Draw Titles
-                # Adjust text centering roughly within the 140px block
-                # Font 30px -> roughly 15-17px width per char
-                # Choice (6 chars) ~ 90px wide -> Start ~ 100 - 45 = 55
-                # Ballot ID (9 chars) ~ 135px wide -> Start ~ 284 - 67 = 217
-                # Tuned coordinates for visual balance
+                # 1. Generate Data
+                # Ballot ID
+                ballot_id = uuid.uuid4().hex[:8].upper()
                 
-                draw.text((x_c + 20, 0), "Choice", font=font, fill="black")
-                draw.text((x_b + 5, 0), "Ballot ID", font=font, fill="black")
+                # Choice Data
+                if mode == 'normal':
+                    qr_choice_data = str(selections.get(1))
+                else:
+                    ranks = sorted(selections.keys())
+                    qr_choice_data = "_".join([str(selections[r]) for r in ranks])
                 
-                # Paste QRs
-                img.paste(qr_c, (x_c, title_height))
-                img.paste(qr_b, (x_b, title_height))
+                # 2. GENERATE SIDE-BY-SIDE QR IMAGE
+                try:
+                    # Create QR objects
+                    qr_c = qrcode.make(qr_choice_data)
+                    qr_b = qrcode.make(ballot_id)
+                    
+                    # Resize QRs to be small enough (e.g. 150px)
+                    qr_size = 140
+                    qr_c = qr_c.resize((qr_size, qr_size))
+                    qr_b = qr_b.resize((qr_size, qr_size))
+                    
+                    # Create composite image (Width ~384px for 58mm printer)
+                    # Layout idea:
+                    # [ Margin(10) | Choice Block(162) | Gap(40) | Ballot Block(162) | Margin(10) ]
+                    # Total width = 384
+                    
+                    total_width = 384
+                    # Title height needs more room for larger font (30px)
+                    title_height = 45 
+                    height = qr_size + title_height
+                    
+                    img = Image.new('RGB', (total_width, height), 'white')
+                    draw = ImageDraw.Draw(img)
+                    
+                    # Load Font - Maximizing to 30px
+                    font_size = 30
+                    font = None
+                    
+                    # List of candidate font paths (Windows, RPi/Linux)
+                    font_candidates = [
+                        "arial.ttf", # Windows
+                        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", # RPi Default
+                        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",  # RPi Alternative
+                        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" # RPi Alternative
+                    ]
+                    
+                    for fpath in font_candidates:
+                        try:
+                            font = ImageFont.truetype(fpath, font_size)
+                            # If successful, break
+                            break
+                        except IOError:
+                            continue
+                    
+                    if font is None:
+                        print("Warning: No TTF font found. Using default bitmap font (tiny).")
+                        font = ImageFont.load_default()
+
+                    # Positions
+                    # Left Block (Choice) x ~ 30
+                    # Right Block (Ballot) x ~ 214
+                    
+                    x_c = 30
+                    x_b = 214
+                    
+                    # Draw Titles
+                    # Adjust text centering roughly within the 140px block
+                    # Font 30px -> roughly 15-17px width per char
+                    # Choice (6 chars) ~ 90px wide -> Start ~ 100 - 45 = 55
+                    # Ballot ID (9 chars) ~ 135px wide -> Start ~ 284 - 67 = 217
+                    # Tuned coordinates for visual balance
+                    
+                    draw.text((x_c + 20, 0), "Choice", font=font, fill="black")
+                    draw.text((x_b + 5, 0), "Ballot ID", font=font, fill="black")
+                    
+                    # Paste QRs
+                    img.paste(qr_c, (x_c, title_height))
+                    img.paste(qr_b, (x_b, title_height))
+                    
+                    # Save temp file to print
+                    temp_img = "temp_qr_composite.png"
+                    img.save(temp_img)
+                    
+                    # Print Image
+                    p.set(align='center')
+                    p.image(temp_img)
+                    p.text("\n") # Spacer
+                    
+                    # Cleanup
+                    os.remove(temp_img)
+                    
+                except Exception as qr_e:
+                    print(f"QR Gen Error: {qr_e}")
+                    # Fallback text
+                    p.text(f"Choice: {qr_choice_data} | Ballot: {ballot_id}\n")
+
+                # 3. Print Header 
+                # REMOVED NEWLINE before TOP_BAR to tighten QR gap
+                p.set(align='center', font='a', width=1, height=1, bold=True)
+                p.text(TOP_BAR + "\n")
+                p.text("STUDENT GENERAL\n")
+                p.text("ELECTION 2026\n")
+                p.set(align='center', bold=False)
                 
-                # Save temp file to print
-                temp_img = "temp_qr_composite.png"
-                img.save(temp_img)
+                # Slight space between election and station
+                p.text("\n") 
+
+                # 4. Meta Data
+                station_id = "PS-105-DELHI"
+                timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
+                # ballot_id generated above
+
+                p.set(align='left')
+                p.text(f"Station: {station_id}\n") 
+                p.text(f"Session: {timestamp}\n")
+                p.text(f"Ballot : {ballot_id}\n")
+
+                # 5. Choice Selection
+                if mode == 'normal':
+                    cid = selections.get(1)
+                    sel_str = "NOTA" if cid == 0 else str(cid)
+                else:
+                    vals = []
+                    for r in sorted(selections.keys()):
+                        cid = selections[r]
+                        vals.append("NOTA" if cid == 0 else str(cid))
+                    sel_str = ", ".join(vals)
                 
-                # Print Image
-                p.set(align='center')
-                p.image(temp_img)
                 p.text("\n") # Spacer
+                p.set(align='left', bold=True)
+                p.text(f"Choice : {sel_str}\n")
+                p.set(align='left', bold=False)
                 
-                # Cleanup
-                os.remove(temp_img)
+                # 6. Footer
+                # Removed extra spacers
+                p.text(BOTTOM_BAR + "\n") # Line above verified vote? (User context unclear, keeping one bar)
+                p.set(align='center', bold=True)
+                p.text("VERIFIED VOTE\n")
+                p.set(align='center', bold=False)
+                p.text(BOTTOM_BAR + "\n") # Line below
                 
-            except Exception as qr_e:
-                print(f"QR Gen Error: {qr_e}")
-                # Fallback text
-                p.text(f"Choice: {qr_choice_data} | Ballot: {ballot_id}\n")
+                # Minimal feed (1 newline)
+                p.text("\n") 
+                p.cut()
+                
+                print("VVPAT Receipt printed successfully.")
+                break # Success, exit retry loop
 
-            # 3. Print Header 
-            # REMOVED NEWLINE before TOP_BAR to tighten QR gap
-            p.set(align='center', font='a', width=1, height=1, bold=True)
-            p.text(TOP_BAR + "\n")
-            p.text("STUDENT GENERAL\n")
-            p.text("ELECTION 2026\n")
-            p.set(align='center', bold=False)
-            
-            # Slight space between election and station
-            p.text("\n") 
-
-            # 4. Meta Data
-            station_id = "PS-105-DELHI"
-            timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
-            # ballot_id generated above
-
-            p.set(align='left')
-            p.text(f"Station: {station_id}\n") 
-            p.text(f"Session: {timestamp}\n")
-            p.text(f"Ballot : {ballot_id}\n")
-
-            # 5. Choice Selection
-            if mode == 'normal':
-                cid = selections.get(1)
-                sel_str = "NOTA" if cid == 0 else str(cid)
-            else:
-                vals = []
-                for r in sorted(selections.keys()):
-                    cid = selections[r]
-                    vals.append("NOTA" if cid == 0 else str(cid))
-                sel_str = ", ".join(vals)
-            
-            p.text("\n") # Spacer
-            p.set(align='left', bold=True)
-            p.text(f"Choice : {sel_str}\n")
-            p.set(align='left', bold=False)
-            
-            # 6. Footer
-            # Removed extra spacers
-            p.text(BOTTOM_BAR + "\n") # Line above verified vote? (User context unclear, keeping one bar)
-            p.set(align='center', bold=True)
-            p.text("VERIFIED VOTE\n")
-            p.set(align='center', bold=False)
-            p.text(BOTTOM_BAR + "\n") # Line below
-            
-            # Minimal feed (1 newline)
-            p.text("\n") 
-            p.cut()
-            
-            print("VVPAT Receipt printed successfully.")
-
-        except Exception as e:
-            print(f"VVPAT Print Error: {e}")
-
+            except Exception as e:
+                print(f"VVPAT Print Error: {e}")
+                # For file backend, some errors might not raise exception immediately if buffer is small?
+                # But usually unplugging raises IOError or similar.
+                retry = messagebox.askretrycancel("Printer Error", f"Printing Failed!\n\nCheck Paper / Connection.\nError: {e}\n\nRetry?")
+                if not retry:
+                    break
+       
     def cast_vote(self):
         # Log the vote
         timestamp = datetime.datetime.now().isoformat()
