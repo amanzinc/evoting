@@ -4,6 +4,9 @@ import csv
 import datetime
 import uuid
 import os
+import threading
+import queue
+
 try:
     from escpos.printer import File
 except ImportError:
@@ -473,8 +476,6 @@ class VotingApp:
         self.show_printing_modal()
 
         # Start Async Print
-        import threading
-        import queue
         self.print_queue = queue.Queue()
         
         self.print_thread = threading.Thread(
