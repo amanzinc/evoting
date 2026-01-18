@@ -150,10 +150,9 @@ class VotingApp:
             for cand in all_opts:
                 is_selected_elsewhere = False
                 for rank, cid in self.selections.items():
-                    # Standard logic: You can't pick the same PERSON twice.
-                    # NOTA logic: User requested NOTA to be available in all options.
-                    # We will NOT filter out NOTA (ID 0) even if selected previously.
-                    if rank != self.current_rank and cid == cand['id']:
+                    # Logic Change: Only filter out candidates selected in PREVIOUS ranks.
+                    # Future ranks (rank > self.current_rank) should NOT block selection (swapping).
+                    if rank < self.current_rank and cid == cand['id']:
                         if cid != 0: # Allow NOTA to appear again
                             is_selected_elsewhere = True
                 
@@ -252,6 +251,18 @@ class VotingApp:
         if selection == -1: # Explicit check for default initialized value logic
             messagebox.showwarning("No Selection", "Please make a selection to proceed.")
             return
+
+        # Conflict Resolution:
+        # If this candidate was selected in a FUTURE rank, we must clear that future rank
+        # because a candidate cannot be selected twice (except NOTA).
+        if selection != 0:
+            ranks_to_clear = []
+            for rank, cid in self.selections.items():
+                 if rank > self.current_rank and cid == selection:
+                     ranks_to_clear.append(rank)
+            
+            for r in ranks_to_clear:
+                del self.selections[r]
 
         self.selections[self.current_rank] = selection
         
