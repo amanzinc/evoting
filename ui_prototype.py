@@ -539,6 +539,8 @@ class VotingApp:
                 self.show_mode_selection_screen()
             else:
                 # Error Case
+                print(f"Async print error: {result}")
+                self.printer = None # Force reconnection on next try
                 retry = messagebox.askretrycancel("Printer Error", f"Printing Failed: {result}\n\nRetry?")
                 if retry:
                     self.cast_vote() # Restart process
