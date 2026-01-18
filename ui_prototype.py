@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import csv
 import datetime
-import datetime
+import uuid
 import os
 try:
     from escpos.printer import File
@@ -330,7 +330,7 @@ class VotingApp:
     def print_receipt(self, mode, selections):
         """
         Prints a VVPAT receipt using the attached thermal printer.
-        Uses the persistent printer connection.
+        Advanced layout with QR code.
         """
         if not self.printer:
             print("VVPAT Skipped: Printer not connected.")
@@ -339,56 +339,86 @@ class VotingApp:
         try:
             p = self.printer
             
-            # Header
-            p.text("\n")
-            p.set(align='center', bold=True, width=2, height=2)
-            p.text("GENERAL ELECTION\n")
-            p.text("2026\n")
-            p.set(align='center', bold=False, width=1, height=1)
-            p.text("--------------------------------\n")
-            p.text("VVPAT SLIP\n")
-            p.text("--------------------------------\n")
+            # 1. Generate QR Data
+            # Format: 1_2_3 for pref, 1 for normal
+            if mode == 'normal':
+                qr_data = str(selections.get(1))
+            else:
+                # specific order string: 1_2_3 based on rank
+                ranks = sorted(selections.keys())
+                qr_data = "_".join([str(selections[r]) for r in ranks])
             
-            # Details
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            p.text(f"Date: {timestamp}\n")
-            p.text(f"Mode: {mode}\n")
-            p.text("--------------------------------\n\n")
+            # 2. Print QR Code (Top)
+            p.set(align='center')
+            try:
+                # native=False renders it as an image, usually safer/more consistent
+                p.qr(qr_data, native=False, size=6, center=True)
+            except Exception as qr_e:
+                print(f"QR Print Error: {qr_e}")
+                p.text(f"[QR: {qr_data}]\n")
 
+            # 3. Print Header & Box Top
+            # Reset font explicitly
+            p.set(align='center', font='a', width=1, height=1)
+            p.text("\n________________________________\n")
+            p.text("|                                |\n")
+            p.set(align='center', bold=True)
+            p.text("| STUDENT GENERAL ELECTION 2026  |\n")
+            p.set(align='center', bold=False)
+            p.text("|--------------------------------|\n")
+
+            # 4. Meta Data
+            # Station ID: PS-105-DELHI (Hardcoded)
+            # Session: DD-MM-YYYY HH:MM:SS
+            # Ballot ID: Random Hex
+            
+            station_id = "PS-105-DELHI"
+            timestamp = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+            ballot_id = uuid.uuid4().hex[:8].upper()
+
+            p.set(align='left')
+            p.text(f"| Station ID: {station_id:<19}|\n")
+            p.text(f"| Session: {timestamp:<21}|\n")
+            p.text(f"| Ballot ID: {ballot_id:<20}|\n")
+            p.text("|--------------------------------|\n")
+
+            # 5. Selection (Sl No)
+            p.set(align='left', bold=True)
+            
+            # Format selection string "Sl No: 1, 5, 9"
             if mode == 'normal':
                 cid = selections.get(1)
-                cand = self.get_candidate_by_id(cid)
-                
-                p.set(align='center', bold=True, width=2, height=2)
-                
-                if cand['id'] == 0:
-                    p.text("NOTA\n")
-                    p.set(align='center', bold=False, width=1, height=1)
-                    p.text("(None of the Above)\n")
+                # Handle NOTA specially in string
+                if cid == 0:
+                    sel_str = "NOTA"
                 else:
-                    p.text(f"Candidate No: {cand['id']}\n")
-                    p.set(align='center', bold=False, width=1, height=1)
-                    # Name REMOVED as per request
-                    # Party REMOVED as per request
-                    p.text("\n")
+                    sel_str = str(cid)
             else:
-                for rank, cid in selections.items():
-                    cand = self.get_candidate_by_id(cid)
-                    p.text(f"Pref {rank}:\n")
-                    p.set(align='left', bold=True)
-                    
-                    if cand['id'] == 0:
-                         p.text("  NOTA\n")
+                # For preferential, show list like 1, 5, 2
+                # If NOTA is selected in rank, show NOTA
+                vals = []
+                for r in sorted(selections.keys()):
+                    cid = selections[r]
+                    if cid == 0:
+                        vals.append("NOTA")
                     else:
-                         p.text(f"  Cand No: {cand['id']}\n")
-                         
-                    p.set(align='left', bold=False)
-                    # Party REMOVED
-                    p.text("\n")
-
-            # Footer
-            p.text("\n--------------------------------\n")
-            p.text("VERIFIED\n")
+                        vals.append(str(cid))
+                sel_str = ", ".join(vals)
+            
+            p.text(f"| Sl No: {sel_str:<24}|\n")
+            p.set(align='left', bold=False)
+            p.text("|                                |\n")
+            p.text("|                                |\n") # Padding
+            
+            # 6. Footer
+            p.text("|--------------------------------|\n")
+            p.set(align='center', bold=True)
+            p.text("|         VERIFIED VOTE          |\n")
+            p.set(align='center', bold=False)
+            p.text("|      NOT FOR OFFICIAL USE      |\n")
+            p.text("|                                |\n")
+            p.text("|________________________________|\n")
+            
             p.text("\n\n\n") # Feed
             p.cut()
             
@@ -397,7 +427,6 @@ class VotingApp:
         except Exception as e:
             # Log error but do not stop the voting process
             print(f"VVPAT Print Error: {e}")
-            # Optional: messagebox.showwarning("Printer Error", "Could not print receipt.")
 
     def cast_vote(self):
         # Log the vote
