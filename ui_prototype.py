@@ -378,25 +378,35 @@ class VotingApp:
                 # Total width = 384
                 
                 total_width = 384
-                # Title height needs more room for larger font
-                title_height = 40 
+                # Title height needs more room for larger font (30px)
+                title_height = 45 
                 height = qr_size + title_height
                 
                 img = Image.new('RGB', (total_width, height), 'white')
                 draw = ImageDraw.Draw(img)
                 
-                # Load Font - Increased size to 24 (Bold preferred if available, but stick to arial/default)
-                font_size = 24
-                try:
-                    font = ImageFont.truetype("arial.ttf", font_size)
-                    # For Linux/RPi, arial might not exist. Try standard paths or fallback
-                    # On RPi, typically /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
-                    if not os.path.exists("arial.ttf") and os.path.exists("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
-                         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
-                except IOError:
-                    # Fallback to default (which is usually tiny and fixed size, can't resize)
-                    # But we can try to load a PIL default that scales? No, default is bitmap.
-                    # We'll just hope for the best or rely on valid path.
+                # Load Font - Maximizing to 30px
+                font_size = 30
+                font = None
+                
+                # List of candidate font paths (Windows, RPi/Linux)
+                font_candidates = [
+                    "arial.ttf", # Windows
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", # RPi Default
+                    "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",  # RPi Alternative
+                    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" # RPi Alternative
+                ]
+                
+                for fpath in font_candidates:
+                    try:
+                        font = ImageFont.truetype(fpath, font_size)
+                        # If successful, break
+                        break
+                    except IOError:
+                        continue
+                
+                if font is None:
+                    print("Warning: No TTF font found. Using default bitmap font (tiny).")
                     font = ImageFont.load_default()
 
                 # Positions
@@ -408,16 +418,13 @@ class VotingApp:
                 
                 # Draw Titles
                 # Adjust text centering roughly within the 140px block
-                # "Choice" is short. "Ballot ID" is longer.
-                # Center of block C is 30 + 70 = 100
-                # Center of block B is 214 + 70 = 284
+                # Font 30px -> roughly 15-17px width per char
+                # Choice (6 chars) ~ 90px wide -> Start ~ 100 - 45 = 55
+                # Ballot ID (9 chars) ~ 135px wide -> Start ~ 284 - 67 = 217
+                # Tuned coordinates for visual balance
                 
-                # Simple heuristic centering assuming avg char width ~ half font size
-                # Choice (6 chars) ~ 72px wide -> Start ~ 100 - 36 = 64
-                # Ballot ID (9 chars) ~ 108px wide -> Start ~ 284 - 54 = 230
-                
-                draw.text((x_c + 35, 0), "Choice", font=font, fill="black")
-                draw.text((x_b + 20, 0), "Ballot ID", font=font, fill="black")
+                draw.text((x_c + 20, 0), "Choice", font=font, fill="black")
+                draw.text((x_b + 5, 0), "Ballot ID", font=font, fill="black")
                 
                 # Paste QRs
                 img.paste(qr_c, (x_c, title_height))
@@ -441,6 +448,7 @@ class VotingApp:
                 p.text(f"Choice: {qr_choice_data} | Ballot: {ballot_id}\n")
 
             # 3. Print Header 
+            # REMOVED NEWLINE before TOP_BAR to tighten QR gap
             p.set(align='center', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
             p.text("STUDENT GENERAL\n")
