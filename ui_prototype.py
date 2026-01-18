@@ -342,6 +342,7 @@ class VotingApp:
             # --- CONFIGURATION ---
             # Standard 58mm printer width alignment
             TOP_BAR = "_" * 32
+            BOTTOM_BAR = "_" * 32
             
             # 1. Generate QR Data
             if mode == 'normal':
@@ -359,9 +360,8 @@ class VotingApp:
                 p.text(f"QR: {qr_data}\n")
 
             # 3. Print Header 
-            # Reduced space from QR (no extra newline)
+            # REMOVED NEWLINE before TOP_BAR to tighten QR gap
             p.set(align='center', font='a', width=1, height=1, bold=True)
-            
             p.text(TOP_BAR + "\n")
             p.text("STUDENT GENERAL\n")
             p.text("ELECTION 2026\n")
@@ -397,15 +397,15 @@ class VotingApp:
             p.set(align='left', bold=False)
             
             # 6. Footer
-            p.text("\n")
-            p.text("_" * 32 + "\n") # Bottom bar
+            # Removed extra spacers
+            p.text(BOTTOM_BAR + "\n") # Line above verified vote? (User context unclear, keeping one bar)
             p.set(align='center', bold=True)
             p.text("VERIFIED VOTE\n")
             p.set(align='center', bold=False)
-            p.text("_" * 32 + "\n")
+            p.text(BOTTOM_BAR + "\n") # Line below
             
-            # Minimal feed
-            p.text("\n\n") 
+            # Minimal feed (1 newline)
+            p.text("\n") 
             p.cut()
             
             print("VVPAT Receipt printed successfully.")
