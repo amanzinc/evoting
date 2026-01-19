@@ -432,19 +432,19 @@ class VotingApp:
                 qr_b = qr_b.resize((qr_size, qr_size))
                 
                 total_width = 384
-                title_height = 45 
+                title_height = 30 
                 height = qr_size + title_height
                 
                 img = Image.new('RGB', (total_width, height), 'white')
                 draw = ImageDraw.Draw(img)
                 
-                font_size = 30
+                font_size = 22
                 font = None
                 font_candidates = [
                     "arial.ttf", 
-                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 
-                    "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf", 
-                    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 
+                    "/usr/share/fonts/truetype/freefont/FreeSans.ttf", 
+                    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
                 ]
                 for fpath in font_candidates:
                     try:
@@ -465,6 +465,9 @@ class VotingApp:
                 temp_img = f"temp_qr_vvpat_{uuid.uuid4().hex}.png"
                 img.save(temp_img)
                 
+
+                
+                p.text("\n") # specific space request
                 p.set(align='center')
                 p.image(temp_img)
                 p.text("\n")
