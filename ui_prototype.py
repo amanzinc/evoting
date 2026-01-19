@@ -73,7 +73,7 @@ class VotingApp:
                     self.candidates_base.append({
                         "id": int(row["id"]),
                         "name": row["name"],
-                        "party": row["party"]
+                        "candidate_number": row["candidate_number"]
                     })
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load candidates: {e}")
@@ -159,9 +159,6 @@ class VotingApp:
                 if not is_selected_elsewhere:
                     available_candidates.append(cand)
 
-
-
-
         # Layout: Grid or Packed list. 6 items.
         # To fit 6 items on one screen easily, we can use a 2-column grid if height is an issue,
         # or just tight vertical packing. Let's try 2 columns for better touch targets.
@@ -190,8 +187,8 @@ class VotingApp:
             else:
                 cand_text = f"{cand['id']}. {cand['name']}"
             
-            if cand['party']:
-                cand_text += f"\n{cand['party']}"
+            if cand.get('candidate_number'):
+                cand_text += f"\n{cand['candidate_number']}"
             
             fg_color = "black"
             if cand['id'] == 0: 
@@ -300,10 +297,10 @@ class VotingApp:
             f.pack(pady=10)
             
             if cand['id'] != 0:
-                tk.Label(f, text=f"Candidate No: {cand['id']}", font=('Helvetica', 28, 'bold'), bg="#e8f5e9", fg="#333").pack()
+                c_num = cand.get('candidate_number', str(cand['id']))
+                tk.Label(f, text=f"Candidate No: {c_num}", font=('Helvetica', 28, 'bold'), bg="#e8f5e9", fg="#333").pack()
             
             tk.Label(f, text=cand['name'], font=('Helvetica', 22), bg="#e8f5e9").pack(pady=5)
-            tk.Label(f, text=cand['party'], font=('Helvetica', 18), bg="#e8f5e9").pack()
 
         else:
             # Preferential list
@@ -323,7 +320,9 @@ class VotingApp:
                         t = f"{cand['id']}. {cand['name']}"
                         
                     tk.Label(row, text=t, font=('Helvetica', 20), bg="white").pack(side=tk.LEFT, padx=10)
-                    if cand['party']:
+                    if cand.get('candidate_number'):
+                        tk.Label(row, text=f"({cand['candidate_number']})", font=('Helvetica', 16, 'italic'), fg="#666", bg="white").pack(side=tk.LEFT, padx=10)
+                    elif cand.get('party'):
                         tk.Label(row, text=f"({cand['party']})", font=('Helvetica', 16, 'italic'), fg="#666", bg="white").pack(side=tk.LEFT, padx=10)
                 else:
                      tk.Label(row, text=f"{rank}.  [No Selection]", font=('Helvetica', 20), fg="#aaa", bg="white").pack(side=tk.LEFT, padx=10)
