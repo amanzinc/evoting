@@ -1,0 +1,56 @@
+{
+    "election_id": "ST-GEN-2026",
+    "hash_string": "['d52c350d91e177821eb9b8a4fde7ab15e1bd3c8ddae7cab907477ff0406cde58', '682969dbae23cefdb7dbfc1e702aee75c651cadf45e4e5cfcf56f338456016eb', '5996eeae0f57dce226bc5cc54b8e0478be473a72e71d7ed15a1d841d6fa251ae'], [1, [9675193489324612290618737214271204243551075771712776516479122363912806467947, 5023459185892836823079927140434613210856695383844001564194953441874592500120]]]",
+    "candidates": [
+        {
+            "serial_id": 1,
+            "candidate_name": "Aman Gupta",
+            "candidate_number": "A7K9M2Q4P"
+        },
+        {
+            "serial_id": 2,
+            "candidate_name": "Riya Sharma",
+            "candidate_number": "R3T8L9Z2X"
+        },
+        {
+            "serial_id": 3,
+            "candidate_name": "Mohit Verma",
+            "candidate_number": "M5N8C2A7K"
+        },
+        {
+            "serial_id": 4,
+            "candidate_name": "Priya Singh",
+            "candidate_number": "P9Q4S6L8R"
+        },
+        {
+            "serial_id": 5,
+            "candidate_name": "Karan Mehta",
+            "candidate_number": "K2A9M7T5X"
+        },
+        {
+            "serial_id": 6,
+            "candidate_name": "Sneha Iyer",
+            "candidate_number": "S8R2LQ9P4"
+        },
+        {
+            "serial_id": 7,
+            "candidate_name": "Vikram Patel",
+            "candidate_number": "V6M9A4K2T"
+        },
+        {
+            "serial_id": 8,
+            "candidate_name": "Neha Kulkarni",
+            "candidate_number": "N7P8R2S5L"
+        },
+        {
+            "serial_id": 9,
+            "candidate_name": "Tanmay Joshi",
+            "candidate_number": "T4K9M2A8R"
+        },
+        {
+            "serial_id": 10,
+            "candidate_name": "Lavanya Rao",
+            "candidate_number": "L2S7P9Q4M"
+        }
+    ]
+}

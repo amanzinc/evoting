@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import csv
+import json
 import datetime
 import uuid
 import os
@@ -58,22 +59,29 @@ class VotingApp:
 
         self.show_mode_selection_screen()
 
+
     def load_candidates(self):
         self.candidates_base = []
-        filename = "candidates.csv"
+        filename = "candidates.json"
+        
         if not os.path.exists(filename):
-            messagebox.showerror("Error", "candidates.csv not found!")
+            messagebox.showerror("Error", "candidates.json not found!")
             return
 
         try:
             with open(filename, mode='r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
+                data = json.load(f)
+                
+                # Store election metadata if needed later
+                self.election_id = data.get("election_id", "")
+                self.election_hash = data.get("hash_string", "")
+                
+                for cand in data.get("candidates", []):
                     # Ensure properly typed dictionary
                     self.candidates_base.append({
-                        "id": int(row["id"]),
-                        "name": row["name"],
-                        "candidate_number": row["candidate_number"]
+                        "id": int(cand["serial_id"]),
+                        "name": cand["candidate_name"],
+                        "candidate_number": cand["candidate_number"]
                     })
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load candidates: {e}")
@@ -372,20 +380,33 @@ class VotingApp:
                  result_queue.put(Exception("Device file not found"))
                  return
 
-            # --- GENERATION ---
-             # Standard 58mm printer width alignment
+            # --- COMMON DATA ---
+            ballot_id = uuid.uuid4().hex[:8].upper()
+            station_id = "PS-105-DELHI"
+            timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
+
+            if mode == 'normal':
+                cid = selections.get(1)
+                sel_str = "NOTA" if cid == 0 else str(cid)
+                qr_choice_data = sel_str
+            else:
+                ranks = sorted(selections.keys())
+                vals = []
+                for r in ranks:
+                    c = selections[r]
+                    vals.append("NOTA" if c == 0 else str(c))
+                sel_str = ", ".join(vals)
+                qr_choice_data = "_".join([str(selections[r]) for r in ranks])
+
             TOP_BAR = "_" * 32
             BOTTOM_BAR = "_" * 32
             
-            ballot_id = uuid.uuid4().hex[:8].upper()
+            # ==========================================
+            # RECEIPT 1: VVPAT (Internal / Box)
+            # Content: Station, Ballot, Session, Choice, Choice QR, Ballot QR
+            # ==========================================
             
-            if mode == 'normal':
-                qr_choice_data = str(selections.get(1))
-            else:
-                ranks = sorted(selections.keys())
-                qr_choice_data = "_".join([str(selections[r]) for r in ranks])
-            
-            # QR Image Gen
+            # QR Image Gen for VVPAT
             try:
                 qr_c = qrcode.make(qr_choice_data)
                 qr_b = qrcode.make(ballot_id)
@@ -424,8 +445,7 @@ class VotingApp:
                 img.paste(qr_c, (x_c, title_height))
                 img.paste(qr_b, (x_b, title_height))
                 
-                # Unique temp file for thread safety
-                temp_img = f"temp_qr_{uuid.uuid4().hex}.png"
+                temp_img = f"temp_qr_vvpat_{uuid.uuid4().hex}.png"
                 img.save(temp_img)
                 
                 p.set(align='center')
@@ -435,32 +455,18 @@ class VotingApp:
                     os.remove(temp_img)
             except Exception as e:
                 print(f"QR Error: {e}")
-                p.text(f"Choice: {qr_choice_data} | Ballot: {ballot_id}\n")
 
-            # Text
+            # Text for VVPAT
             p.set(align='center', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
-            p.text("STUDENT GENERAL\n")
-            p.text("ELECTION 2026\n")
+            p.text("** VVPAT SLIP **\n")
             p.set(align='center', bold=False)
             p.text("\n") 
 
-            station_id = "PS-105-DELHI"
-            timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
             p.set(align='left')
             p.text(f"Station: {station_id}\n") 
-            p.text(f"Session: {timestamp}\n")
             p.text(f"Ballot : {ballot_id}\n")
-
-            if mode == 'normal':
-                cid = selections.get(1)
-                sel_str = "NOTA" if cid == 0 else str(cid)
-            else:
-                vals = []
-                for r in sorted(selections.keys()):
-                    cid = selections[r]
-                    vals.append("NOTA" if cid == 0 else str(cid))
-                sel_str = ", ".join(vals)
+            p.text(f"Session: {timestamp}\n")
             
             p.text("\n")
             p.set(align='left', bold=True)
@@ -468,12 +474,60 @@ class VotingApp:
             p.set(align='left', bold=False)
             
             p.text(BOTTOM_BAR + "\n")
-            p.set(align='center', bold=True)
-            p.text("VERIFIED VOTE\n")
-            p.set(align='center', bold=False)
-            p.text(BOTTOM_BAR + "\n")
-            
             p.text("\n") 
+            p.cut()
+
+            # ==========================================
+            # RECEIPT 2: VOTER RECEIPT
+            # Content: Session, Choice, Hash QR
+            # ==========================================
+            
+            # QR Image Gen for Voter
+            try:
+                # Use the global election hash for this QR
+                hash_val = getattr(self, 'election_hash', "UNKNOWN_HASH")
+                qr_h = qrcode.make(hash_val)
+                
+                # Make it big and centered
+                qr_size = 250 
+                qr_h = qr_h.resize((qr_size, qr_size))
+                
+                total_width = 384
+                height = qr_size + 10
+                
+                img_v = Image.new('RGB', (total_width, height), 'white')
+                # Center the QR
+                x_pos = (total_width - qr_size) // 2
+                img_v.paste(qr_h, (x_pos, 5))
+                
+                temp_img_v = f"temp_qr_voter_{uuid.uuid4().hex}.png"
+                img_v.save(temp_img_v)
+                
+                p.set(align='center')
+                p.image(temp_img_v)
+                p.text("\n")
+                if os.path.exists(temp_img_v):
+                    os.remove(temp_img_v)
+
+            except Exception as e:
+                print(f"Voter QR Error: {e}")
+                p.text(f"[Hash QR Error]\n")
+            
+            p.set(align='center', font='a', width=1, height=1, bold=True)
+            p.text(TOP_BAR + "\n")
+            p.text("** VOTER RECEIPT **\n")
+            p.set(align='center', bold=False)
+            p.text("\n")
+            
+            p.set(align='left')
+            p.text(f"Session: {timestamp}\n")
+            p.set(align='left', bold=True)
+            p.text(f"Choice : {sel_str}\n")
+            p.set(align='left', bold=False)
+            
+            p.text(BOTTOM_BAR + "\n")
+            p.text("Keep this receipt safe.\n")
+            p.text("\n")
             p.cut()
             
             result_queue.put(True) # Success
