@@ -406,6 +406,23 @@ class VotingApp:
             # Content: Station, Ballot, Session, Choice, Choice QR, Ballot QR
             # ==========================================
             
+            # Text for VVPAT
+            p.set(align='center', font='a', width=1, height=1, bold=True)
+            p.text(TOP_BAR + "\n")
+            p.text("** VVPAT SLIP **\n")
+            p.set(align='center', bold=False)
+            p.text("\n") 
+
+            p.set(align='left')
+            p.text(f"Station: {station_id}\n") 
+            p.text(f"Ballot : {ballot_id}\n")
+            p.text(f"Session: {timestamp}\n")
+            
+            p.text("\n")
+            p.set(align='left', bold=True)
+            p.text(f"Choice : {sel_str}\n")
+            p.set(align='left', bold=False)
+            
             # QR Image Gen for VVPAT
             try:
                 qr_c = qrcode.make(qr_choice_data)
@@ -456,22 +473,7 @@ class VotingApp:
             except Exception as e:
                 print(f"QR Error: {e}")
 
-            # Text for VVPAT
-            p.set(align='center', font='a', width=1, height=1, bold=True)
-            p.text(TOP_BAR + "\n")
-            p.text("** VVPAT SLIP **\n")
-            p.set(align='center', bold=False)
-            p.text("\n") 
 
-            p.set(align='left')
-            p.text(f"Station: {station_id}\n") 
-            p.text(f"Ballot : {ballot_id}\n")
-            p.text(f"Session: {timestamp}\n")
-            
-            p.text("\n")
-            p.set(align='left', bold=True)
-            p.text(f"Choice : {sel_str}\n")
-            p.set(align='left', bold=False)
             
             p.text(BOTTOM_BAR + "\n")
             
@@ -483,6 +485,19 @@ class VotingApp:
             # Content: Session, Choice, Hash QR
             # ==========================================
             
+            # Text for Voter Receipt
+            p.set(align='center', font='a', width=1, height=1, bold=True)
+            p.text(TOP_BAR + "\n")
+            p.text("** VOTER RECEIPT **\n")
+            p.set(align='center', bold=False)
+            p.text("\n")
+            
+            p.set(align='left')
+            p.text(f"Session: {timestamp}\n")
+            p.set(align='left', bold=True)
+            p.text(f"Choice : {sel_str}\n")
+            p.set(align='left', bold=False)
+
             # QR Image Gen for Voter
             try:
                 # Use the global election hash for this QR
@@ -514,17 +529,7 @@ class VotingApp:
                 print(f"Voter QR Error: {e}")
                 p.text(f"[Hash QR Error]\n")
             
-            p.set(align='center', font='a', width=1, height=1, bold=True)
-            p.text(TOP_BAR + "\n")
-            p.text("** VOTER RECEIPT **\n")
-            p.set(align='center', bold=False)
-            p.text("\n")
-            
-            p.set(align='left')
-            p.text(f"Session: {timestamp}\n")
-            p.set(align='left', bold=True)
-            p.text(f"Choice : {sel_str}\n")
-            p.set(align='left', bold=False)
+
             
             p.text(BOTTOM_BAR + "\n")
             p.text("Keep this receipt safe.\n")
