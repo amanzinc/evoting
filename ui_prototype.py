@@ -52,7 +52,7 @@ class VotingApp:
         self.printer = None
         if File:
             try:
-                self.printer = File("/dev/usb/lp0")
+                self.printer = File("/dev/usb/lp0", profile="TM-T88IV")
                 print("Printer connected successfully.")
             except Exception as e:
                 print(f"Printer Connection Failed: {e}")
@@ -367,7 +367,7 @@ class VotingApp:
                  # Try to reconnect
                 if File and os.path.exists("/dev/usb/lp0"):
                     try:
-                        self.printer = File("/dev/usb/lp0")
+                        self.printer = File("/dev/usb/lp0", profile="TM-T88IV")
                     except:
                         pass
             
@@ -476,7 +476,7 @@ class VotingApp:
             p.text(BOTTOM_BAR + "\n")
             
             # Reduced gap and added tear line
-            p.text("\n- - - - - - - - CUT HERE - - - - - - - -\n\n")
+            p.text("\n- - - - - CUT HERE - - - - -\n\n")
 
             # ==========================================
             # RECEIPT 2: VOTER RECEIPT
