@@ -385,18 +385,26 @@ class VotingApp:
             station_id = "PS-105-DELHI"
             timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
 
+            # Helper to find candidate by ID
+            def get_cand_display(cid):
+                if cid == 0: return "NOTA"
+                for c in self.candidates_base:
+                    if c['id'] == cid:
+                        return c.get('candidate_number', str(cid)) # Use candidate_number if available
+                return str(cid)
+
             if mode == 'normal':
                 cid = selections.get(1)
-                sel_str = "NOTA" if cid == 0 else str(cid)
+                sel_str = get_cand_display(cid)
                 qr_choice_data = sel_str
             else:
                 ranks = sorted(selections.keys())
                 vals = []
                 for r in ranks:
                     c = selections[r]
-                    vals.append("NOTA" if c == 0 else str(c))
+                    vals.append(get_cand_display(c))
                 sel_str = ", ".join(vals)
-                qr_choice_data = "_".join([str(selections[r]) for r in ranks])
+                qr_choice_data = "_".join([get_cand_display(selections[r]) for r in ranks])
 
             TOP_BAR = "_" * 32
             BOTTOM_BAR = "_" * 32
