@@ -43,6 +43,7 @@ class VotingApp:
         
         # State
         self.voting_mode = None # 'normal' or 'preferential'
+        self.pv_mode_2 = False # New flag for PV2
         self.max_ranks = 3  # Maximum number of preferences to select
         self.current_rank = 1
         self.selections = {} # Dictionary to store {rank: candidate_id}
@@ -128,17 +129,21 @@ class VotingApp:
 
         tk.Button(btn_frame, text="Normal Voting\n(Single Choice)", font=('Helvetica', 20, 'bold'), command=self.start_normal_voting, padx=30, pady=20, bg="#2196F3", fg="white").pack(pady=10, fill=tk.X)
         tk.Button(btn_frame, text="Preferential Voting\n(Ranked)", font=('Helvetica', 20, 'bold'), command=self.start_preferential_voting, padx=30, pady=20, bg="#9C27B0", fg="white").pack(pady=10, fill=tk.X)
+        tk.Button(btn_frame, text="Preferential Voting 2\n(Greyed Out)", font=('Helvetica', 20, 'bold'), command=self.start_preferential_voting_2, padx=30, pady=20, bg="#673AB7", fg="white").pack(pady=10, fill=tk.X)
+
         
         tk.Button(btn_frame, text="Exit App", font=('Helvetica', 14), command=self.exit_app).pack(pady=10)
 
     def start_normal_voting(self):
         self.voting_mode = 'normal'
+        self.pv_mode_2 = False
         self.selections = {}
         self.current_rank = 1 # Just one rank effectively
         self.show_selection_screen()
 
     def start_preferential_voting(self):
         self.voting_mode = 'preferential'
+        self.pv_mode_2 = False
         self.selections = {}
         self.current_rank = 1
         
@@ -147,6 +152,14 @@ class VotingApp:
         # User specified: "number of preferences have to be number of candidates -1"
         self.max_ranks = max(1, len(self.candidates_base) - 1)
         
+        self.show_selection_screen()
+
+    def start_preferential_voting_2(self):
+        self.voting_mode = 'preferential'
+        self.pv_mode_2 = True
+        self.selections = {}
+        self.current_rank = 1
+        self.max_ranks = max(1, len(self.candidates_base) - 1)
         self.show_selection_screen()
 
     def show_selection_screen(self):
@@ -187,7 +200,11 @@ class VotingApp:
                         # if cid != 0: # REMOVED: Treat all candidates (inc ID 0) as unique choices
                         is_selected_elsewhere = True
                 
-                if not is_selected_elsewhere:
+                # PV2 Logic: Do NOT filter if PV2 is active (unless it's just simpler to handle it later)
+                # Actually, simpler to keeping 'available_candidates' full and disable in loop.
+                if self.pv_mode_2:
+                    available_candidates.append(cand) # Always include
+                elif not is_selected_elsewhere:
                     available_candidates.append(cand)
 
         # Layout: Grid or Packed list. 6 items.
@@ -237,6 +254,27 @@ class VotingApp:
             content.grid_columnconfigure(col, weight=1)
             content.grid_rowconfigure(row, weight=1)
 
+            # PV2: Logic for Disabling
+            state_val = tk.NORMAL
+            
+            if self.pv_mode_2:
+                # Check if selected previously
+                is_already_selected_pv2 = False
+                for rank, cid in self.selections.items():
+                    if rank < self.current_rank and cid == cand['id']:
+                        is_already_selected_pv2 = True
+                
+                if is_already_selected_pv2:
+                    # Check if NAFS
+                    if cand['name'] == "NAFS":
+                        # NAFS persists. Do nothing.
+                        pass
+                    else:
+                        # Disable
+                        state_val = tk.DISABLED
+                        fg_color = "grey"
+                        cand_text += " (Selected)"
+
             rb = tk.Radiobutton(
                 frame, 
                 text=cand_text, 
@@ -252,7 +290,8 @@ class VotingApp:
                 pady=btn_pady,
                 bd=2,
                 relief=tk.RAISED,
-                justify=tk.CENTER
+                justify=tk.CENTER,
+                state=state_val # Apply state
                 # Removed fixed width to allow dynamic sizing
             )
             rb.pack(fill=tk.BOTH, expand=True)
