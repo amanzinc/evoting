@@ -37,7 +37,9 @@ class VotingApp:
         # Data
         # Data
         self.load_candidates()
-        self.nota_candidate = {"id": 0, "name": "None of the Above (NOTA)", "party": "NOTA"}
+        self.load_candidates()
+        # self.nota_candidate = {"id": 0, "name": "None of the Above (NOTA)", "party": "NOTA"} # REMOVED: NAFS from JSON handles this
+
         
         # State
         self.voting_mode = None # 'normal' or 'preferential'
@@ -100,7 +102,9 @@ class VotingApp:
             messagebox.showerror("Error", f"Failed to load candidates: {e}")
 
     def get_all_candidates(self):
-        return self.candidates_base + [self.nota_candidate]
+        return self.candidates_base # + [self.nota_candidate] # REMOVED: No manual append
+
+
 
     def clear_container(self):
         for widget in self.main_container.winfo_children():
