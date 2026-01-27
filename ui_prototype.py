@@ -89,6 +89,13 @@ class VotingApp:
                         "name": cand["candidate_name"],
                         "candidate_number": cand["candidate_number"]
                     })
+            
+            # SORT BY SERIAL_ID as requested
+            self.candidates_base.sort(key=lambda x: x['id'])
+            
+            # If NAFS is present, ensure it handles as NOTA (checking name 'NAFS')
+            # We don't change ID, but we change how we detect it in UI
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load candidates: {e}")
 
@@ -167,8 +174,8 @@ class VotingApp:
                     # Logic Change: Only filter out candidates selected in PREVIOUS ranks.
                     # Future ranks (rank > self.current_rank) should NOT block selection (swapping).
                     if rank < self.current_rank and cid == cand['id']:
-                        if cid != 0: # Allow NOTA to appear again
-                            is_selected_elsewhere = True
+                        # if cid != 0: # REMOVED: Treat all candidates (inc ID 0) as unique choices
+                        is_selected_elsewhere = True
                 
                 if not is_selected_elsewhere:
                     available_candidates.append(cand)
@@ -196,8 +203,9 @@ class VotingApp:
             frame_pady = 6
 
         for idx, cand in enumerate(available_candidates):
-            if cand['id'] == 0:
-                cand_text = cand['name'] # Just "None of the Above..."
+            is_nota = (cand['name'] == "NAFS")
+            if is_nota:
+                cand_text = "None of the Above (NOTA)" # Rename for display if desired, or keep "NAFS"
             else:
                 cand_text = f"{cand['id']}. {cand['name']}"
             
@@ -205,7 +213,7 @@ class VotingApp:
                 cand_text += f"\n{cand['candidate_number']}"
             
             fg_color = "black"
-            if cand['id'] == 0: 
+            if is_nota: 
                 fg_color = "#D32F2F"
 
             # Frame to hold the button for spacing
@@ -393,10 +401,11 @@ class VotingApp:
 
             # Helper to find candidate by ID
             def get_cand_display(cid):
-                if cid == 0: return "NOTA"
+                # if cid == 0: return "NOTA" # OLD Logic
                 for c in self.candidates_base:
                     if c['id'] == cid:
-                        return c.get('candidate_number', str(cid)) # Use candidate_number if available
+                        if c['name'] == "NAFS": return "NOTA"
+                        return c.get('candidate_number', str(cid))
                 return str(cid)
 
             if mode == 'normal':
