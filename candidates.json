@@ -1,56 +1,28 @@
 {
-    "election_id": "ST-GEN-2026",
-    "hash_string": "['d52c350d91e177821eb9b8a4fde7ab15e1bd3c8ddae7cab907477ff0406cde58', '682969dbae23cefdb7dbfc1e702aee75c651cadf45e4e5cfcf56f338456016eb', '5996eeae0f57dce226bc5cc54b8e0478be473a72e71d7ed15a1d841d6fa251ae'], [1, [9675193489324612290618737214271204243551075771712776516479122363912806467947, 5023459185892836823079927140434613210856695383844001564194953441874592500120]]]",
-    "candidates": [
-        {
+    "election_id": "1",
+    "election_name": "Student Council",
+    "hash_string": "'[[\"d618d908eacb6fa43f28c627fabb492d432eb43d601a3c0963e748b0178629ad\", \"49a7c2cbe199497023b94bda4efb33a6e15effe17e5563f423503e05f12cbde1\", \"e4f0f24bf5e2e1dfb3a467819b39c95e037e2c6b2faffe403c3dfd7ad14b0286\", \"e5abf187c7f1c33b40881774d89b80e89a7e651051f91e8b5a3f4f7e789f524a\"], [1, \"[7843901705889157855030183509219937208058978663083704502957876214011927609198, 14815156419145346489492942119494738359375770505643515459839277797820291735746]\"]]'",
+    "candidates": {
+        "0": {
+            "candidate_number": "0",
             "serial_id": 1,
-            "candidate_name": "Aman Gupta",
-            "candidate_number": "A7K9M2Q4P"
+            "candidate_name": "Bob"
         },
-        {
+        "1": {
+            "candidate_number": "1",
             "serial_id": 2,
-            "candidate_name": "Riya Sharma",
-            "candidate_number": "R3T8L9Z2X"
+            "candidate_name": "Carol"
         },
-        {
+        "2": {
+            "candidate_number": "2",
             "serial_id": 3,
-            "candidate_name": "Mohit Verma",
-            "candidate_number": "M5N8C2A7K"
+            "candidate_name": "NAFS"
         },
-        {
-            "serial_id": 4,
-            "candidate_name": "Priya Singh",
-            "candidate_number": "P9Q4S6L8R"
-        },
-        {
-            "serial_id": 5,
-            "candidate_name": "Karan Mehta",
-            "candidate_number": "K2A9M7T5X"
-        },
-        {
-            "serial_id": 6,
-            "candidate_name": "Sneha Iyer",
-            "candidate_number": "S8R2LQ9P4"
-        },
-        {
-            "serial_id": 7,
-            "candidate_name": "Vikram Patel",
-            "candidate_number": "V6M9A4K2T"
-        },
-        {
-            "serial_id": 8,
-            "candidate_name": "Neha Kulkarni",
-            "candidate_number": "N7P8R2S5L"
-        },
-        {
-            "serial_id": 9,
-            "candidate_name": "Tanmay Joshi",
-            "candidate_number": "T4K9M2A8R"
-        },
-        {
-            "serial_id": 10,
-            "candidate_name": "Lavanya Rao",
-            "candidate_number": "L2S7P9Q4M"
+        "3": {
+            "candidate_number": "3",
+            "serial_id": 0,
+            "candidate_name": "Alice"
         }
-    ]
-}
+    },
+    "ballot_id": "'[5549241329260737936417473902402222012740157918840958019921904146718926145133, \"[11877044812650652612342623207225745413221878747486708042442046809633377736395, 7102630166116366456318965403443448843778601163072726249794196046727191226851]\", \"[15920384933094099565352024306825070604715884634661436250178886729789388745814, 13408944264674178018601786297711356733629219643663145700077423496081928958991]\"]'"
+} 
