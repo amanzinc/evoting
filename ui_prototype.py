@@ -208,10 +208,10 @@ class VotingApp:
 
         for idx, cand in enumerate(available_candidates):
             is_nota = (cand['name'] == "NAFS")
-            if is_nota:
-                cand_text = "None of the Above (NOTA)" # Rename for display if desired, or keep "NAFS"
-            else:
-                cand_text = f"{cand['id']}. {cand['name']}"
+            # if is_nota:
+            #     cand_text = "None of the Above (NOTA)" # Rename for display if desired, or keep "NAFS"
+            # else:
+            cand_text = f"{cand['id']}. {cand['name']}"
             
             if cand.get('candidate_number'):
                 cand_text += f"\n{cand['candidate_number']}"
@@ -408,7 +408,7 @@ class VotingApp:
                 # if cid == 0: return "NOTA" # OLD Logic
                 for c in self.candidates_base:
                     if c['id'] == cid:
-                        if c['name'] == "NAFS": return "NOTA"
+                        # if c['name'] == "NAFS": return "NOTA" # Removed: User wants NAFS
                         return c.get('candidate_number', str(cid))
                 return str(cid)
 
