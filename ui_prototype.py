@@ -141,6 +141,12 @@ class VotingApp:
         self.voting_mode = 'preferential'
         self.selections = {}
         self.current_rank = 1
+        
+        # Max Ranks = Total Candidates - 1 (Users shouldn't be forced to rank everyone, but max depth is N-1)
+        # Actually, if we have N candidates, we can rank up to N or N-1.
+        # User specified: "number of preferences have to be number of candidates -1"
+        self.max_ranks = max(1, len(self.candidates_base) - 1)
+        
         self.show_selection_screen()
 
     def show_selection_screen(self):
