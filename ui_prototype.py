@@ -46,7 +46,7 @@ class VotingApp:
         self.selections = {} # Dictionary to store {rank: candidate_id}
         
         self.main_container = tk.Frame(self.root, bg="#ffffff")
-        self.main_container.pack(fill=t...,,k.BOTH, expand=True)
+        self.main_container.pack(fill=tk.BOTH, expand=True)
 
         # Connect to Printer (Singleton)
         self.printer = None
