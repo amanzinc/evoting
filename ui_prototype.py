@@ -46,7 +46,7 @@ class VotingApp:
         self.selections = {} # Dictionary to store {rank: candidate_id}
         
         self.main_container = tk.Frame(self.root, bg="#ffffff")
-        self.main_container.pack(fill=tk.BOTH, expand=True)
+        self.main_container.pack(fill=t...,,k.BOTH, expand=True)
 
         # Connect to Printer (Singleton)
         self.printer = None
@@ -76,7 +76,13 @@ class VotingApp:
                 self.election_id = data.get("election_id", "")
                 self.election_hash = data.get("hash_string", "")
                 
-                for cand in data.get("candidates", []):
+                candidates_data = data.get("candidates", [])
+                if isinstance(candidates_data, dict):
+                    candidates_list = candidates_data.values()
+                else:
+                    candidates_list = candidates_data
+
+                for cand in candidates_list:
                     # Ensure properly typed dictionary
                     self.candidates_base.append({
                         "id": int(cand["serial_id"]),
