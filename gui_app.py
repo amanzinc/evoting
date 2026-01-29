@@ -462,7 +462,7 @@ class VotingApp:
             
             # Show Serial ID (The number displayed on the ballot)
             serial_num = str(cand['id'])
-            tk.Label(f, text=f"Serial No: {serial_num}", font=('Helvetica', 28, 'bold'), bg="#e8f5e9", fg="#333").pack()
+            tk.Label(f, text=f"Choice: {serial_num}", font=('Helvetica', 28, 'bold'), bg="#e8f5e9", fg="#333").pack()
             tk.Label(f, text=cand['name'], font=('Helvetica', 22), bg="#e8f5e9").pack(pady=5)
         else:
             for rank in range(1, self.max_ranks + 1):
@@ -500,7 +500,8 @@ class VotingApp:
         def get_cand_display(cid):
             cand = self.data_handler.get_candidate_by_id(cid)
             if cand:
-                return cand.get('candidate_number', str(cid))
+                # User wants Serial Number (ID) + Name on receipt
+                return f"{cand['id']}. {cand['name']}"
             return str(cid)
 
         # Prepare strings

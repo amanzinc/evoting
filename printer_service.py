@@ -235,7 +235,7 @@ class PrinterService:
                 p.set(align='left', bold=False)
                 p.text(f"Ballot: {r['ballot_id']}\n")
                 p.set(align='left', bold=True)
-                p.text(f"Vote  : {r['choice_str']}\n")
+                p.text(f"Choice: {r['choice_str']}\n")
                 p.set(align='left', bold=False)
                 
                 # VVPAT Internal QR
@@ -248,8 +248,8 @@ class PrinterService:
                 
                 p.text(DIVIDER + "\n")
 
-            p.text("\n- CUT HERE -\n")
-            p.cut() # Cut VVPAT strip
+            p.text("\n- TEAR HERE -\n\n\n\n")
+            # p.cut() # NO AUTO CUTTER
             
             # ==============================
             # PART 2: CONSOLIDATED VOTER
@@ -267,7 +267,7 @@ class PrinterService:
                 p.set(align='left', bold=True)
                 p.text(f"#{i+1}: {r.get('election_id', '???')}\n")
                 p.set(align='left', bold=False)
-                p.text(f"Choice : {r['choice_str']}\n")
+                p.text(f"Choice: {r['choice_str']}\n")
                 
                 # Voter Hash QR
                 hash_val = r.get('election_hash', 'N/A')
@@ -279,8 +279,8 @@ class PrinterService:
                 
                 p.text(DIVIDER + "\n")
             
-            p.text("Keep Safe\n")
-            p.cut() # Cut Voter Receipt strip
+            p.text("Keep Safe\n\n\n\n\n")
+            # p.cut() # NO AUTO CUTTER
             
         except Exception as e:
             print(f"Batch Print Error: {e}")
