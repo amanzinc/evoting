@@ -183,13 +183,12 @@ class VotingApp:
             self.election_queue = [] 
 
         if not self.election_queue:
-            # If no elections specified, perhaps fallback to legacy 'candidates.json' ?
-            # For now, let's assume we proceed to the "general" session if queue is empty? 
-            # Or assume the 'candidates.json' in root is the default.
-            self.current_election_id = None
-            self.show_mode_selection_screen()
-        else:
-            self.start_next_election()
+            # STRICT MODE: If token has no elections, Access Denied.
+            print("❌ No elections found in token vector.")
+            self.show_rfid_error("Access Denied\nNo valid elections found for this voter.")
+            return
+
+        self.start_next_election()
 
     def start_next_election(self):
         if not self.election_queue:
