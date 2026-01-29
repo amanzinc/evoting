@@ -143,29 +143,87 @@ class VotingApp:
 
     def skip_rfid_check(self):
         self.stop_scanning = True
-        self.on_card_scanned('{"token_id": "SKIPPED_DEV_MODE"}')
+        # Simulate Multi-Election Token
+        payload = '{"token_id": "DEV_SKIP_' + str(int(time.time())) + '", "eid_vector": "E1;E3;E6"}'
+        self.on_card_scanned(payload)
 
     def on_card_scanned(self, token_payload):
-        # 1. Parse Token ID
+        # 1. Parse Token ID & EID Vector
         import json
         token_id = token_payload
+        eid_vector_str = ""
+        
         try:
             data = json.loads(token_payload)
             if 'token_id' in data:
                 token_id = data['token_id']
+            if 'eid_vector' in data:
+                eid_vector_str = data['eid_vector']
         except:
             pass
             
         # 2. Check Verification
         if self.data_handler.is_token_used(token_id):
             print(f"❌ Token {token_id} already used!")
-            # Show Error Overlay then restart scan
             self.show_rfid_error("Token Already Used\nVoter has already cast a vote.")
             return
 
         self.active_token = token_payload
-        # Proceed to Normal Flow
+        
+        # 3. Setup Election Queue
+        if eid_vector_str:
+            # Parse "E1;E3;E6" -> ["E1", "E3", "E6"]
+            # Clean up whitespace and empty strings
+            self.election_queue = [e.strip() for e in eid_vector_str.split(';') if e.strip()]
+        else:
+            # Fallback if no vector provided (e.g. legacy card or dev skip)
+            # We can define a default or assume single legacy mode
+            self.election_queue = [] 
+
+        if not self.election_queue:
+            # If no elections specified, perhaps fallback to legacy 'candidates.json' ?
+            # For now, let's assume we proceed to the "general" session if queue is empty? 
+            # Or assume the 'candidates.json' in root is the default.
+            self.current_election_id = None
+            self.show_mode_selection_screen()
+        else:
+            self.start_next_election()
+
+    def start_next_election(self):
+        if not self.election_queue:
+            # Queue Done -> Finish Session
+            self.finish_voter_session()
+            return
+
+        # Pop next election
+        self.current_election_id = self.election_queue.pop(0)
+        print(f"Starting Election Context: {self.current_election_id}")
+        
+        # Start Session for this election
+        self.start_session(self.current_election_id)
+        
+        # Show Mode Selection for this election
         self.show_mode_selection_screen()
+
+    def finish_voter_session(self):
+        """Called when all eligible elections are completed."""
+        # Log Token (Only ONCE at the end? Or per vote? Spec says log token after vote.)
+        # Current logic logs token after EACH vote. 
+        # But wait, if we have duplicate check, we can't log token twice...
+        # Actually duplicate check is is_token_used(id). 
+        # If we log E1, then E3 will be blocked?
+        # NO. We verify token at START of session.
+        # We should log the token only once at the END or update logic to allow multi-use within session?
+        # The simplest approach: Log token at the very end of the session.
+        
+        if self.active_token:
+            self.data_handler.log_token(self.active_token)
+            
+        messagebox.showinfo("Session Complete", "Thank you for voting in all elections!")
+        
+        self.active_token = None
+        self.current_election_id = None
+        self.show_rfid_screen()
 
     def show_rfid_error(self, message):
         self.clear_container()
@@ -179,15 +237,15 @@ class VotingApp:
         tk.Label(frame, text="(Resetting in 3 seconds...)", font=('Helvetica', 16), bg="#FFEBEE", fg="#777").pack(pady=40)
         self.root.after(3000, self.show_rfid_screen)
 
-    def start_session(self):
+    def start_session(self, election_id=None):
         """Fetches a fresh ballot for the new session."""
         try:
-            new_id, new_file = self.ballot_manager.get_unused_ballot()
-            print(f"Starting Session with Ballot ID: {new_id}")
+            new_id, new_file = self.ballot_manager.get_unused_ballot(election_id)
+            print(f"Starting Session for {election_id} with Ballot ID: {new_id}")
             self.data_handler.set_ballot_file(new_file)
         except Exception as e:
             print(f"Failed to load new ballot: {e}")
-            messagebox.showerror("Ballot Error", f"Could not load new ballot: {e}")
+            messagebox.showerror("Ballot Error", f"Could not load new ballot for {election_id}: {e}")
 
     def show_mode_selection_screen(self):
         self.clear_container()
@@ -454,17 +512,14 @@ class VotingApp:
                 try:
                     vote_data = {'selections': self.selections}
                     self.data_handler.save_vote(vote_data, self.voting_mode)
-                    self.ballot_manager.mark_as_used(self.data_handler.ballot_id) 
                     
-                    # LOG TOKEN (New)
-                    if self.active_token:
-                        self.data_handler.log_token(self.active_token)
+                    # Mark ballot as used for this election
+                    self.ballot_manager.mark_as_used(self.data_handler.ballot_id, self.current_election_id)
                     
                     messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
                     
-                    # Instead of showing mode selection, we go back to Card Scan screen (Full Loop)
-                    self.active_token = None
-                    self.show_rfid_screen()
+                    # Proceed to Next Election in Queue (or Finish)
+                    self.start_next_election()
                     
                 except Exception as e:
                     messagebox.showerror("System Error", f"Vote printed but failed to save: {e}")
