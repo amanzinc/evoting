@@ -12,3 +12,4 @@ Desktop.ini
 # Logs and Temp
 *.log
 tmp/
+__pycache__/
