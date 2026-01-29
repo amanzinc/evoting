@@ -231,7 +231,7 @@ class PrinterService:
             
             for i, r in enumerate(receipts_list):
                 p.set(align='left', bold=True)
-                p.text(f"#{i+1}: {r['election_name']}\n")
+                p.text(f"#{i+1}: {r.get('election_id', '???')}\n")
                 p.set(align='left', bold=False)
                 p.text(f"Ballot: {r['ballot_id']}\n")
                 p.set(align='left', bold=True)
@@ -248,7 +248,7 @@ class PrinterService:
                 
                 p.text(DIVIDER + "\n")
 
-            p.text("\n- - - - - CUT HERE - - - - -\n\n")
+            p.text("\n- CUT HERE -\n")
             p.cut() # Cut VVPAT strip
             
             # ==============================
@@ -265,13 +265,11 @@ class PrinterService:
             
             for i, r in enumerate(receipts_list):
                 p.set(align='left', bold=True)
-                p.text(f"#{i+1}: {r['election_name']}\n")
+                p.text(f"#{i+1}: {r.get('election_id', '???')}\n")
                 p.set(align='left', bold=False)
                 p.text(f"Choice : {r['choice_str']}\n")
                 
                 # Voter Hash QR
-                # We can generate a combined hash or individual hashes?
-                # Using individual for traceability.
                 hash_val = r.get('election_hash', 'N/A')
                 temp_qr_v = self._generate_voter_qr(hash_val)
                 
@@ -281,8 +279,7 @@ class PrinterService:
                 
                 p.text(DIVIDER + "\n")
             
-            p.text("\nKeep this slip safe.\n")
-            p.text("\n\n")
+            p.text("\nKeep Safe\n")
             p.cut() # Cut Voter Receipt strip
             
         except Exception as e:

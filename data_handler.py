@@ -97,28 +97,40 @@ class DataHandler:
         except Exception as e:
             print(f"Error logging token: {e}")
 
-    def save_vote(self, vote_data, voting_mode):
+    def generate_vote_rows(self, vote_data, voting_mode):
+        """Generates the CSV rows for a vote based on CURRENT context."""
+        timestamp = vote_data.get('timestamp')
+        import datetime
+        if not timestamp:
+            timestamp = datetime.datetime.now().isoformat()
+        
+        selections = vote_data.get('selections', {})
+        rows = []
+        
+        if voting_mode == 'normal':
+            cid = selections.get(1)
+            cand = self.get_candidate_by_id(cid)
+            if cand:
+                rows.append([timestamp, voting_mode, 1, cid, cand['name']])
+        else:
+            for rank, cid in selections.items():
+                cand = self.get_candidate_by_id(cid)
+                if cand:
+                    rows.append([timestamp, voting_mode, rank, cid, cand['name']])
+        return rows
+
+    def save_rows(self, rows):
+        """Writes pre-generated rows to the log file."""
         try:
-            timestamp = vote_data.get('timestamp')
-            import datetime
-            if not timestamp:
-                timestamp = datetime.datetime.now().isoformat()
-            
-            selections = vote_data.get('selections', {})
-            
             with open(self.log_file, "a", newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                if voting_mode == 'normal':
-                    cid = selections.get(1)
-                    cand = self.get_candidate_by_id(cid)
-                    if cand:
-                        writer.writerow([timestamp, voting_mode, 1, cid, cand['name']])
-                else:
-                    for rank, cid in selections.items():
-                        cand = self.get_candidate_by_id(cid)
-                        if cand:
-                            writer.writerow([timestamp, voting_mode, rank, cid, cand['name']])
-            print("Vote saved to log.")
+                writer.writerows(rows)
+            print("Votes committed to log.")
         except Exception as e:
-            print(f"Error saving vote: {e}") 
+            print(f"Error saving rows: {e}")
             raise e
+
+    def save_vote(self, vote_data, voting_mode):
+        """Legacy convenience method."""
+        rows = self.generate_vote_rows(vote_data, voting_mode)
+        self.save_rows(rows)

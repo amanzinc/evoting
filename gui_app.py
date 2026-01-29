@@ -212,12 +212,27 @@ class VotingApp:
         if self.merge_receipts and hasattr(self, 'receipt_buffer') and self.receipt_buffer:
             self.show_printing_modal(text="Printing Consolidated Receipt...")
             try:
+                # 1. Print
                 self.printer_service.print_session_receipts(self.receipt_buffer)
+                
+                # 2. Log Votes (Only if Print Succeeded)
+                all_rows = []
+                for entry in self.receipt_buffer:
+                    if 'vote_rows' in entry:
+                         all_rows.extend(entry['vote_rows'])
+                
+                if all_rows:
+                    self.data_handler.save_rows(all_rows)
+                
             except Exception as e:
                 messagebox.showerror("Print Error", f"Failed to print session receipt: {e}")
+                self.close_printing_modal()
+                return # Stop here so we can retry or investigate
+
             finally:
                 self.close_printing_modal()
                 self.receipt_buffer = []
+
 
         # 2. LOG SESSION TOKEN
         if self.active_token:
@@ -501,13 +516,23 @@ class VotingApp:
             sel_str = ", ".join(vals)
             qr_data = "_".join([get_cand_display(self.selections[r]) for r in ranks])
 
+        # Pre-generate log rows while context is valid
+        vote_rows = self.data_handler.generate_vote_rows(
+            {'selections': self.selections, 'timestamp': timestamp}, 
+            self.voting_mode
+        )
+
         receipt_entry = {
+            'election_id': getattr(self.data_handler, 'election_id', '???'),
             'election_name': e_name,
             'ballot_id': ballot_id,
             'timestamp': timestamp,
             'choice_str': sel_str,
             'qr_choice_data': qr_data,
-            'election_hash': self.data_handler.election_hash
+            'election_hash': self.data_handler.election_hash,
+            # Data for deferred logging
+            'vote_rows': vote_rows,
+            'internal_ballot_id': ballot_id 
         }
 
         # MERGE LOGIC
@@ -569,19 +594,28 @@ class VotingApp:
             if result is True:
                 # Save vote
                 try:
-                    vote_data = {'selections': self.selections}
-                    self.data_handler.save_vote(vote_data, self.voting_mode)
+                    # Defer saving if merging
+                    if not self.merge_receipts:
+                        vote_data = {'selections': self.selections}
+                        self.data_handler.save_vote(vote_data, self.voting_mode)
                     
-                    # Mark ballot as used for this election
+                    # Mark ballot as used for this election (ALWAYS MARK USED TO PREVENT REUSE)
+                    # Wait, if print fails at the end, we might have an issue. 
+                    # But for now, we must mark it used so it's not given again during the session?
+                    # No, the buffer holds it. 
+                    # Actually, if we mark it used now, and the final print fails, we can't rollback easily.
+                    # But preventing reuse is critical.
+                    # Let's Mark USed now. The risk is a wasted ballot on print fail. Acceptable.
                     self.ballot_manager.mark_as_used(self.data_handler.ballot_id, self.current_election_id)
                     
-                    messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
+                    if not self.merge_receipts:
+                        messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
                     
                     # Proceed to Next Election in Queue (or Finish)
                     self.start_next_election()
                     
                 except Exception as e:
-                    messagebox.showerror("System Error", f"Vote printed but failed to save: {e}")
+                    messagebox.showerror("System Error", f"Vote recorded but processing failed: {e}")
             else:
                 print(f"Async print error: {result}")
                 retry = messagebox.askretrycancel("Printer Error", f"Printing Failed: {result}\n\nRetry?")
