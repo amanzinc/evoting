@@ -279,7 +279,7 @@ class PrinterService:
                 
                 p.text(DIVIDER + "\n")
             
-            p.text("\nKeep Safe\n")
+            p.text("Keep Safe\n")
             p.cut() # Cut Voter Receipt strip
             
         except Exception as e:
