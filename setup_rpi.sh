@@ -22,7 +22,12 @@ sudo apt-get install -y python3-tk unclutter git python3-pip libjpeg-dev zlib1g-
 echo "[*] Installing Python libraries (escpos)..."
 # Get the absolute path of the current directory (project root)
 PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# Install project requirements
 pip3 install -r "$PROJECT_DIR/requirements.txt" --break-system-packages
+
+# Install RFID & Crypto Dependencies explicitly if not in requirements
+echo "[*] Installing RFID & Crypto modules..."
+pip3 install adafruit-circuitpython-pn532 adafruit-blinka RPi.GPIO cryptography --break-system-packages
 
 # 3. Configure Screen Blanking (Disable Sleep)
 echo "[*] Disabling screen blanking (Sleep Mode)..."
