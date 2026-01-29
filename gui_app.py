@@ -52,18 +52,44 @@ class VotingApp:
         self.clear_container()
         self.active_token = None
         
-        frame = tk.Frame(self.main_container, bg="white")
+        # Background
+        frame = tk.Frame(self.main_container, bg="black") # Dark bg for image
         frame.pack(expand=True, fill=tk.BOTH)
         
-        tk.Label(frame, text="Welcome to E-Voting", font=('Helvetica', 32, 'bold'), bg="white", fg="#1976D2").pack(pady=(150, 20))
-        tk.Label(frame, text="Please Place Your Voting Card on the Reader", font=('Helvetica', 24), bg="white", fg="#555").pack(pady=20)
+        try:
+            from PIL import Image, ImageTk
+            
+            # Load Image
+            img_path = "scan_card_bg.png"
+            pil_image = Image.open(img_path)
+            
+            # Resize logic (Aspect Ratio)
+            screen_w = self.root.winfo_screenwidth()
+            screen_h = self.root.winfo_screenheight()
+            
+            # Use a slightly smaller area to leave room for buttons if needed
+            target_w = screen_w
+            target_h = screen_h
+            
+            # Resize
+            pil_image = pil_image.resize((target_w, target_h), Image.Resampling.LANCZOS)
+            
+            self.rfid_bg_image = ImageTk.PhotoImage(pil_image) # Keep reference
+            
+            # Image Label
+            img_label = tk.Label(frame, image=self.rfid_bg_image, bg="black")
+            img_label.place(x=0, y=0, relwidth=1, relheight=1)
+            
+        except Exception as e:
+            print(f"Image Load Error: {e}")
+            tk.Label(frame, text="Please Scan Card", font=('Helvetica', 32), fg="white", bg="black").pack(expand=True)
+
+        # Overlay Status Label (Bottom Center)
+        self.rfid_status_label = tk.Label(frame, text="Waiting for Card...", font=('Helvetica', 16, 'italic'), bg="#333", fg="#fff", padx=20, pady=5)
+        self.rfid_status_label.place(relx=0.5, rely=0.9, anchor=tk.CENTER)
         
-        # Status Label
-        self.rfid_status_label = tk.Label(frame, text="Scanning...", font=('Helvetica', 18, 'italic'), bg="white", fg="#999")
-        self.rfid_status_label.pack(pady=40)
-        
-        # Dev Skip Button
-        tk.Button(frame, text="[DEV] Skip Check", font=('Helvetica', 12), command=self.skip_rfid_check, bg="#eee").pack(pady=20)
+        # Dev Skip Button (Top Right, discreet)
+        tk.Button(frame, text="[DEV] Skip", font=('Helvetica', 10), command=self.skip_rfid_check, bg="#444", fg="white").place(relx=0.95, rely=0.05, anchor=tk.NE)
         
         # Start Scanning Thread
         self.stop_scanning = False
