@@ -269,7 +269,7 @@ class VotingApp:
         tk.Button(btn_frame, text="Exit App", font=('Helvetica', 14), command=self.exit_app).pack(pady=10)
 
     def start_normal_voting(self):
-        self.start_session()
+        # self.start_session() # Already started in start_next_election
         self.voting_mode = 'normal'
         self.pv_mode_2 = False
         self.selections = {}
@@ -277,7 +277,7 @@ class VotingApp:
         self.show_selection_screen()
 
     def start_preferential_voting(self):
-        self.start_session()
+        # self.start_session()
         self.voting_mode = 'preferential'
         self.pv_mode_2 = False
         self.selections = {}
@@ -286,7 +286,7 @@ class VotingApp:
         self.show_selection_screen()
 
     def start_preferential_voting_2(self):
-        self.start_session()
+        # self.start_session()
         self.voting_mode = 'preferential'
         self.pv_mode_2 = True
         self.selections = {}
