@@ -55,14 +55,44 @@ class DataHandler:
     def get_candidate_by_id(self, cid):
         return next((c for c in self.candidates_base if c['id'] == cid), None)
 
-    def log_token(self, token):
-        """Logs the authenticated token to tokens.log."""
+    def is_token_used(self, token_id):
+        """Checks if the token_id has already been logged."""
+        if not os.path.exists("tokens.log"):
+            return False
+            
+        try:
+            with open("tokens.log", "r", encoding='utf-8') as f:
+                for line in f:
+                    # Format: Timestamp,TokenID
+                    parts = line.strip().split(',')
+                    if len(parts) >= 2:
+                        logged_id = parts[1].strip()
+                        if logged_id == str(token_id):
+                            return True
+            return False
+        except Exception as e:
+            print(f"Error checking token log: {e}")
+            return False
+
+    def log_token(self, token_payload):
+        """Logs the authenticated token ID to tokens.log."""
         try:
             import datetime
+            import json
+            
+            # Extract simple ID if possible
+            token_id = token_payload
+            try:
+                data = json.loads(token_payload)
+                if 'token_id' in data:
+                    token_id = data['token_id']
+            except:
+                pass # Use full string if not JSON
+
             timestamp = datetime.datetime.now().isoformat()
             with open("tokens.log", "a", encoding='utf-8') as f:
-                f.write(f"{timestamp},{token}\n")
-            print(f"Token logged: {token}")
+                f.write(f"{timestamp},{token_id}\n")
+            print(f"Token Logged: {token_id}")
         except Exception as e:
             print(f"Error logging token: {e}")
 

@@ -129,12 +129,41 @@ class VotingApp:
 
     def skip_rfid_check(self):
         self.stop_scanning = True
-        self.on_card_scanned("SKIPPED_DEV_MODE")
+        self.on_card_scanned('{"token_id": "SKIPPED_DEV_MODE"}')
 
-    def on_card_scanned(self, token):
-        self.active_token = token
+    def on_card_scanned(self, token_payload):
+        # 1. Parse Token ID
+        import json
+        token_id = token_payload
+        try:
+            data = json.loads(token_payload)
+            if 'token_id' in data:
+                token_id = data['token_id']
+        except:
+            pass
+            
+        # 2. Check Verification
+        if self.data_handler.is_token_used(token_id):
+            print(f"❌ Token {token_id} already used!")
+            # Show Error Overlay then restart scan
+            self.show_rfid_error("Token Already Used\nVoter has already cast a vote.")
+            return
+
+        self.active_token = token_payload
         # Proceed to Normal Flow
         self.show_mode_selection_screen()
+
+    def show_rfid_error(self, message):
+        self.clear_container()
+        frame = tk.Frame(self.main_container, bg="#FFEBEE") # Reddish bg
+        frame.pack(expand=True, fill=tk.BOTH)
+        
+        tk.Label(frame, text="❌ Access Denied", font=('Helvetica', 32, 'bold'), bg="#FFEBEE", fg="#D32F2F").pack(pady=(150, 20))
+        tk.Label(frame, text=message, font=('Helvetica', 24), bg="#FFEBEE", fg="#555").pack(pady=20)
+        
+        # Auto-retry after 3 seconds
+        tk.Label(frame, text="(Resetting in 3 seconds...)", font=('Helvetica', 16), bg="#FFEBEE", fg="#777").pack(pady=40)
+        self.root.after(3000, self.show_rfid_screen)
 
     def start_session(self):
         """Fetches a fresh ballot for the new session."""
