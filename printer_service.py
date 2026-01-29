@@ -31,7 +31,7 @@ class PrinterService:
         else:
              print("escpos library not available.")
 
-    def print_vote(self, mode, selections):
+    def print_vote(self, mode, selections, is_final=True):
         """
         Synchronous print function. 
         Returns True if successful, raises Exception if failed.
@@ -136,7 +136,11 @@ class PrinterService:
             p.text(BOTTOM_BAR + "\n")
             p.text("Keep this receipt safe.\n")
             p.text("\n")
-            p.cut()
+            
+            if is_final:
+                p.cut()
+            else:
+                p.text("\n\n\n\n_ _ _ _ NEXT ELECTION _ _ _ _\n\n\n")
             
             return True
 

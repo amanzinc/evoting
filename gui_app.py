@@ -28,7 +28,8 @@ class VotingApp:
         self.pv_mode_2 = False
         self.max_ranks = 3
         self.current_rank = 1
-        self.selections = {} 
+        self.selections = {}
+        self.merge_receipts = True # Temporary flag for merged printing 
 
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
@@ -474,14 +475,19 @@ class VotingApp:
         self.show_printing_modal()
         self.print_queue = queue.Queue()
         
-        def printer_worker(mode, sel):
+        # Check if this is the final receipt
+        is_final = True
+        if self.merge_receipts and self.election_queue:
+            is_final = False
+
+        def printer_worker(mode, sel, final_flag):
             try:
-                self.printer_service.print_vote(mode, sel)
+                self.printer_service.print_vote(mode, sel, is_final=final_flag)
                 self.print_queue.put(True)
             except Exception as e:
                 self.print_queue.put(e)
 
-        self.print_thread = threading.Thread(target=printer_worker, args=(self.voting_mode, self.selections))
+        self.print_thread = threading.Thread(target=printer_worker, args=(self.voting_mode, self.selections, is_final))
         self.print_thread.daemon = True
         self.print_thread.start()
 
