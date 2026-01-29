@@ -29,10 +29,12 @@ This project is a Python-based prototype for a Ballot Marking Device (BMD), desi
 
 ## Project Layout
 
-- `ui_prototype.py`: Main application script containing UI, voting logic, and print orchestration.
-- `candidates.json`: Dictionary-based configuration file defining candidates (keys "0", "1"... mapped to details).
+- `main.py`: Entry point for the application.
+- `gui_app.py`: Handles the User Interface and voting flow logic.
+- `data_handler.py`: Manages file I/O for `candidates.json` and `votes.log`.
+- `printer_service.py`: Handles interaction with the thermal printer and receipt generation.
+- `candidates.json`: Dictionary-based configuration file defining candidates.
 - `votes.log`: Audit log where votes are recorded.
-- `print.py`: Utility module for printer testing/setup.
 
 ## Setup and Usage
 
@@ -52,7 +54,7 @@ This project is a Python-based prototype for a Ballot Marking Device (BMD), desi
     ```
 3.  Run the application:
     ```bash
-    python ui_prototype.py
+    python main.py
     ```
 
 ### Configuring Candidates (`candidates.json`)
