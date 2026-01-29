@@ -185,7 +185,7 @@ class VotingApp:
                 if selected_rank is not None and cand['name'] != "NAFS":
                     state_val = tk.DISABLED
                     fg_color = "grey"
-                    cand_text += f" (Selected as Preference {selected_rank})"
+                    cand_text += f" (Pref {selected_rank})"
 
             tk.Radiobutton(
                 frame, text=cand_text, variable=self.current_selection_var, value=cand['id'],
