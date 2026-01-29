@@ -5,10 +5,11 @@ import queue
 import datetime
 
 class VotingApp:
-    def __init__(self, root, data_handler, printer_service):
+    def __init__(self, root, data_handler, printer_service, ballot_manager):
         self.root = root
         self.data_handler = data_handler
         self.printer_service = printer_service
+        self.ballot_manager = ballot_manager
         
         self.root.title("Ballot Marking Device")
         self.root.attributes('-fullscreen', True)
@@ -36,6 +37,25 @@ class VotingApp:
 
         self.show_mode_selection_screen()
 
+    def load_new_ballot(self):
+        """Fetches a fresh ballot from the manager and reloads data."""
+        try:
+            new_id, new_file = self.ballot_manager.get_unused_ballot()
+            print(f"Loading New Ballot ID: {new_id}")
+            
+            # Mark Used immediately on issue
+            self.ballot_manager.mark_as_used(new_id)
+            
+            # Switch Data
+            self.data_handler.set_ballot_file(new_file)
+            
+            # Printer Service already refers to data_handler, so it picks up new ID automatically via data_handler.ballot_id
+            
+        except Exception as e:
+            print(f"Failed to load new ballot: {e}")
+            messagebox.showerror("Ballot Error", f"Could not load new ballot: {e}")
+            # Potentially lock UI or retry
+
     def clear_container(self):
         for widget in self.main_container.winfo_children():
             widget.destroy()
@@ -45,6 +65,9 @@ class VotingApp:
         header = tk.Frame(self.main_container, bg="#f0f0f0", pady=15)
         header.pack(fill=tk.X)
         tk.Label(header, text="Dev Mode: Select Voting Type", font=('Helvetica', 24, 'bold'), bg="#f0f0f0").pack()
+        
+        # Display Current Ballot ID
+        tk.Label(header, text=f"Ballot ID: {self.data_handler.ballot_id}", font=('Helvetica', 12, 'bold'), bg="#f0f0f0", fg="#555").pack()
 
         content = tk.Frame(self.main_container, bg="white")
         content.pack(expand=True)
@@ -304,6 +327,11 @@ class VotingApp:
                 try:
                     vote_data = {'selections': self.selections}
                     self.data_handler.save_vote(vote_data, self.voting_mode)
+                    
+                    # --- NEW: Rotate Ballot ---
+                    # Only cycle if success
+                    self.load_new_ballot() 
+                    
                     messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
                     self.show_mode_selection_screen()
                 except Exception as e:

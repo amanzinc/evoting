@@ -12,6 +12,11 @@ class DataHandler:
         self.ballot_id = "" # Store the specific ballot ID
         self.candidates_base = []
 
+    def set_ballot_file(self, new_file):
+        """Switches to a new ballot file and reloads candidates."""
+        self.candidates_file = new_file
+        self.load_candidates()
+
     def load_candidates(self):
         """Loads candidates from the specific ballot/candidate file."""
         self.candidates_base = []
@@ -58,10 +63,6 @@ class DataHandler:
                 timestamp = datetime.datetime.now().isoformat()
             
             selections = vote_data.get('selections', {})
-            
-            # Include Ballot ID in log if desired, though not strictly in CSV format previously. 
-            # Keeping CSV format same for compatibility, but we might want to log it.
-            # writer.writerow([timestamp, voting_mode, rank, cid, cand['name'], self.ballot_id]) # Future enhancement
             
             with open(self.log_file, "a", newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)

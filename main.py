@@ -41,7 +41,7 @@ def main():
         print(f"Critical Startup Error: {e}")
         return
 
-    app = VotingApp(root, data_handler, printer_service)
+    app = VotingApp(root, data_handler, printer_service, bm)
     root.mainloop()
 
 if __name__ == "__main__":
