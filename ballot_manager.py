@@ -14,8 +14,9 @@ class BallotManager:
         self.ballots_dir = ballots_dir
         self.ballots = {} # Legacy cache
         
-        # Multi-Election Root
-        self.elections_root = "elections"
+        # Multi-Election Root (Absolute Path)
+        self.base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.elections_root = os.path.join(self.base_dir, "elections")
         
         if os.path.exists(tracking_file):
             self.load_ballots_legacy()
