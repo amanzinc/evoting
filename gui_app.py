@@ -95,6 +95,9 @@ class VotingApp:
         # Dev Skip Button (Top Right, discreet)
         tk.Button(frame, text="[DEV] Skip", font=('Helvetica', 10), command=self.skip_rfid_check, bg="#444", fg="white").place(relx=0.95, rely=0.05, anchor=tk.NE)
         
+        # Dev Reset Log Button (Top Left, discreet)
+        tk.Button(frame, text="[DEV] Reset Log", font=('Helvetica', 10), command=self.reset_token_log, bg="#ffcccb", fg="black").place(relx=0.05, rely=0.05, anchor=tk.NW)
+        
         # Start Scanning Thread
         self.stop_scanning = False
         self.scan_queue = queue.Queue()
@@ -126,6 +129,17 @@ class VotingApp:
             
         if not self.active_token: 
              self.root.after(500, self.check_scan_queue)
+
+    def reset_token_log(self):
+        try:
+            import os
+            if os.path.exists("tokens.log"):
+                os.remove("tokens.log")
+                messagebox.showinfo("Dev Tool", "Token Log Cleared!\nAll cards can be used again.")
+            else:
+                messagebox.showinfo("Dev Tool", "Token Log is already empty.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to reset log: {e}")
 
     def skip_rfid_check(self):
         self.stop_scanning = True
