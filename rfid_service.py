@@ -120,6 +120,9 @@ class RFIDService:
 
             encrypted_token = raw_bytes.decode("utf-8")
             decrypted = self.fernet.decrypt(encrypted_token.encode("utf-8")).decode("utf-8")
+            
+            print(f"✅ Card Read Success! Token Payload: {decrypted}")
+            
             return (uid.hex(), decrypted)
 
         except Exception as e:
