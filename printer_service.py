@@ -201,6 +201,64 @@ class PrinterService:
             print(f"Voter QR Error: {e}")
             raise e
 
+    def print_session_receipts(self, receipts_list):
+        """
+        Prints a consolidated session receipt containing multiple votes.
+        receipts_list: List of dicts with keys:
+          - election_name, ballot_id, timestamp, choice_str, qr_choice_data, election_hash
+        """
+        if not self.printer:
+            self.connect_printer()
+        if not self.printer:
+            return # Fail silently or log
+            
+        p = self.printer
+        TOP_BAR = "=" * 32
+        DIVIDER = "-" * 32
+        
+        try:
+            # MASTER HEADER
+            p.set(align='center', font='a', width=1, height=1, bold=True)
+            p.text(TOP_BAR + "\n")
+            p.text("CONSOLIDATED VOTER RECEIPT\n")
+            p.text(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S") + "\n")
+            p.text(TOP_BAR + "\n\n")
+            
+            p.set(align='left', bold=False)
+            
+            for i, r in enumerate(receipts_list):
+                # Election Header
+                p.set(align='left', bold=True)
+                p.text(f"#{i+1}: {r['election_name']}\n")
+                p.set(align='left', bold=False)
+                p.text(f"Ballot: {r['ballot_id']}\n")
+                
+                # Choice
+                p.set(align='left', bold=True)
+                p.text(f"Vote  : {r['choice_str']}\n")
+                p.set(align='left', bold=False)
+                
+                # Internal VVPAT QR (Choice + Ballot)
+                # We can save paper by printing a smaller side-QR or just one QR per vote
+                qr_data = r['qr_choice_data']
+                temp_qr = self._generate_vvpat_qr(qr_data, r['ballot_id'])
+                
+                p.set(align='center')
+                p.image(temp_qr)
+                if os.path.exists(temp_qr): os.remove(temp_qr)
+                
+                p.set(align='center')
+                p.text(DIVIDER + "\n")
+            
+            # FOOTER
+            p.text("\nKeep this slip safe.\n")
+            p.text("\n\n")
+            p.cut()
+            
+        except Exception as e:
+            print(f"Batch Print Error: {e}")
+            raise e
+
     def _get_font(self, size):
         font_candidates = [
             "arial.ttf", 

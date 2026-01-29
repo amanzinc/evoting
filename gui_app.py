@@ -29,7 +29,8 @@ class VotingApp:
         self.max_ranks = 3
         self.current_rank = 1
         self.selections = {}
-        self.merge_receipts = True # Temporary flag for merged printing 
+        self.merge_receipts = True # Temporary flag for merged printing
+        self.receipt_buffer = [] # Store print data for batching 
 
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
@@ -208,15 +209,18 @@ class VotingApp:
 
     def finish_voter_session(self):
         """Called when all eligible elections are completed."""
-        # Log Token (Only ONCE at the end? Or per vote? Spec says log token after vote.)
-        # Current logic logs token after EACH vote. 
-        # But wait, if we have duplicate check, we can't log token twice...
-        # Actually duplicate check is is_token_used(id). 
-        # If we log E1, then E3 will be blocked?
-        # NO. We verify token at START of session.
-        # We should log the token only once at the END or update logic to allow multi-use within session?
-        # The simplest approach: Log token at the very end of the session.
-        
+        # 1. BATCH PRINTING IF ENABLED
+        if self.merge_receipts and hasattr(self, 'receipt_buffer') and self.receipt_buffer:
+            self.show_printing_modal(text="Printing Consolidated Receipt...")
+            try:
+                self.printer_service.print_session_receipts(self.receipt_buffer)
+            except Exception as e:
+                messagebox.showerror("Print Error", f"Failed to print session receipt: {e}")
+            finally:
+                self.close_printing_modal()
+                self.receipt_buffer = []
+
+        # 2. LOG SESSION TOKEN
         if self.active_token:
             self.data_handler.log_token(self.active_token)
             
@@ -472,31 +476,76 @@ class VotingApp:
         self.show_selection_screen()
 
     def cast_vote(self):
-        self.show_printing_modal()
-        self.print_queue = queue.Queue()
+        # Prepare Receipt Data Snapshot
+        e_name = getattr(self.data_handler, 'election_name', 'General Election')
+        ballot_id = self.data_handler.ballot_id
+        timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
         
-        # Check if this is the final receipt
-        is_final = True
-        if self.merge_receipts and self.election_queue:
-            is_final = False
+        # Helper to find candidate display string (Captured now!)
+        def get_cand_display(cid):
+            cand = self.data_handler.get_candidate_by_id(cid)
+            if cand:
+                return cand.get('candidate_number', str(cid))
+            return str(cid)
 
-        def printer_worker(mode, sel, final_flag):
-            try:
-                self.printer_service.print_vote(mode, sel, is_final=final_flag)
-                self.print_queue.put(True)
-            except Exception as e:
-                self.print_queue.put(e)
+        # Prepare strings
+        if self.voting_mode == 'normal':
+            cid = self.selections.get(1)
+            sel_str = get_cand_display(cid)
+            qr_data = sel_str
+        else:
+            ranks = sorted(self.selections.keys())
+            vals = []
+            for r in ranks:
+                c = self.selections[r]
+                vals.append(get_cand_display(c))
+            sel_str = ", ".join(vals)
+            qr_data = "_".join([get_cand_display(self.selections[r]) for r in ranks])
 
-        self.print_thread = threading.Thread(target=printer_worker, args=(self.voting_mode, self.selections, is_final))
-        self.print_thread.daemon = True
-        self.print_thread.start()
+        receipt_entry = {
+            'election_name': e_name,
+            'ballot_id': ballot_id,
+            'timestamp': timestamp,
+            'choice_str': sel_str,
+            'qr_choice_data': qr_data,
+            'election_hash': self.data_handler.election_hash
+        }
 
-        self.print_start_time = datetime.datetime.now()
-        self.check_print_status()
+        # MERGE LOGIC
+        if self.merge_receipts:
+            self.receipt_buffer.append(receipt_entry)
+            
+            # Show "Saving..." briefly
+            self.show_printing_modal(text="Recording Vote...")
+            
+            # Simulate Success (Skip Printer Thread)
+            self.print_queue = queue.Queue()
+            self.print_queue.put(True) 
+            self.print_start_time = datetime.datetime.now()
+            self.check_print_status()
+            
+        else:
+            # NORMAL PRINTING
+            self.show_printing_modal()
+            self.print_queue = queue.Queue()
+            
+            def printer_worker(mode, sel):
+                try:
+                    self.printer_service.print_vote(mode, sel, is_final=True)
+                    self.print_queue.put(True)
+                except Exception as e:
+                    self.print_queue.put(e)
 
-    def show_printing_modal(self):
+            self.print_thread = threading.Thread(target=printer_worker, args=(self.voting_mode, self.selections))
+            self.print_thread.daemon = True
+            self.print_thread.start()
+
+            self.print_start_time = datetime.datetime.now()
+            self.check_print_status()
+
+    def show_printing_modal(self, text="Printing VVPAT Receipt..."):
         self.printing_overlay = tk.Toplevel(self.root)
-        self.printing_overlay.title("Printing VVPAT")
+        self.printing_overlay.title("Processing")
         w, h = 400, 200
         x = (self.root.winfo_screenwidth() // 2) - (w // 2)
         y = (self.root.winfo_screenheight() // 2) - (h // 2)
@@ -506,7 +555,7 @@ class VotingApp:
         self.printing_overlay.overrideredirect(True)
         f = tk.Frame(self.printing_overlay, bg="#E3F2FD", bd=2, relief=tk.RAISED)
         f.pack(fill=tk.BOTH, expand=True)
-        tk.Label(f, text="Printing VVPAT Receipt...", font=('Helvetica', 16, 'bold'), bg="#E3F2FD").pack(pady=30)
+        tk.Label(f, text=text, font=('Helvetica', 16, 'bold'), bg="#E3F2FD").pack(pady=30)
         tk.Label(f, text="Please Wait", font=('Helvetica', 14), bg="#E3F2FD").pack(pady=10)
 
     def close_printing_modal(self):
