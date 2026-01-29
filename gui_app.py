@@ -302,8 +302,13 @@ class VotingApp:
         header.pack(fill=tk.X)
         
         mode_text = "Single Choice Vote" if self.voting_mode == 'normal' else f"Select Preference #{self.current_rank}"
-        tk.Label(header, text="General Election 2026", font=('Helvetica', 12), bg=header_bg).pack()
-        tk.Label(header, text=f"Ballot ID: {self.data_handler.ballot_id}", font=('Helvetica', 10, 'bold'), bg=header_bg, fg="#555").pack()
+        
+        # Dynamic Header
+        e_name = getattr(self.data_handler, 'election_name', 'General Election')
+        e_id = getattr(self.data_handler, 'election_id', 'E01')
+        
+        tk.Label(header, text=e_name, font=('Helvetica', 16, 'bold'), bg=header_bg).pack()
+        tk.Label(header, text=f"Election ID: {e_id} | Ballot ID: {self.data_handler.ballot_id}", font=('Helvetica', 10), bg=header_bg, fg="#555").pack()
         tk.Label(header, text=mode_text, font=('Helvetica', 20, 'bold'), bg=header_bg, fg="#333").pack(pady=2)
         
         content = tk.Frame(self.main_container, bg="#ffffff", pady=5, padx=20)

@@ -29,6 +29,7 @@ class DataHandler:
                 data = json.load(f)
                 
                 self.election_id = data.get("election_id", "")
+                self.election_name = data.get("election_name", "General Election")
                 self.election_hash = data.get("hash_string", "")
                 self.ballot_id = data.get("ballot_id", "UNKNOWN")
                 
