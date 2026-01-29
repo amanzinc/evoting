@@ -500,8 +500,8 @@ class VotingApp:
         def get_cand_display(cid):
             cand = self.data_handler.get_candidate_by_id(cid)
             if cand:
-                # User wants Serial Number (ID) + Name on receipt
-                return f"{cand['id']}. {cand['name']}"
+                # User wants ONLY Serial ID on receipt (No Name)
+                return str(cand['id'])
             return str(cid)
 
         # Prepare strings

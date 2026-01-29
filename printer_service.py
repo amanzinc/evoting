@@ -247,9 +247,8 @@ class PrinterService:
                 if os.path.exists(temp_qr): os.remove(temp_qr)
                 
                 p.text(DIVIDER + "\n")
-
-            p.text("\n- TEAR HERE -\n\n\n\n")
-            # p.cut() # NO AUTO CUTTER
+            
+            p.text("\n\n\n") # Just feed for VVPAT box
             
             # ==============================
             # PART 2: CONSOLIDATED VOTER
@@ -279,8 +278,7 @@ class PrinterService:
                 
                 p.text(DIVIDER + "\n")
             
-            p.text("Keep Safe\n\n\n\n\n")
-            # p.cut() # NO AUTO CUTTER
+            p.text("Keep Safe\n\n\n") # Just feed for Tear off
             
         except Exception as e:
             print(f"Batch Print Error: {e}")
