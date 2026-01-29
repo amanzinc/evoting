@@ -3,6 +3,7 @@ import json
 import uuid
 import random
 import copy
+import pymongo
 
 ELECTIONS_ROOT = "elections"
 CONFIGS = {
@@ -90,9 +91,26 @@ def generate_ballots(eid, base_dir, ballots_dir, template, count=20):
         with open(b_path, 'w') as f:
             json.dump(ballot_data, f, indent=4)
             
-    # Write Status File
-    with open(os.path.join(base_dir, "ballots_status.json"), 'w') as f:
-        json.dump(usage_map, f, indent=4)
+    # Insert into MongoDB
+    try:
+        client = pymongo.MongoClient("mongodb://localhost:27017/")
+        db = client["evoting_db"]
+        collection = db["ballots"]
+        
+        docs = []
+        for bid in usage_map:
+             docs.append({
+                 "election_id": eid,
+                 "ballot_id": bid,
+                 "status": "UNUSED"
+             })
+             
+        if docs:
+            collection.insert_many(docs)
+            print(f"  -> Inserted {len(docs)} ballots into MongoDB for {eid}")
+            
+    except Exception as e:
+        print(f"  -> Failed to insert into MongoDB: {e}")
         
     print(f"  -> Generated {count} ballots for {eid}")
 
@@ -101,6 +119,13 @@ if __name__ == "__main__":
         import shutil
         print("Cleaning old elections data...")
         shutil.rmtree(ELECTIONS_ROOT)
+        
+        # Clear MongoDB Collection
+        try:
+             client = pymongo.MongoClient("mongodb://localhost:27017/")
+             client["evoting_db"]["ballots"].delete_many({})
+             print("Cleared MongoDB ballots collection.")
+        except: pass
         
     os.makedirs(ELECTIONS_ROOT)
     
