@@ -66,9 +66,8 @@ def generate_ballots(eid, base_dir, ballots_dir, template, count=20):
         ballot_data = copy.deepcopy(template)
         ballot_data['ballot_id'] = bid
         
-        # Generate Fake Hash for Receipt (Simulating BlockChain/Crypto Hash)
-        import hashlib
-        simulated_hash = hashlib.sha256(f"{eid}-{bid}-{random.random()}".encode()).hexdigest()
+        # Use Hardcoded Hash as requested by User
+        simulated_hash = "'[[\"d618d908eacb6fa43f28c627fabb492d432eb43d601a3c0963e748b0178629ad\", \"49a7c2cbe199497023b94bda4efb33a6e15effe17e5563f423503e05f12cbde1\", \"e4f0f24bf5e2e1dfb3a467819b39c95e037e2c6b2faffe403c3dfd7ad14b0286\", \"e5abf187c7f1c33b40881774d89b80e89a7e651051f91e8b5a3f4f7e789f524a\"], [1, \"[7843901705889157855030183509219937208058978663083704502957876214011927609198, 14815156419145346489492942119494738359375770505643515459839277797820291735746]\"]]'"
         ballot_data['hash_string'] = simulated_hash
         
         # --- SHUFFLE CANDIDATES ---
