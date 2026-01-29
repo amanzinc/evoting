@@ -66,13 +66,7 @@ class VotingApp:
         
         # Display Current Ballot ID
         # Display Status
-        bid = self.data_handler.ballot_id
-        if len(str(bid)) > 20: # Template/Long Initial ID
-            display_text = "System Ready"
-        else:
-             display_text = f"Last Ballot: {bid}"
-             
-        tk.Label(header, text=display_text, font=('Helvetica', 12, 'bold'), bg="#f0f0f0", fg="#555").pack()
+        tk.Label(header, text="System Ready", font=('Helvetica', 12, 'bold'), bg="#f0f0f0", fg="#555").pack()
 
         content = tk.Frame(self.main_container, bg="white")
         content.pack(expand=True)
