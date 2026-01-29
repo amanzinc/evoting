@@ -176,15 +176,16 @@ class VotingApp:
 
             state_val = tk.NORMAL
             if self.pv_mode_2:
-                is_already_selected_pv2 = False
+                selected_rank = None
                 for rank, cid in self.selections.items():
                     if rank < self.current_rank and cid == cand['id']:
-                        is_already_selected_pv2 = True
+                        selected_rank = rank
+                        break
                 
-                if is_already_selected_pv2 and cand['name'] != "NAFS":
+                if selected_rank is not None and cand['name'] != "NAFS":
                     state_val = tk.DISABLED
                     fg_color = "grey"
-                    cand_text += " (Selected)"
+                    cand_text += f" (Selected as Preference {selected_rank})"
 
             tk.Radiobutton(
                 frame, text=cand_text, variable=self.current_selection_var, value=cand['id'],
