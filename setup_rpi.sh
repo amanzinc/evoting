@@ -16,7 +16,7 @@ echo "[*] Updating package lists..."
 sudo apt-get update
 
 echo "[*] Installing dependencies (python3-tk, unclutter, git, python3-pip)..."
-sudo apt-get install -y python3-tk unclutter git python3-pip libjpeg-dev zlib1g-dev libusb-1.0-0-dev
+sudo apt-get install -y python3-tk unclutter git python3-pip libjpeg-dev zlib1g-dev libusb-1.0-0-dev python3-pil.imagetk
 
 # 2. Install Python Packages
 echo "[*] Installing Python libraries (escpos)..."
