@@ -6,11 +6,14 @@ from gui_app import VotingApp
 from ballot_manager import BallotManager
 import os
 
+from rfid_service import RFIDService
+
 def main():
     root = tk.Tk()
     
-    # Ballot Management
+    # Core Services
     bm = BallotManager()
+    rfid_service = RFIDService()
     
     # Auto-generate if missing (Dev convenience)
     if not os.path.exists("ballots") or not os.listdir("ballots"):
@@ -25,7 +28,7 @@ def main():
         print(f"Critical Startup Error: {e}")
         return
 
-    app = VotingApp(root, data_handler, printer_service, bm)
+    app = VotingApp(root, data_handler, printer_service, bm, rfid_service)
     root.mainloop()
 
 if __name__ == "__main__":

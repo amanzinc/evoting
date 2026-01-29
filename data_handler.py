@@ -55,6 +55,17 @@ class DataHandler:
     def get_candidate_by_id(self, cid):
         return next((c for c in self.candidates_base if c['id'] == cid), None)
 
+    def log_token(self, token):
+        """Logs the authenticated token to tokens.log."""
+        try:
+            import datetime
+            timestamp = datetime.datetime.now().isoformat()
+            with open("tokens.log", "a", encoding='utf-8') as f:
+                f.write(f"{timestamp},{token}\n")
+            print(f"Token logged: {token}")
+        except Exception as e:
+            print(f"Error logging token: {e}")
+
     def save_vote(self, vote_data, voting_mode):
         try:
             timestamp = vote_data.get('timestamp')

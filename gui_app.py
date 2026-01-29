@@ -5,11 +5,13 @@ import queue
 import datetime
 
 class VotingApp:
-    def __init__(self, root, data_handler, printer_service, ballot_manager):
+    def __init__(self, root, data_handler, printer_service, ballot_manager, rfid_service):
         self.root = root
         self.data_handler = data_handler
         self.printer_service = printer_service
         self.ballot_manager = ballot_manager
+        self.rfid_service = rfid_service
+        self.active_token = None
         
         self.root.title("Ballot Marking Device")
         self.root.attributes('-fullscreen', True)
@@ -21,20 +23,87 @@ class VotingApp:
         self.style.configure('Header.TLabel', font=('Helvetica', 20, 'bold'))
 
         # State
-        self.voting_mode = None # 'normal' or 'preferential'
+        self.voting_mode = None 
         self.pv_mode_2 = False
         self.max_ranks = 3
         self.current_rank = 1
-        self.selections = {} # {rank: candidate_id}
+        self.selections = {} 
 
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
+        
+        # Initialize RFID
+        self.rfid_service.load_key()
+        self.rfid_service.connect()
 
         try:
             self.data_handler.load_candidates()
         except Exception as e:
             messagebox.showerror("Initialization Error", str(e))
 
+        # Start with RFID Screen
+        self.show_rfid_screen()
+
+    def clear_container(self):
+        for widget in self.main_container.winfo_children():
+            widget.destroy()
+
+    def show_rfid_screen(self):
+        self.clear_container()
+        self.active_token = None
+        
+        frame = tk.Frame(self.main_container, bg="white")
+        frame.pack(expand=True, fill=tk.BOTH)
+        
+        tk.Label(frame, text="Welcome to E-Voting", font=('Helvetica', 32, 'bold'), bg="white", fg="#1976D2").pack(pady=(150, 20))
+        tk.Label(frame, text="Please Place Your Voting Card on the Reader", font=('Helvetica', 24), bg="white", fg="#555").pack(pady=20)
+        
+        # Status Label
+        self.rfid_status_label = tk.Label(frame, text="Scanning...", font=('Helvetica', 18, 'italic'), bg="white", fg="#999")
+        self.rfid_status_label.pack(pady=40)
+        
+        # Dev Skip Button
+        tk.Button(frame, text="[DEV] Skip Check", font=('Helvetica', 12), command=self.skip_rfid_check, bg="#eee").pack(pady=20)
+        
+        # Start Scanning Thread
+        self.stop_scanning = False
+        self.scan_queue = queue.Queue()
+        self.scan_thread = threading.Thread(target=self.rfid_scan_loop)
+        self.scan_thread.daemon = True
+        self.scan_thread.start()
+        
+        self.check_scan_queue()
+
+    def rfid_scan_loop(self):
+        while not self.stop_scanning:
+            # Blocking read (or semi-active loop)
+            result = self.rfid_service.read_card() 
+            if result:
+                # uid, token
+                self.scan_queue.put(result)
+                break
+            time.sleep(0.5) 
+
+    def check_scan_queue(self):
+        try:
+            result = self.scan_queue.get_nowait()
+            if result:
+                 uid, token = result
+                 self.on_card_scanned(token)
+                 return
+        except queue.Empty:
+            pass
+            
+        if not self.active_token: 
+             self.root.after(500, self.check_scan_queue)
+
+    def skip_rfid_check(self):
+        self.stop_scanning = True
+        self.on_card_scanned("SKIPPED_DEV_MODE")
+
+    def on_card_scanned(self, token):
+        self.active_token = token
+        # Proceed to Normal Flow
         self.show_mode_selection_screen()
 
     def start_session(self):
@@ -42,30 +111,17 @@ class VotingApp:
         try:
             new_id, new_file = self.ballot_manager.get_unused_ballot()
             print(f"Starting Session with Ballot ID: {new_id}")
-            
-            # Switch Data
             self.data_handler.set_ballot_file(new_file)
-
-            
-            # Printer Service already refers to data_handler, so it picks up new ID automatically via data_handler.ballot_id
-            
         except Exception as e:
             print(f"Failed to load new ballot: {e}")
             messagebox.showerror("Ballot Error", f"Could not load new ballot: {e}")
-            # Potentially lock UI or retry
-
-    def clear_container(self):
-        for widget in self.main_container.winfo_children():
-            widget.destroy()
 
     def show_mode_selection_screen(self):
         self.clear_container()
         header = tk.Frame(self.main_container, bg="#f0f0f0", pady=15)
         header.pack(fill=tk.X)
-        tk.Label(header, text="Dev Mode: Select Voting Type", font=('Helvetica', 24, 'bold'), bg="#f0f0f0").pack()
+        tk.Label(header, text="Select Voting Type", font=('Helvetica', 24, 'bold'), bg="#f0f0f0").pack()
         
-        # Display Current Ballot ID
-        # Display Status
         tk.Label(header, text="System Ready", font=('Helvetica', 12, 'bold'), bg="#f0f0f0", fg="#555").pack()
 
         content = tk.Frame(self.main_container, bg="white")
@@ -78,6 +134,7 @@ class VotingApp:
         tk.Button(btn_frame, text="Preferential Voting\n(Ranked)", font=('Helvetica', 20, 'bold'), command=self.start_preferential_voting, padx=30, pady=20, bg="#9C27B0", fg="white").pack(pady=10, fill=tk.X)
         tk.Button(btn_frame, text="Preferential Voting 2\n(Greyed Out)", font=('Helvetica', 20, 'bold'), command=self.start_preferential_voting_2, padx=30, pady=20, bg="#673AB7", fg="white").pack(pady=10, fill=tk.X)
         
+        # Disabled Exit for smoother kiosk feel or keep for Dev
         tk.Button(btn_frame, text="Exit App", font=('Helvetica', 14), command=self.exit_app).pack(pady=10)
 
     def start_normal_voting(self):
@@ -109,7 +166,6 @@ class VotingApp:
     def show_selection_screen(self):
         self.clear_container()
         
-        # Header
         header_bg = "#E3F2FD" if self.voting_mode == 'normal' else "#F3E5F5"
         header = tk.Frame(self.main_container, bg=header_bg, pady=5)
         header.pack(fill=tk.X)
@@ -119,7 +175,6 @@ class VotingApp:
         tk.Label(header, text=f"Ballot ID: {self.data_handler.ballot_id}", font=('Helvetica', 10, 'bold'), bg=header_bg, fg="#555").pack()
         tk.Label(header, text=mode_text, font=('Helvetica', 20, 'bold'), bg=header_bg, fg="#333").pack(pady=2)
         
-        # Content
         content = tk.Frame(self.main_container, bg="#ffffff", pady=5, padx=20)
         content.pack(expand=True, fill=tk.BOTH)
         
@@ -127,7 +182,6 @@ class VotingApp:
         if self.current_rank in self.selections:
              self.current_selection_var.set(self.selections[self.current_rank])
 
-        # Filter candidates logic
         available_candidates = []
         all_opts = self.data_handler.candidates_base
 
@@ -145,11 +199,9 @@ class VotingApp:
                 elif not is_selected_elsewhere:
                     available_candidates.append(cand)
 
-        # Layout logic
         total_options = len(available_candidates)
         rows_per_col = (total_options + 1) // 2
         
-        # Dynamic Scaling
         if total_options > 8:
             btn_font = ('Helvetica', 12); btn_pady = 2; frame_pady = 2
         elif total_options > 6:
@@ -195,7 +247,6 @@ class VotingApp:
                 justify=tk.CENTER, state=state_val
             ).pack(fill=tk.BOTH, expand=True)
 
-        # Footer
         footer = tk.Frame(self.main_container, bg="#f0f0f0")
         footer.pack(fill=tk.X, side=tk.BOTTOM, pady=10)
 
@@ -330,12 +381,18 @@ class VotingApp:
                 try:
                     vote_data = {'selections': self.selections}
                     self.data_handler.save_vote(vote_data, self.voting_mode)
-                    
-                    # --- SUCCESS: Mark Ballot Used ---
                     self.ballot_manager.mark_as_used(self.data_handler.ballot_id) 
                     
+                    # LOG TOKEN (New)
+                    if self.active_token:
+                        self.data_handler.log_token(self.active_token)
+                    
                     messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
-                    self.show_mode_selection_screen()
+                    
+                    # Instead of showing mode selection, we go back to Card Scan screen (Full Loop)
+                    self.active_token = None
+                    self.show_rfid_screen()
+                    
                 except Exception as e:
                     messagebox.showerror("System Error", f"Vote printed but failed to save: {e}")
             else:
