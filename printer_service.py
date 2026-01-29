@@ -46,7 +46,7 @@ class PrinterService:
             raise Exception("Printer not connected")
 
         # Mock Data Setup
-        ballot_id = uuid.uuid4().hex[:8].upper()
+        ballot_id = self.data_handler.ballot_id
         station_id = "PS-105-DELHI"
         timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
 

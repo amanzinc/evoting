@@ -91,6 +91,7 @@ class VotingApp:
         
         mode_text = "Single Choice Vote" if self.voting_mode == 'normal' else f"Select Preference #{self.current_rank}"
         tk.Label(header, text="General Election 2026", font=('Helvetica', 12), bg=header_bg).pack()
+        tk.Label(header, text=f"Ballot ID: {self.data_handler.ballot_id}", font=('Helvetica', 10, 'bold'), bg=header_bg, fg="#555").pack()
         tk.Label(header, text=mode_text, font=('Helvetica', 20, 'bold'), bg=header_bg, fg="#333").pack(pady=2)
         
         # Content

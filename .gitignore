@@ -13,3 +13,6 @@ Desktop.ini
 *.log
 tmp/
 __pycache__/
+
+ballots/
+ballots.json
