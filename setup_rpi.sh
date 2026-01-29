@@ -57,7 +57,7 @@ fi
 
 # Get the absolute path of the current directory (project root)
 PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-APP_SCRIPT="$PROJECT_DIR/ui_prototype.py"
+APP_SCRIPT="$PROJECT_DIR/main.py"
 
 echo "    - App path detected: $APP_SCRIPT"
 

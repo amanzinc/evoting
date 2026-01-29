@@ -59,8 +59,11 @@ class VotingApp:
         try:
             from PIL import Image, ImageTk
             
-            # Load Image
-            img_path = "scan_card_bg.png"
+            # Load Image using absolute path
+            import os
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            img_path = os.path.join(base_dir, "scan_card_bg.png")
+            
             pil_image = Image.open(img_path)
             
             # Resize logic (Aspect Ratio)
