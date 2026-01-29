@@ -17,25 +17,9 @@ def main():
         print("No ballots found. Generating new pool...")
         bm.generate_ballots(50)
 
+    # Initialize Core Services with Template (candidates.json) initially
     try:
-        # Get ONE unused ballot for this session
-        ballot_id, ballot_file = bm.get_unused_ballot()
-        print(f"Session initialized with Ballot ID: {ballot_id}")
-        
-        # Mark as used IMMEDIATELY to prevent reuse if app crashes?
-        # Or mark after vote? 
-        # Standard: Mark when issued.
-        bm.mark_as_used(ballot_id)
-        
-    except Exception as e:
-        print(f"Ballot Error: {e}")
-        root.withdraw()
-        messagebox.showerror("Fatal Error", f"Cannot initialize ballot: {e}")
-        return
-
-    # Initialize Core Services with SPECIFIC Ballot File
-    try:
-        data_handler = DataHandler(ballot_file) 
+        data_handler = DataHandler("candidates.json") 
         printer_service = PrinterService(data_handler)
     except Exception as e:
         print(f"Critical Startup Error: {e}")

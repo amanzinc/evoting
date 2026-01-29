@@ -37,17 +37,15 @@ class VotingApp:
 
         self.show_mode_selection_screen()
 
-    def load_new_ballot(self):
-        """Fetches a fresh ballot from the manager and reloads data."""
+    def start_session(self):
+        """Fetches a fresh ballot for the new session."""
         try:
             new_id, new_file = self.ballot_manager.get_unused_ballot()
-            print(f"Loading New Ballot ID: {new_id}")
-            
-            # Mark Used immediately on issue
-            self.ballot_manager.mark_as_used(new_id)
+            print(f"Starting Session with Ballot ID: {new_id}")
             
             # Switch Data
             self.data_handler.set_ballot_file(new_file)
+
             
             # Printer Service already refers to data_handler, so it picks up new ID automatically via data_handler.ballot_id
             
@@ -67,7 +65,14 @@ class VotingApp:
         tk.Label(header, text="Dev Mode: Select Voting Type", font=('Helvetica', 24, 'bold'), bg="#f0f0f0").pack()
         
         # Display Current Ballot ID
-        tk.Label(header, text=f"Ballot ID: {self.data_handler.ballot_id}", font=('Helvetica', 12, 'bold'), bg="#f0f0f0", fg="#555").pack()
+        # Display Status
+        bid = self.data_handler.ballot_id
+        if len(str(bid)) > 20: # Template/Long Initial ID
+            display_text = "System Ready"
+        else:
+             display_text = f"Last Ballot: {bid}"
+             
+        tk.Label(header, text=display_text, font=('Helvetica', 12, 'bold'), bg="#f0f0f0", fg="#555").pack()
 
         content = tk.Frame(self.main_container, bg="white")
         content.pack(expand=True)
@@ -82,6 +87,7 @@ class VotingApp:
         tk.Button(btn_frame, text="Exit App", font=('Helvetica', 14), command=self.exit_app).pack(pady=10)
 
     def start_normal_voting(self):
+        self.start_session()
         self.voting_mode = 'normal'
         self.pv_mode_2 = False
         self.selections = {}
@@ -89,6 +95,7 @@ class VotingApp:
         self.show_selection_screen()
 
     def start_preferential_voting(self):
+        self.start_session()
         self.voting_mode = 'preferential'
         self.pv_mode_2 = False
         self.selections = {}
@@ -97,6 +104,7 @@ class VotingApp:
         self.show_selection_screen()
 
     def start_preferential_voting_2(self):
+        self.start_session()
         self.voting_mode = 'preferential'
         self.pv_mode_2 = True
         self.selections = {}
@@ -328,9 +336,8 @@ class VotingApp:
                     vote_data = {'selections': self.selections}
                     self.data_handler.save_vote(vote_data, self.voting_mode)
                     
-                    # --- NEW: Rotate Ballot ---
-                    # Only cycle if success
-                    self.load_new_ballot() 
+                    # --- SUCCESS: Mark Ballot Used ---
+                    self.ballot_manager.mark_as_used(self.data_handler.ballot_id) 
                     
                     messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
                     self.show_mode_selection_screen()
