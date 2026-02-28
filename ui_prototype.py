@@ -65,7 +65,11 @@ class VotingApp:
                     self.printer = Usb(0x04b8, 0x0202, profile="POS-80")
                     print("Printer connected via USB (0x04b8:0x0202) successfully.")
                 except:
-                    pass
+                    try:
+                        self.printer = Usb(0x0483, 0x5743, profile="POS-80")
+                        print("Printer connected via USB (0x0483:0x5743) successfully.")
+                    except:
+                        pass
 
         # Fallback to File Class
         if not self.printer and File:
@@ -454,7 +458,10 @@ class VotingApp:
                         try:
                             self.printer = Usb(0x04b8, 0x0202, profile="POS-80")
                         except:
-                            pass
+                            try:
+                                self.printer = Usb(0x0483, 0x5743, profile="POS-80")
+                            except:
+                                pass
                             
                 if not self.printer and File:
                     for port_num in range(6):
