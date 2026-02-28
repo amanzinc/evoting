@@ -58,23 +58,23 @@ class VotingApp:
         # Try USB Class first
         if Usb:
             try:
-                self.printer = Usb(0x0416, 0x5011, profile="POS-80")
+                self.printer = Usb(0x0416, 0x5011, profile="default")
                 print("Printer connected via USB (0x0416:0x5011) successfully.")
             except:
                 try:
-                    self.printer = Usb(0x04b8, 0x0202, profile="POS-80")
+                    self.printer = Usb(0x04b8, 0x0202, profile="default")
                     print("Printer connected via USB (0x04b8:0x0202) successfully.")
                 except:
                     try:
-                        self.printer = Usb(0x0483, 0x5743, profile="POS-80")
+                        self.printer = Usb(0x0483, 0x5743, profile="default")
                         print("Printer connected via USB (0x0483:0x5743) successfully.")
                     except:
                         try:
-                            self.printer = Usb(0x0483, 0x5743, out_ep=0x01, profile="POS-80")
+                            self.printer = Usb(0x0483, 0x5743, out_ep=0x01, profile="default")
                             print("Printer connected via USB (0x0483:0x5743 out_ep=0x01) successfully.")
                         except:
                             try:
-                                self.printer = Usb(0x0483, 0x5743, out_ep=0x03, profile="POS-80")
+                                self.printer = Usb(0x0483, 0x5743, out_ep=0x03, profile="default")
                                 print("Printer connected via USB (0x0483:0x5743 out_ep=0x03) successfully.")
                             except:
                                 pass
@@ -85,7 +85,7 @@ class VotingApp:
                 port_path = f"/dev/usb/lp{port_num}"
                 if os.path.exists(port_path):
                     try:
-                        self.printer = File(port_path, profile="POS-80")
+                        self.printer = File(port_path, profile="default")
                         print(f"Printer connected successfully at {port_path}.")
                         break
                     except Exception as e:
@@ -461,19 +461,19 @@ class VotingApp:
                  # Try to reconnect using auto-detect
                 if Usb:
                     try:
-                        self.printer = Usb(0x0416, 0x5011, profile="POS-80")
+                        self.printer = Usb(0x0416, 0x5011, profile="default")
                     except:
                         try:
-                            self.printer = Usb(0x04b8, 0x0202, profile="POS-80")
+                            self.printer = Usb(0x04b8, 0x0202, profile="default")
                         except:
                             try:
-                                self.printer = Usb(0x0483, 0x5743, profile="POS-80")
+                                self.printer = Usb(0x0483, 0x5743, profile="default")
                             except:
                                 try:
-                                    self.printer = Usb(0x0483, 0x5743, out_ep=0x01, profile="POS-80")
+                                    self.printer = Usb(0x0483, 0x5743, out_ep=0x01, profile="default")
                                 except:
                                     try:
-                                        self.printer = Usb(0x0483, 0x5743, out_ep=0x03, profile="POS-80")
+                                        self.printer = Usb(0x0483, 0x5743, out_ep=0x03, profile="default")
                                     except:
                                         pass
                             

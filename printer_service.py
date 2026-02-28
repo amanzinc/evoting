@@ -26,7 +26,7 @@ class PrinterService:
                 # python-escpos usually needs idVendor and idProduct, but we can try 
                 # a common generic set: idVendor=0x0416, idProduct=0x5011 (POS58/80)
                 # Let's try the generic fallback first.
-                self.printer = Usb(0x0416, 0x5011, profile="POS-80")
+                self.printer = Usb(0x0416, 0x5011, profile="default")
                 print("Printer connected via USB (0x0416:0x5011) successfully.")
                 return
             except Exception as e:
@@ -34,7 +34,7 @@ class PrinterService:
             
             # Alternative common Vendor/Product for POS80
             try:
-                self.printer = Usb(0x04b8, 0x0202, profile="POS-80") # Generic Epson clone
+                self.printer = Usb(0x04b8, 0x0202, profile="default") # Generic Epson clone
                 print("Printer connected via USB (0x04b8:0x0202) successfully.")
                 return
             except Exception as e:
@@ -42,7 +42,7 @@ class PrinterService:
 
             # Specific STMicroelectronics POS80 (Default endpoints)
             try:
-                self.printer = Usb(0x0483, 0x5743, profile="POS-80")
+                self.printer = Usb(0x0483, 0x5743, profile="default")
                 print("Printer connected via USB (0x0483:0x5743) successfully.")
                 return
             except Exception as e:
@@ -50,7 +50,7 @@ class PrinterService:
 
             # Specific STMicroelectronics POS80 (Explicit out_ep=0x01, some clones need this)
             try:
-                self.printer = Usb(0x0483, 0x5743, out_ep=0x01, profile="POS-80")
+                self.printer = Usb(0x0483, 0x5743, out_ep=0x01, profile="default")
                 print("Printer connected via USB (0x0483:0x5743 with out_ep=0x01) successfully.")
                 return
             except Exception as e:
@@ -58,7 +58,7 @@ class PrinterService:
                 
             # Specific STMicroelectronics POS80 (Explicit out_ep=0x03)
             try:
-                self.printer = Usb(0x0483, 0x5743, out_ep=0x03, profile="POS-80")
+                self.printer = Usb(0x0483, 0x5743, out_ep=0x03, profile="default")
                 print("Printer connected via USB (0x0483:0x5743 with out_ep=0x03) successfully.")
                 return
             except Exception as e:
