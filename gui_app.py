@@ -284,7 +284,7 @@ class VotingApp:
         tk.Button(btn_frame, text="Preferential Voting\n(Ranked)", font=('Helvetica', 20, 'bold'), command=self.start_preferential_voting, padx=30, pady=20, bg="#9C27B0", fg="white").pack(pady=10, fill=tk.X)
         tk.Button(btn_frame, text="Preferential Voting 2\n(Greyed Out)", font=('Helvetica', 20, 'bold'), command=self.start_preferential_voting_2, padx=30, pady=20, bg="#673AB7", fg="white").pack(pady=10, fill=tk.X)
         
-        # Disabled Exit for smoother kiosk feel or keep for Dev
+        # Exit button for Dev
         tk.Button(btn_frame, text="Exit App", font=('Helvetica', 14), command=self.exit_app).pack(pady=10)
 
     def start_normal_voting(self):

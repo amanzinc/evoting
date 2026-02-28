@@ -1,6 +1,6 @@
 # Raspberry Pi Setup Guide for Ballot Marking Device
 
-This guide details how to set up a Raspberry Pi as a dedicated voting terminal (kiosk).
+This guide details how to set up a Raspberry Pi for the Ballot Marking Device.
 
 ## 1. Automated Setup (Recommended)
 
@@ -41,13 +41,13 @@ If you prefer to configure things manually, follow these steps.
 1.  Flash **Raspberry Pi OS with Desktop**.
 2.  Boot up and complete the wizard.
 3.  Update: `sudo apt update && sudo apt full-upgrade -y`
-
+0
 ### C. Install Dependencies
 
-You need Python 3's Tkinter library and `unclutter` (to hide the mouse cursor).
+You need Python 3's Tkinter library, `python3-venv` for the virtual environment, and `unclutter` (to hide the mouse cursor).
 
 ```bash
-sudo apt install python3-tk unclutter git -y
+sudo apt install python3-tk python3-venv unclutter git -y
 ```
 
 ### D. Install the Application
@@ -60,50 +60,18 @@ cd evoting
 
 *Note: If you have your own fork or local files, copy them to `~/evoting`.*
 
-## 3. Configure Kiosk Mode (Manual)
+### E. Setup Virtual Environment & Python Packages
 
-To make the application launch automatically on boot and prevent screen sleeping.
+Once the repository is downloaded, you need to create a virtual environment and install the required Python libraries via pip.
 
-### A. Disable Screen Blanking (Sleep Mode)
+```bash
+cd ~/evoting
+python3 -m venv --system-site-packages venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
 
-1.  Open `raspi-config`:
-    ```bash
-    sudo raspi-config
-    ```
-2.  Navigate to **Display Options** > **Screen Blanking** and select **No**.
-3.  Finish and Reboot if prompted.
-
-### B. Configure Autostart (LXDE / X11)
-
-This method works for the standard Raspberry Pi OS (X11 backend).
-
-1.  Create/Edit the autostart file:
-    ```bash
-    mkdir -p ~/.config/lxsession/LXDE-pi
-    nano ~/.config/lxsession/LXDE-pi/autostart
-    ```
-
-2.  **Replace** the content (or append to the end) with the following. This ensures the screensaver is off, the mouse is hidden, and the app starts.
-
-    ```bash
-    @lxpanel --profile LXDE-pi
-    @pcmanfm --desktop --profile LXDE-pi
-    
-    # Disable Screensaver and Power Management
-    @xset s noblank
-    @xset s off
-    @xset -dpms
-    
-    # Hide Mouse Cursor (idle for 0.5 seconds)
-    @unclutter -idle 0.5
-    
-    # Start the Voting App
-    @python3 /home/pi/evoting/ui_prototype.py
-    ```
-
-    *(Note: Adjust `/home/pi/` if your username is different)*
-
-3.  **Save and Exit**: Press `Ctrl+X`, then `Y`, then `Enter`.
+*Note: The `--system-site-packages` flag is required so the virtual environment can interact directly with system-level libraries like `python3-tk` and `python3-pil.imagetk` installed via apt.*
 
 ## 4. Optional: Hardware Specifics
 
@@ -120,17 +88,26 @@ If your touchscreen is mounted vertically or upside down:
     *(For some newer drivers, you may need to use Screen Configuration tool in the Desktop menu instead)*.
 
 ### Read-Only Filesystem (Advanced)
-For a true production kiosk, you may want to enable the Overlay File System to prevent SD card corruption on power loss.
+For a true production deployment, you may want to enable the Overlay File System to prevent SD card corruption on power loss.
 1.  Run `sudo raspi-config`
 2.  Go to **Performance Options** > **Overlay File System**.
 3.  Enable it. **Warning**: Any votes recorded to `votes.log` will disappear on reboot unless you mount the log directory to a separate writable partition or USB drive!
     *   *For this prototype, keep Overlay FS **OFF** to preserve `votes.log`.*
 
-## 5. Testing
+## 5. Running the Application
 
-Reboot your Pi:
-```bash
-sudo reboot
-```
+After installation (whether automated or manual), you should use the virtual environment to run the app.
 
-The system should boot up, load the desktop briefly, and then immediately launch the Voting App in full screen.
+1.  **Activate Virtual Environment**:
+    ```bash
+    cd ~/evoting
+    source venv/bin/activate
+    ```
+2.  **Hide the Mouse Cursor** (Optional, for kiosk feel):
+    ```bash
+    unclutter -idle 0.5 &
+    ```
+3.  **Run the App**:
+    ```bash
+    python main.py
+    ```

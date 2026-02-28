@@ -8,3 +8,10 @@
 python-escpos
 Pillow
 qrcode
+
+# Raspberry Pi specific dependencies (Hardware and Crypto)
+# These will only be installed on Linux platforms
+cryptography; sys_platform == 'linux'
+RPi.GPIO; sys_platform == 'linux'
+adafruit-blinka; sys_platform == 'linux'
+adafruit-circuitpython-pn532; sys_platform == 'linux'
