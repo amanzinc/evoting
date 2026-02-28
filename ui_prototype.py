@@ -51,14 +51,18 @@ class VotingApp:
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
 
-        # Connect to Printer (Singleton)
+        # Connect to Printer (Singleton) with auto-detect
         self.printer = None
         if File:
-            try:
-                self.printer = File("/dev/usb/lp0", profile="TM-T88IV")
-                print("Printer connected successfully.")
-            except Exception as e:
-                print(f"Printer Connection Failed: {e}")
+            for port_num in range(6):
+                port_path = f"/dev/usb/lp{port_num}"
+                if os.path.exists(port_path):
+                    try:
+                        self.printer = File(port_path, profile="POS-80")
+                        print(f"Printer connected successfully at {port_path}.")
+                        break
+                    except Exception as e:
+                        print(f"Printer Connection Failed at {port_path}: {e}")
 
         self.show_mode_selection_screen()
 
@@ -427,21 +431,24 @@ class VotingApp:
             
             # --- CONNECTION CHECK (Thread Safe-ish if we just read) ---
             if not self.printer:
-                 # Try to reconnect
-                if File and os.path.exists("/dev/usb/lp0"):
-                    try:
-                        self.printer = File("/dev/usb/lp0", profile="TM-T88IV")
-                    except:
-                        pass
+                 # Try to reconnect using auto-detect
+                if File:
+                    for port_num in range(6):
+                        port_path = f"/dev/usb/lp{port_num}"
+                        if os.path.exists(port_path):
+                            try:
+                                self.printer = File(port_path, profile="POS-80")
+                                break
+                            except:
+                                pass
             
             if not self.printer:
                 result_queue.put(Exception("Printer not connected"))
                 return
 
             p = self.printer
-            if not os.path.exists("/dev/usb/lp0"):
-                 result_queue.put(Exception("Device file not found"))
-                 return
+            # We don't strictly need to check lp0 exists here anymore if p is valid, 
+            # but escpos File object handles disconnection errors well on its own when printing.
 
             # --- COMMON DATA ---
             ballot_id = uuid.uuid4().hex[:8].upper()

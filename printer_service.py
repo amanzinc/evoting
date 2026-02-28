@@ -18,16 +18,22 @@ class PrinterService:
 
     def connect_printer(self):
         if File:
-            # Try to connect
-            if os.path.exists("/dev/usb/lp0"):
-                try:
-                    self.printer = File("/dev/usb/lp0", profile="TM-T88IV")
-                    print("Printer connected successfully.")
-                except Exception as e:
-                    print(f"Printer Connection Failed: {e}")
-                    self.printer = None
-            else:
-                 print("Printer device file /dev/usb/lp0 not found.")
+            # Try to connect to available /dev/usb/lpX ports for auto-detection
+            connected = False
+            for port_num in range(6):
+                port_path = f"/dev/usb/lp{port_num}"
+                if os.path.exists(port_path):
+                    try:
+                        self.printer = File(port_path, profile="POS-80")
+                        print(f"Printer connected successfully at {port_path} with POS-80 profile.")
+                        connected = True
+                        break
+                    except Exception as e:
+                        print(f"Printer Connection Failed on {port_path}: {e}")
+            
+            if not connected:
+                 print("Printer device file /dev/usb/lp0 through lp5 not found or could not connect.")
+                 self.printer = None
         else:
              print("escpos library not available.")
 
