@@ -29,7 +29,10 @@ echo "[*] Installing Python libraries..."
 # Install project requirements into venv
 "$VENV_DIR/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
 
-
+# 3. Configure Printer Permissions
+echo "[*] Adding user to 'lp' and 'dialout' groups for printer and serial access..."
+sudo usermod -a -G lp $USER
+sudo usermod -a -G dialout $USER
 
 echo "============================================="
 echo "   Setup Complete!"

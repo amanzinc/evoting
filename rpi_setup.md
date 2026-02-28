@@ -73,6 +73,15 @@ pip install -r requirements.txt
 
 *Note: The `--system-site-packages` flag is required so the virtual environment can interact directly with system-level libraries like `python3-tk` and `python3-pil.imagetk` installed via apt.*
 
+### F. Configure User Permissions
+To ensure the application has permission to directly communicate with USB printers, add your user to the appropriate groups:
+
+```bash
+sudo usermod -a -G lp $USER
+sudo usermod -a -G dialout $USER
+```
+*(You will need to reboot or log out and log back in for group changes to take effect).*
+
 ## 4. Optional: Hardware Specifics
 
 ### Screen Rotation

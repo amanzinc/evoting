@@ -5,9 +5,10 @@ import qrcode
 from PIL import Image, ImageDraw, ImageFont
 
 try:
-    from escpos.printer import File
+    from escpos.printer import Usb, File
 except ImportError:
     print("Warning: python-escpos not installed. Printing will fail silently or log errors.")
+    Usb = None
     File = None
 
 class PrinterService:
@@ -17,8 +18,30 @@ class PrinterService:
         self.connect_printer()
 
     def connect_printer(self):
+        # First try USB class auto-discovery
+        if Usb:
+            try:
+                # 0x04b8 is Epson, 0x0fe6 is generic POS, 0x0483 STMicroelectronics (common in cheap clones)
+                # We can try a few common Vendor IDs, or just let python-escpos auto-find if we drop kwargs
+                # python-escpos usually needs idVendor and idProduct, but we can try 
+                # a common generic set: idVendor=0x0416, idProduct=0x5011 (POS58/80)
+                # Let's try the generic fallback first.
+                self.printer = Usb(0x0416, 0x5011, profile="POS-80")
+                print("Printer connected via USB (0x0416:0x5011) successfully.")
+                return
+            except Exception as e:
+                print(f"USB Class (0x0416:0x5011) connection failed: {e}")
+            
+            # Alternative common Vendor/Product for POS80
+            try:
+                self.printer = Usb(0x04b8, 0x0202, profile="POS-80") # Generic Epson clone
+                print("Printer connected via USB (0x04b8:0x0202) successfully.")
+                return
+            except Exception as e:
+                print(f"USB Class (0x04b8:0x0202) connection failed: {e}")
+                
+        # Fallback to File class (/dev/usb/lpX)
         if File:
-            # Try to connect to available /dev/usb/lpX ports for auto-detection
             connected = False
             for port_num in range(6):
                 port_path = f"/dev/usb/lp{port_num}"

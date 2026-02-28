@@ -9,9 +9,10 @@ import threading
 import queue
 
 try:
-    from escpos.printer import File
+    from escpos.printer import Usb, File
 except ImportError:
     print("Warning: python-escpos not installed. Printing will fail silently or log errors.")
+    Usb = None
     File = None # Handle optional dependency for dev machines
 
 # Image processing for side-by-side QRs
@@ -53,7 +54,21 @@ class VotingApp:
 
         # Connect to Printer (Singleton) with auto-detect
         self.printer = None
-        if File:
+        
+        # Try USB Class first
+        if Usb:
+            try:
+                self.printer = Usb(0x0416, 0x5011, profile="POS-80")
+                print("Printer connected via USB (0x0416:0x5011) successfully.")
+            except:
+                try:
+                    self.printer = Usb(0x04b8, 0x0202, profile="POS-80")
+                    print("Printer connected via USB (0x04b8:0x0202) successfully.")
+                except:
+                    pass
+
+        # Fallback to File Class
+        if not self.printer and File:
             for port_num in range(6):
                 port_path = f"/dev/usb/lp{port_num}"
                 if os.path.exists(port_path):
@@ -432,7 +447,16 @@ class VotingApp:
             # --- CONNECTION CHECK (Thread Safe-ish if we just read) ---
             if not self.printer:
                  # Try to reconnect using auto-detect
-                if File:
+                if Usb:
+                    try:
+                        self.printer = Usb(0x0416, 0x5011, profile="POS-80")
+                    except:
+                        try:
+                            self.printer = Usb(0x04b8, 0x0202, profile="POS-80")
+                        except:
+                            pass
+                            
+                if not self.printer and File:
                     for port_num in range(6):
                         port_path = f"/dev/usb/lp{port_num}"
                         if os.path.exists(port_path):
