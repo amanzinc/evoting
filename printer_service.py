@@ -155,7 +155,8 @@ class PrinterService:
                 os.remove(temp_img)
 
             p.text(BOTTOM_BAR + "\n")
-            p.text("\n- - - - - CUT HERE - - - - -\n\n")
+            p.text("\n\n")
+            p.cut()
 
             # ==========================================
             # RECEIPT 2: VOTER RECEIPT

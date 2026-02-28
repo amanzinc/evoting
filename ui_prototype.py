@@ -606,8 +606,8 @@ class VotingApp:
             
             p.text(BOTTOM_BAR + "\n")
             
-            # Reduced gap and added tear line
-            p.text("\n- - - - - CUT HERE - - - - -\n\n")
+            p.text("\n\n")
+            p.cut()
 
             # ==========================================
             # RECEIPT 2: VOTER RECEIPT
