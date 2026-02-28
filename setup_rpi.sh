@@ -34,6 +34,17 @@ echo "[*] Adding user to 'lp' and 'dialout' groups for printer and serial access
 sudo usermod -a -G lp $USER
 sudo usermod -a -G dialout $USER
 
+echo "[*] Creating udev rules for raw USB printer access..."
+cat << EOF | sudo tee /etc/udev/rules.d/99-escpos.rules
+# Generic POS Printers
+SUBSYSTEM=="usb", ATTRS{idVendor}=="04b8", ATTRS{idProduct}=="0202", MODE="0664", GROUP="lp"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0416", ATTRS{idProduct}=="5011", MODE="0664", GROUP="lp"
+# STMicroelectronics POS80
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5743", MODE="0664", GROUP="lp"
+EOF
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
 echo "============================================="
 echo "   Setup Complete!"
 echo "============================================="

@@ -82,6 +82,13 @@ sudo usermod -a -G dialout $USER
 ```
 *(You will need to reboot or log out and log back in for group changes to take effect).*
 
+You also need to allow raw USB access to the printer for `python-escpos`:
+```bash
+echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5743", MODE="0664", GROUP="lp"' | sudo tee /etc/udev/rules.d/99-escpos.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
 ## 4. Optional: Hardware Specifics
 
 ### Screen Rotation
