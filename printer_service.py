@@ -40,13 +40,29 @@ class PrinterService:
             except Exception as e:
                 print(f"USB Class (0x04b8:0x0202) connection failed: {e}")
 
-            # Specific STMicroelectronics POS80
+            # Specific STMicroelectronics POS80 (Default endpoints)
             try:
                 self.printer = Usb(0x0483, 0x5743, profile="POS-80")
                 print("Printer connected via USB (0x0483:0x5743) successfully.")
                 return
             except Exception as e:
                 print(f"USB Class (0x0483:0x5743) connection failed: {e}")
+
+            # Specific STMicroelectronics POS80 (Explicit out_ep=0x01, some clones need this)
+            try:
+                self.printer = Usb(0x0483, 0x5743, out_ep=0x01, profile="POS-80")
+                print("Printer connected via USB (0x0483:0x5743 with out_ep=0x01) successfully.")
+                return
+            except Exception as e:
+                print(f"USB Class (0x0483:0x5743 out_ep=0x01) connection failed: {e}")
+                
+            # Specific STMicroelectronics POS80 (Explicit out_ep=0x03)
+            try:
+                self.printer = Usb(0x0483, 0x5743, out_ep=0x03, profile="POS-80")
+                print("Printer connected via USB (0x0483:0x5743 with out_ep=0x03) successfully.")
+                return
+            except Exception as e:
+                print(f"USB Class (0x0483:0x5743 out_ep=0x03) connection failed: {e}")
                 
         # Fallback to File class (/dev/usb/lpX)
         if File:
