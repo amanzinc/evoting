@@ -20,49 +20,45 @@ class PrinterService:
     def connect_printer(self):
         # First try USB class auto-discovery
         if Usb:
-            try:
-                # 0x04b8 is Epson, 0x0fe6 is generic POS, 0x0483 STMicroelectronics (common in cheap clones)
-                # We can try a few common Vendor IDs, or just let python-escpos auto-find if we drop kwargs
-                # python-escpos usually needs idVendor and idProduct, but we can try 
-                # a common generic set: idVendor=0x0416, idProduct=0x5011 (POS58/80)
-                # Let's try the generic fallback first.
-                self.printer = Usb(0x0416, 0x5011, profile="default")
-                print("Printer connected via USB (0x0416:0x5011) successfully.")
-                return
-            except Exception as e:
-                print(f"USB Class (0x0416:0x5011) connection failed: {e}")
-            
-            # Alternative common Vendor/Product for POS80
-            try:
-                self.printer = Usb(0x04b8, 0x0202, profile="default") # Generic Epson clone
-                print("Printer connected via USB (0x04b8:0x0202) successfully.")
-                return
-            except Exception as e:
-                print(f"USB Class (0x04b8:0x0202) connection failed: {e}")
-
-            # Specific STMicroelectronics POS80 (Default endpoints)
+            # 1. Specific STMicroelectronics POS80 (Default endpoints)
             try:
                 self.printer = Usb(0x0483, 0x5743, profile="default")
                 print("Printer connected via USB (0x0483:0x5743) successfully.")
                 return
             except Exception as e:
-                print(f"USB Class (0x0483:0x5743) connection failed: {e}")
-
-            # Specific STMicroelectronics POS80 (Explicit out_ep=0x01, some clones need this)
+                pass
+                
+            # 2. Specific STMicroelectronics POS80 (Explicit out_ep=0x01, some clones need this)
             try:
                 self.printer = Usb(0x0483, 0x5743, out_ep=0x01, profile="default")
                 print("Printer connected via USB (0x0483:0x5743 with out_ep=0x01) successfully.")
                 return
             except Exception as e:
-                print(f"USB Class (0x0483:0x5743 out_ep=0x01) connection failed: {e}")
+                pass
                 
-            # Specific STMicroelectronics POS80 (Explicit out_ep=0x03)
+            # 3. Specific STMicroelectronics POS80 (Explicit out_ep=0x03)
             try:
                 self.printer = Usb(0x0483, 0x5743, out_ep=0x03, profile="default")
                 print("Printer connected via USB (0x0483:0x5743 with out_ep=0x03) successfully.")
                 return
             except Exception as e:
-                print(f"USB Class (0x0483:0x5743 out_ep=0x03) connection failed: {e}")
+                pass
+
+            # 4. Generic POS58/80
+            try:
+                self.printer = Usb(0x0416, 0x5011, profile="default")
+                print("Printer connected via USB (0x0416:0x5011) successfully.")
+                return
+            except Exception as e:
+                pass
+            
+            # 5. Alternative common Vendor/Product for POS80 (Generic Epson clone)
+            try:
+                self.printer = Usb(0x04b8, 0x0202, profile="default")
+                print("Printer connected via USB (0x04b8:0x0202) successfully.")
+                return
+            except Exception as e:
+                pass
                 
         # Fallback to File class (/dev/usb/lpX)
         if File:

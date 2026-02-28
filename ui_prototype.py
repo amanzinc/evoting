@@ -57,25 +57,27 @@ class VotingApp:
         
         # Try USB Class first
         if Usb:
+            # Try specific STMicroelectronics first
             try:
-                self.printer = Usb(0x0416, 0x5011, profile="default")
-                print("Printer connected via USB (0x0416:0x5011) successfully.")
+                self.printer = Usb(0x0483, 0x5743, profile="default")
+                print("Printer connected via USB (0x0483:0x5743) successfully.")
             except:
                 try:
-                    self.printer = Usb(0x04b8, 0x0202, profile="default")
-                    print("Printer connected via USB (0x04b8:0x0202) successfully.")
+                    self.printer = Usb(0x0483, 0x5743, out_ep=0x01, profile="default")
+                    print("Printer connected via USB (0x0483:0x5743 out_ep=0x01) successfully.")
                 except:
                     try:
-                        self.printer = Usb(0x0483, 0x5743, profile="default")
-                        print("Printer connected via USB (0x0483:0x5743) successfully.")
+                        self.printer = Usb(0x0483, 0x5743, out_ep=0x03, profile="default")
+                        print("Printer connected via USB (0x0483:0x5743 out_ep=0x03) successfully.")
                     except:
+                        # Fallback generics
                         try:
-                            self.printer = Usb(0x0483, 0x5743, out_ep=0x01, profile="default")
-                            print("Printer connected via USB (0x0483:0x5743 out_ep=0x01) successfully.")
+                            self.printer = Usb(0x0416, 0x5011, profile="default")
+                            print("Printer connected via USB (0x0416:0x5011) successfully.")
                         except:
                             try:
-                                self.printer = Usb(0x0483, 0x5743, out_ep=0x03, profile="default")
-                                print("Printer connected via USB (0x0483:0x5743 out_ep=0x03) successfully.")
+                                self.printer = Usb(0x04b8, 0x0202, profile="default")
+                                print("Printer connected via USB (0x04b8:0x0202) successfully.")
                             except:
                                 pass
 
@@ -458,22 +460,22 @@ class VotingApp:
             
             # --- CONNECTION CHECK (Thread Safe-ish if we just read) ---
             if not self.printer:
-                 # Try to reconnect using auto-detect
+             # Try to reconnect using auto-detect
                 if Usb:
                     try:
-                        self.printer = Usb(0x0416, 0x5011, profile="default")
+                        self.printer = Usb(0x0483, 0x5743, profile="default")
                     except:
                         try:
-                            self.printer = Usb(0x04b8, 0x0202, profile="default")
+                            self.printer = Usb(0x0483, 0x5743, out_ep=0x01, profile="default")
                         except:
                             try:
-                                self.printer = Usb(0x0483, 0x5743, profile="default")
+                                self.printer = Usb(0x0483, 0x5743, out_ep=0x03, profile="default")
                             except:
                                 try:
-                                    self.printer = Usb(0x0483, 0x5743, out_ep=0x01, profile="default")
+                                    self.printer = Usb(0x0416, 0x5011, profile="default")
                                 except:
                                     try:
-                                        self.printer = Usb(0x0483, 0x5743, out_ep=0x03, profile="default")
+                                        self.printer = Usb(0x04b8, 0x0202, profile="default")
                                     except:
                                         pass
                             
