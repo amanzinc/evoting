@@ -12,10 +12,11 @@ This project is a Python-based prototype for a Ballot Marking Device (BMD), desi
 ## Key Features
 
 - **Dynamic Candidate Loading**: Candidates are loaded from `candidates.json`, supporting arbitrary election IDs, candidate numbers, and serial ordering.
+- **Hardware-Bound RSA Encryption**: Ballots (`.json`) are securely encrypted into chunks using a 2048-bit RSA Public Key. The EVM decrypts them dynamically during boot using a Private Key that is physically locked to the Raspberry Pi's MAC Address and CPU Serial Number via AES-256. SD card cloning is impossible.
 - **Dual Receipt System**:
-    - **VVPAT Slip**: Printed first, deposited in the box. Contains Station ID, Ballot ID, Session Time, Name/Number, and dual QR codes (Choice & Ballot ID).
-    - **Voter Receipt**: Printed second, given to voter. Contains Session Time, Choice, and a global Election Hash QR code.
-- **Vote Logging**: Every vote is logged to `votes.log` with a precise timestamp, voting mode, and candidate details.
+    - **VVPAT Slip**: Printed first, deposited in the box. Contains Station ID, Ballot ID, Session Time, Name/Number, and dual QR codes (with cryptographic commitments).
+    - **Voter Receipt**: Printed second, given to voter. Contains Session Time, Choice, and QR codes.
+- **Vote Logging**: Every vote is logged to `votes.json` in a structured JSON Lines format with a precise timestamp, cryptographic commitment hash, and candidate details.
 - **Dual Voting Modes**:
     - **Normal Voting**: Standard single-choice selection.
     - **Preferential Voting**: Ranked choice voting (select 1st, 2nd, 3rd preference).
@@ -31,10 +32,13 @@ This project is a Python-based prototype for a Ballot Marking Device (BMD), desi
 
 - `main.py`: Entry point for the application.
 - `gui_app.py`: Handles the User Interface and voting flow logic.
-- `data_handler.py`: Manages file I/O for `candidates.json` and `votes.log`.
+- `data_handler.py`: Manages file I/O for reading encrypted JSON ballots and appending to `votes.json`.
+- `ballot_manager.py`: Connects to SQLite to track used/unused ballots and dynamically loads `.json` payloads from USB.
 - `printer_service.py`: Handles interaction with the thermal printer and receipt generation.
-- `candidates.json`: Dictionary-based configuration file defining candidates.
-- `votes.log`: Audit log where votes are recorded.
+- `hardware_crypto.py`: Extracts the physical MAC and CPU identifiers to build the hardware passphrase.
+- `generate_rpi_keys.py`: Generates the RSA keypair and locks the private key to the hardware.
+- `encrypt_ballots_rsa.py`: Admin script for chunk-encrypting JSON ballots using `public.pem`.
+- `votes.json`: Audit log where votes are securely recorded in JSON sequence.
 
 ## Setup and Usage
 

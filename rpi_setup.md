@@ -19,7 +19,15 @@ We have provided a script to automate the dependency installation and configurat
     ./setup_rpi.sh
     ```
 
-3.  **Reboot**:
+3.  **Generate Hardware-Bound RSA Keys**:
+    Once dependencies are installed, you must generate the lock for this specific Raspberry Pi.
+    ```bash
+    source venv/bin/activate
+    python generate_rpi_keys.py
+    ```
+    *This will generate `public.pem` (copy this to your PC to encrypt ballots) and `private.pem` (locked to this Pi's MAC/CPU).*
+
+4.  **Reboot**:
     ```bash
     sudo reboot
     ```
