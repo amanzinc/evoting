@@ -8,8 +8,8 @@ import pymongo
 ELECTIONS_ROOT = "elections"
 CONFIGS = {
     "E1": {"name": "Student Council", "type": "Preferential", "candidates": ["Alice", "Bob", "Charlie", "NAFS"]},
-    "E3": {"name": "Sports Committee", "type": "Preferential", "candidates": ["David", "Eve", "Frank", "NAFS"]},
-    "E6": {"name": "Cultural Society", "type": "Preferential", "candidates": ["Grace", "Heidi", "Ivan", "NAFS"]}
+    "E3": {"name": "Sports Committee", "type": "Normal", "candidates": ["David", "Eve", "Frank", "NAFS"]},
+    "E6": {"name": "Cultural Society", "type": "Normal", "candidates": ["Grace", "Heidi", "Ivan", "NAFS"]}
 }
 
 def setup_election(eid, info):
