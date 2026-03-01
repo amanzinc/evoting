@@ -80,8 +80,8 @@ class BallotManager:
         if not os.path.exists(ballots_dir):
             raise Exception(f"USB drive or election folder not found at: {ballots_dir}")
 
-        # Get all JSON files from the USB drive
-        available_files = [f for f in os.listdir(ballots_dir) if f.endswith('.json')]
+        # Get all JSON files from the USB drive and sort them predictably
+        available_files = sorted([f for f in os.listdir(ballots_dir) if f.endswith('.json')])
         if not available_files:
             raise Exception(f"No ballot files found in {ballots_dir}")
 
