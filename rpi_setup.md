@@ -44,10 +44,12 @@ If you prefer to configure things manually, follow these steps.
 0
 ### C. Install Dependencies
 
-You need Python 3's Tkinter library, `python3-venv` for the virtual environment, and `unclutter` (to hide the mouse cursor).
+You need Python 3's Tkinter library, `python3-venv` for the virtual environment, `unclutter` (to hide the mouse cursor), and `mongodb` for the local database.
 
 ```bash
-sudo apt install python3-tk python3-venv unclutter git -y
+sudo apt install python3-tk python3-venv unclutter git mongodb -y
+sudo systemctl enable mongodb
+sudo systemctl start mongodb
 ```
 
 ### D. Install the Application
