@@ -110,7 +110,9 @@ class PrinterService:
         if mode == 'normal':
             cid = selections.get(1)
             sel_str = get_cand_display(cid)
-            qr_choice_data = sel_str
+            cand = self.data_handler.get_candidate_by_id(cid)
+            cand_commitment = cand.get('commitment', '') if cand else ""
+            qr_choice_data = f"{sel_str}:{cand_commitment}"
         else:
             ranks = sorted(selections.keys())
             vals = []
@@ -118,7 +120,15 @@ class PrinterService:
                 c = selections[r]
                 vals.append(get_cand_display(c))
             sel_str = ", ".join(vals)
-            qr_choice_data = "_".join([get_cand_display(selections[r]) for r in ranks])
+            
+            # For preferential, include all commitments in order
+            qr_parts = []
+            for r in ranks:
+                cand = self.data_handler.get_candidate_by_id(selections[r])
+                c_disp = get_cand_display(selections[r])
+                c_comm = cand.get('commitment', '') if cand else ""
+                qr_parts.append(f"{c_disp}:{c_comm}")
+            qr_choice_data = "_".join(qr_parts)
 
         p = self.printer
         TOP_BAR = "_" * 32

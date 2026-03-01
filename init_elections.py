@@ -21,29 +21,19 @@ def setup_election(eid, info):
     os.makedirs(ballots_dir, exist_ok=True)
     
     # 2. Template
-    candidates_dict = {}
-    
-    # Create valid candidates
-    serial_counter = 1
-    # Ensure NAFS is handled specifically if needed, but generic loop works
-    # Just need to make sure we assign IDs.
-    
-    # We'll shuffle strictly for the template? No, template usually standard.
-    # Actually, standard template has fixed serial_ids usually? 
-    # Let's just assign simple IDs 0..N
-    
+    candidates_list = []
     for i, name in enumerate(info['candidates']):
-        candidates_dict[str(i)] = {
-            "candidate_number": str(i),
-            "serial_id": i, # Initial assignment
+        candidates_list.append({
+            "pref_id": str(i),
+            "entry_number": str(i).zfill(3),
             "candidate_name": name,
             "id": i # Helper
-        }
+        })
 
     template = {
-        "election_id": eid,
+        "election_id": str(eid),
         "election_name": info['name'],
-        "candidates": candidates_dict
+        "candidates": candidates_list
     }
     
     with open(os.path.join(base_dir, "candidates.json"), 'w') as f:
@@ -67,24 +57,21 @@ def generate_ballots(eid, base_dir, ballots_dir, template, count=20):
         ballot_data = copy.deepcopy(template)
         ballot_data['ballot_id'] = bid
         
-        # Use Hardcoded Hash as requested by User
-        simulated_hash = "'[[\"d618d908eacb6fa43f28c627fabb492d432eb43d601a3c0963e748b0178629ad\", \"49a7c2cbe199497023b94bda4efb33a6e15effe17e5563f423503e05f12cbde1\", \"e4f0f24bf5e2e1dfb3a467819b39c95e037e2c6b2faffe403c3dfd7ad14b0286\", \"e5abf187c7f1c33b40881774d89b80e89a7e651051f91e8b5a3f4f7e789f524a\"], [1, \"[7843901705889157855030183509219937208058978663083704502957876214011927609198, 14815156419145346489492942119494738359375770505643515459839277797820291735746]\"]]'"
-        ballot_data['hash_string'] = simulated_hash
+        # Use stringified array as requested by User for commitments
+        simulated_commitments = "[[\"2f81f466b78abe3496d0477dd4f8f027fe841fbddd71210e6589c3af729ccf08\", \"b6ce81f3522177caa50fabc567b4c5930484972d0b54960760fc267a80cd6e57\", \"c1ca0daf3b04ffbf31ef8f09c76c53619438ab780523c1a0475fc1345328980b\", \"356f12b8ae61f2f9f13d7bcac91ab5e772de08758730a0fca87b19eede9e81e3\"], [1, \"[10139390530918078908084553188769788274531616515479454518879697877373004453692, 661415122062567411495962927288547756272641839894596131339603044389075159256]\"]]"
+        ballot_data['commitments'] = simulated_commitments
         
         # --- SHUFFLE CANDIDATES ---
         # Get list of candidates
-        c_list = list(ballot_data['candidates'].values())
+        c_list = ballot_data['candidates']
         
-        # Collect Serial IDs (0, 1, 2, 3...)
-        available_serials = [c['serial_id'] for c in c_list]
-        random.shuffle(available_serials)
+        # Collect Pref IDs
+        available_ids = [c['pref_id'] for c in c_list]
+        random.shuffle(available_ids)
         
-        # Assign new shuffled Serial IDs back
-        # Note: 'id' key in dict remains '0', '1'... but 'serial_id' changes
-        # This effectively shuffles the order if UI sorts by serial_id.
-        # WAIT: The previous logic relied on 'serial_id'.
+        # Assign new shuffled Pref IDs back
         for idx, cand in enumerate(c_list):
-            cand['serial_id'] = available_serials[idx]
+            cand['pref_id'] = available_ids[idx]
             
         # Write Ballot File
         b_path = os.path.join(ballots_dir, f"{bid}.json")

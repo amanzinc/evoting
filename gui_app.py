@@ -515,7 +515,9 @@ class VotingApp:
         if self.voting_mode == 'normal':
             cid = self.selections.get(1)
             sel_str = get_cand_display(cid)
-            qr_data = sel_str
+            cand = self.data_handler.get_candidate_by_id(cid)
+            cand_commitment = cand.get('commitment', '') if cand else ""
+            qr_data = f"{sel_str}:{cand_commitment}"
         else:
             ranks = sorted(self.selections.keys())
             vals = []
@@ -523,7 +525,14 @@ class VotingApp:
                 c = self.selections[r]
                 vals.append(get_cand_display(c))
             sel_str = ", ".join(vals)
-            qr_data = "_".join([get_cand_display(self.selections[r]) for r in ranks])
+            
+            qr_parts = []
+            for r in ranks:
+                cand = self.data_handler.get_candidate_by_id(self.selections[r])
+                c_disp = get_cand_display(self.selections[r])
+                c_comm = cand.get('commitment', '') if cand else ""
+                qr_parts.append(f"{c_disp}:{c_comm}")
+            qr_data = "_".join(qr_parts)
 
         # Pre-generate log JSON while context is valid
         vote_record = self.data_handler.generate_vote_json(
