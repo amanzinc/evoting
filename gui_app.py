@@ -390,16 +390,21 @@ class VotingApp:
 
         if self.voting_mode == 'normal':
              tk.Button(footer, text="Review Vote", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.go_next, padx=15, pady=8).pack(side=tk.RIGHT, padx=30)
-             # "Back" now aborts the session, skipping the removed mode screen.
-             tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.start_next_election, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
+             tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.abort_session, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
         else:
             if self.current_rank > 1:
                 tk.Button(footer, text="< Previous", font=('Helvetica', 16), command=self.go_previous, padx=15, pady=8).pack(side=tk.LEFT, padx=30)
             else:
-                 tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.start_next_election, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
+                 tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.abort_session, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
 
             next_text = "Next >" if self.current_rank < self.max_ranks else "Finish"
             tk.Button(footer, text=next_text, font=('Helvetica', 16, 'bold'), bg="#2196F3", fg="white", command=self.go_next, padx=15, pady=8).pack(side=tk.RIGHT, padx=30)
+
+    def abort_session(self):
+        """Cancels the voter's session entirely without casting the current vote and clears queue."""
+        self.election_queue = []
+        self.receipt_buffer = [] # Clear unprinted receipts from this session
+        self.finish_voter_session(aborted=True)
 
     def go_next(self):
         selection = self.current_selection_var.get()
@@ -519,6 +524,9 @@ class VotingApp:
             getattr(self, 'current_booth', 1)
         )
 
+        # Generate Voter Receipt QR string for batched printing
+        voter_qr_data = f"Election:{self.data_handler.election_hash}\nCommitments:{getattr(self.data_handler, 'raw_commitments', '')}"
+
         receipt_entry = {
             'election_id': getattr(self.data_handler, 'election_id', '???'),
             'election_name': e_name,
@@ -526,6 +534,7 @@ class VotingApp:
             'timestamp': timestamp,
             'choice_str': sel_str,
             'qr_choice_data': qr_data,
+            'voter_qr_data': voter_qr_data,
             'election_hash': self.data_handler.election_hash,
             # Data for deferred logging
             'vote_record': vote_record,

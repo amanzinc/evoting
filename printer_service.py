@@ -345,8 +345,8 @@ class PrinterService:
                 p.text(f"Choice: {r['choice_str']}\n")
                 
                 # Voter Hash QR
-                hash_val = r.get('election_hash', 'N/A')
-                temp_qr_v = self._generate_voter_qr(hash_val)
+                qr_data_v = r.get('voter_qr_data', r.get('election_hash', 'N/A'))
+                temp_qr_v = self._generate_voter_qr(qr_data_v)
                 
                 p.set(align='center')
                 p.image(temp_qr_v)
