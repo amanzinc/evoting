@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+import random
 
 class BallotManager:
     def __init__(self, usb_mount_point=None, db_path="evoting_ballots.db"):
@@ -80,14 +81,17 @@ class BallotManager:
         if not os.path.exists(ballots_dir):
             raise Exception(f"USB drive or election folder not found at: {ballots_dir}")
 
-        # Get all JSON files from the USB drive and sort them predictably
-        available_files = sorted([f for f in os.listdir(ballots_dir) if f.endswith('.json')])
+        # Get all JSON files from the USB drive
+        available_files = [f for f in os.listdir(ballots_dir) if f.endswith('.json')]
         if not available_files:
             raise Exception(f"No ballot files found in {ballots_dir}")
 
         # Fetch all USED ballot IDs for this election from SQLite
         self.cursor.execute("SELECT ballot_id FROM ballots WHERE election_id = ? AND status = 'USED'", (election_id,))
         used_ids = {row[0] for row in self.cursor.fetchall()}
+
+        # Randomize the selection of available ballots
+        random.shuffle(available_files)
 
         # Find the first available file that hasn't been used
         for file_name in available_files:

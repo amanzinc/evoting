@@ -81,11 +81,11 @@ class DataHandler:
             self.election_name = data.get("election_name", "General Election")
             
             # Parse commitments array
-            raw_commitments = data.get("commitments", "")
+            self.raw_commitments = data.get("commitments", "")
             self.commitments_list = []
-            if raw_commitments:
+            if self.raw_commitments:
                 try:
-                    parsed_cmts = json.loads(raw_commitments)
+                    parsed_cmts = json.loads(self.raw_commitments)
                     if isinstance(parsed_cmts, list) and len(parsed_cmts) > 0:
                         self.commitments_list = parsed_cmts[0]
                 except Exception as e:
