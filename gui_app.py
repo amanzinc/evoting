@@ -210,8 +210,12 @@ class VotingApp:
         success = self.start_session(self.current_election_id)
         
         if success:
-            # Show Mode Selection for this election
-            self.show_mode_selection_screen()
+            # Switch modes automatically based on parsed ballot JSON!
+            e_type = self.data_handler.election_type.lower()
+            if "preferential" in e_type or "ranked" in e_type:
+                self.start_preferential_voting()
+            else:
+                self.start_normal_voting()
         else:
             # Abort session and return to home screen
             self.election_queue = []
@@ -282,31 +286,11 @@ class VotingApp:
             messagebox.showerror("Ballot Error", f"Could not load new ballot for {election_id}: {e}")
             return False
 
-    def show_mode_selection_screen(self):
-        self.clear_container()
-        header = tk.Frame(self.main_container, bg="#f0f0f0", pady=15)
-        header.pack(fill=tk.X)
-        tk.Label(header, text="Select Voting Type", font=('Helvetica', 24, 'bold'), bg="#f0f0f0").pack()
-        
-        tk.Label(header, text="System Ready", font=('Helvetica', 12, 'bold'), bg="#f0f0f0", fg="#555").pack()
-
-        content = tk.Frame(self.main_container, bg="white")
-        content.pack(expand=True)
-        
-        btn_frame = tk.Frame(content, bg="white")
-        btn_frame.pack(pady=20)
-
-        tk.Button(btn_frame, text="Normal Voting\n(Single Choice)", font=('Helvetica', 20, 'bold'), command=self.start_normal_voting, padx=30, pady=20, bg="#2196F3", fg="white").pack(pady=10, fill=tk.X)
-        tk.Button(btn_frame, text="Preferential Voting\n(Ranked)", font=('Helvetica', 20, 'bold'), command=self.start_preferential_voting, padx=30, pady=20, bg="#9C27B0", fg="white").pack(pady=10, fill=tk.X)
-        tk.Button(btn_frame, text="Preferential Voting 2\n(Greyed Out)", font=('Helvetica', 20, 'bold'), command=self.start_preferential_voting_2, padx=30, pady=20, bg="#673AB7", fg="white").pack(pady=10, fill=tk.X)
-        
-        # Exit button for Dev
-        tk.Button(btn_frame, text="Exit App", font=('Helvetica', 14), command=self.exit_app).pack(pady=10)
+    # --- Voting Modes ---
 
     def start_normal_voting(self):
         # self.start_session() # Already started in start_next_election
         self.voting_mode = 'normal'
-        self.pv_mode_2 = False
         self.selections = {}
         self.current_rank = 1
         self.show_selection_screen()
@@ -314,16 +298,6 @@ class VotingApp:
     def start_preferential_voting(self):
         # self.start_session()
         self.voting_mode = 'preferential'
-        self.pv_mode_2 = False
-        self.selections = {}
-        self.current_rank = 1
-        self.max_ranks = max(1, len(self.data_handler.candidates_base) - 1)
-        self.show_selection_screen()
-
-    def start_preferential_voting_2(self):
-        # self.start_session()
-        self.voting_mode = 'preferential'
-        self.pv_mode_2 = True
         self.selections = {}
         self.current_rank = 1
         self.max_ranks = max(1, len(self.data_handler.candidates_base) - 1)
@@ -353,22 +327,9 @@ class VotingApp:
         if self.current_rank in self.selections:
              self.current_selection_var.set(self.selections[self.current_rank])
 
-        available_candidates = []
-        all_opts = self.data_handler.candidates_base
-
-        if self.voting_mode == 'normal':
-            available_candidates = all_opts
-        else:
-            for cand in all_opts:
-                is_selected_elsewhere = False
-                for rank, cid in self.selections.items():
-                    if rank < self.current_rank and cid == cand['id']:
-                        is_selected_elsewhere = True
-                
-                if self.pv_mode_2:
-                    available_candidates.append(cand)
-                elif not is_selected_elsewhere:
-                    available_candidates.append(cand)
+        # In both modes, we render all options.
+        # For preferential, we will disable the previously selected ones instead of hiding them.
+        available_candidates = all_opts
 
         total_options = len(available_candidates)
         rows_per_col = (total_options + 1) // 2
@@ -398,21 +359,26 @@ class VotingApp:
             content.grid_rowconfigure(row, weight=1)
 
             state_val = tk.NORMAL
-            if self.pv_mode_2:
+            bg_color = "white"
+            
+            # Preferential Mode: Gray out candidates already selected in previous ranks
+            if self.voting_mode == 'preferential':
                 selected_rank = None
                 for rank, cid in self.selections.items():
                     if rank < self.current_rank and cid == cand['id']:
                         selected_rank = rank
                         break
                 
+                # Disable the button if selected previously AND it is not NAFS/NOTA
                 if selected_rank is not None and cand['name'] != "NAFS":
                     state_val = tk.DISABLED
-                    fg_color = "grey"
-                    cand_text += f" (Pref {selected_rank})"
+                    bg_color = "#e0e0e0"
+                    fg_color = "#888888"
+                    cand_text += f"\n(Rank {selected_rank})"
 
             tk.Radiobutton(
                 frame, text=cand_text, variable=self.current_selection_var, value=cand['id'],
-                indicatoron=0, font=btn_font, bg='white', fg=fg_color,
+                indicatoron=0, font=btn_font, bg=bg_color, fg=fg_color,
                 selectcolor='#e8f5e9', activebackground='#f5f5f5',
                 padx=10, pady=btn_pady, bd=2, relief=tk.RAISED,
                 justify=tk.CENTER, state=state_val
@@ -423,12 +389,13 @@ class VotingApp:
 
         if self.voting_mode == 'normal':
              tk.Button(footer, text="Review Vote", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.go_next, padx=15, pady=8).pack(side=tk.RIGHT, padx=30)
-             tk.Button(footer, text="< Back", font=('Helvetica', 16), command=self.show_mode_selection_screen, padx=15, pady=8).pack(side=tk.LEFT, padx=30)
+             # "Back" now aborts the session, skipping the removed mode screen.
+             tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.start_next_election, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
         else:
             if self.current_rank > 1:
                 tk.Button(footer, text="< Previous", font=('Helvetica', 16), command=self.go_previous, padx=15, pady=8).pack(side=tk.LEFT, padx=30)
             else:
-                 tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.show_mode_selection_screen, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
+                 tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.start_next_election, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
 
             next_text = "Next >" if self.current_rank < self.max_ranks else "Finish"
             tk.Button(footer, text=next_text, font=('Helvetica', 16, 'bold'), bg="#2196F3", fg="white", command=self.go_next, padx=15, pady=8).pack(side=tk.RIGHT, padx=30)

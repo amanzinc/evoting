@@ -77,6 +77,7 @@ class DataHandler:
                 data = json.loads(decrypted_bytes.decode('utf-8'))
                 
             self.election_id = str(data.get("election_id", ""))
+            self.election_type = data.get("election_type", "Normal")
             self.election_name = data.get("election_name", "General Election")
             
             # Parse commitments array
