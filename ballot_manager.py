@@ -3,8 +3,9 @@ import os
 import pymongo
 
 class BallotManager:
-    def __init__(self, usb_mount_point="/media/pi/USB"):
-        self.usb_mount_point = usb_mount_point
+    def __init__(self, usb_mount_point=None):
+        self.usb_mount_point = self._find_usb_drive(usb_mount_point)
+        print(f"BallotManager using USB Path: {self.usb_mount_point}")
         
         try:
              self.client = pymongo.MongoClient("mongodb://localhost:27017/")
@@ -14,6 +15,40 @@ class BallotManager:
         except Exception as e:
              print(f"Failed to connect to MongoDB: {e}")
              self.collection = None
+
+    def _find_usb_drive(self, user_provided_path):
+        """
+        Attempts to find the USB drive automatically by looking for an 'elections' folder
+        in common Raspberry Pi / Linux mount points.
+        """
+        # 1. If the user explicitly provided a path that works, use it.
+        if user_provided_path and os.path.exists(os.path.join(user_provided_path, "elections")):
+            return user_provided_path
+
+        # 2. Check common mount directories where USBs appear
+        user = os.environ.get("USER", "pi")
+        search_dirs = [
+            f"/media/{user}", # Raspberry Pi OS Desktop default auto-mount
+            "/media",         # Older OS mounts
+            "/mnt",           # Manual mounts
+            os.path.dirname(os.path.abspath(__file__)) # Fallback to local project dir for testing
+        ]
+
+        for base_dir in search_dirs:
+            if not os.path.isdir(base_dir):
+                continue
+                
+            # Look at every folder immediately inside the base_dir
+            for item in os.listdir(base_dir):
+                potential_usb = os.path.join(base_dir, item)
+                if os.path.isdir(potential_usb):
+                    # Does this potential USB drive have an 'elections' folder?
+                    if os.path.isdir(os.path.join(potential_usb, "elections")):
+                        return potential_usb
+                        
+        # If we failed to find it dynamically, fallback to the hardcoded default so the error
+        # messages still make sense later down the line.
+        return "/media/pi/USB"
 
     def get_unused_ballot(self, election_id=None):
         """
