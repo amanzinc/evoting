@@ -154,6 +154,8 @@ class VotingApp:
         import json
         token_id = token_payload
         eid_vector_str = ""
+        self.current_voter_id = token_id
+        self.current_booth = 1
         
         try:
             data = json.loads(token_payload)
@@ -161,6 +163,10 @@ class VotingApp:
                 token_id = data['token_id']
             if 'eid_vector' in data:
                 eid_vector_str = data['eid_vector']
+            if 'entry_number' in data:
+                self.current_voter_id = data['entry_number']
+            if 'booth' in data:
+                self.current_booth = data['booth']
         except:
             pass
             
@@ -216,13 +222,14 @@ class VotingApp:
                 self.printer_service.print_session_receipts(self.receipt_buffer)
                 
                 # 2. Log Votes (Only if Print Succeeded)
-                all_rows = []
+                all_records = []
                 for entry in self.receipt_buffer:
-                    if 'vote_rows' in entry:
-                         all_rows.extend(entry['vote_rows'])
+                    if 'vote_record' in entry:
+                         all_records.append(entry['vote_record'])
                 
-                if all_rows:
-                    self.data_handler.save_rows(all_rows)
+                if all_records:
+                    for r in all_records:
+                        self.data_handler.save_json(r)
                 
             except Exception as e:
                 messagebox.showerror("Print Error", f"Failed to print session receipt: {e}")
@@ -518,10 +525,12 @@ class VotingApp:
             sel_str = ", ".join(vals)
             qr_data = "_".join([get_cand_display(self.selections[r]) for r in ranks])
 
-        # Pre-generate log rows while context is valid
-        vote_rows = self.data_handler.generate_vote_rows(
+        # Pre-generate log JSON while context is valid
+        vote_record = self.data_handler.generate_vote_json(
             {'selections': self.selections, 'timestamp': timestamp}, 
-            self.voting_mode
+            self.voting_mode,
+            getattr(self, 'current_voter_id', 'UNKNOWN'),
+            getattr(self, 'current_booth', 1)
         )
 
         receipt_entry = {
@@ -533,7 +542,7 @@ class VotingApp:
             'qr_choice_data': qr_data,
             'election_hash': self.data_handler.election_hash,
             # Data for deferred logging
-            'vote_rows': vote_rows,
+            'vote_record': vote_record,
             'internal_ballot_id': ballot_id 
         }
 
@@ -599,7 +608,12 @@ class VotingApp:
                     # Defer saving if merging
                     if not self.merge_receipts:
                         vote_data = {'selections': self.selections}
-                        self.data_handler.save_vote(vote_data, self.voting_mode)
+                        self.data_handler.save_vote(
+                            vote_data, 
+                            self.voting_mode,
+                            getattr(self, 'current_voter_id', 'UNKNOWN'),
+                            getattr(self, 'current_booth', 1)
+                        )
                     
                     # Mark ballot as used for this election (ALWAYS MARK USED TO PREVENT REUSE)
                     # Wait, if print fails at the end, we might have an issue. 

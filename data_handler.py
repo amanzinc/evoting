@@ -3,7 +3,7 @@ import csv
 import os
 
 class DataHandler:
-    def __init__(self, candidates_file, log_file="votes.log"):
+    def __init__(self, candidates_file, log_file="votes.json"):
         # candidates_file is now the specific ballot file path
         self.candidates_file = candidates_file 
         self.log_file = log_file
@@ -112,40 +112,52 @@ class DataHandler:
         except Exception as e:
             print(f"Error logging token: {e}")
 
-    def generate_vote_rows(self, vote_data, voting_mode):
-        """Generates the CSV rows for a vote based on CURRENT context."""
-        timestamp = vote_data.get('timestamp')
+    def generate_vote_json(self, vote_data, voting_mode, voter_id="UNKNOWN_VOTER", booth_num=1):
+        """Generates a JSON object matching the MongoDB schema."""
         import datetime
-        if not timestamp:
-            timestamp = datetime.datetime.now().isoformat()
+        timestamp = vote_data.get('timestamp', datetime.datetime.now().isoformat())
         
         selections = vote_data.get('selections', {})
-        rows = []
         
+        # Determine preference ID based on mode
+        # If normal, pref_id is just the chosen candidate's serial ID.
+        # If preferential, pre_id is a formatted string of choices.
         if voting_mode == 'normal':
             cid = selections.get(1)
             cand = self.get_candidate_by_id(cid)
-            if cand:
-                rows.append([timestamp, voting_mode, 1, cid, cand['name']])
+            pref_id = str(cand['id']) if cand else ""
         else:
-            for rank, cid in selections.items():
-                cand = self.get_candidate_by_id(cid)
-                if cand:
-                    rows.append([timestamp, voting_mode, rank, cid, cand['name']])
-        return rows
+            # For preferential, we join the candidate IDs by rank
+            ranks = sorted(selections.keys())
+            pref_id = "_".join(str(self.get_candidate_by_id(selections[r])['id']) for r in ranks if self.get_candidate_by_id(selections[r]))
+            
+        # Commitment is not explicitly calculated here right now, we will use a placeholder
+        # However, we can use the encrypted ballot hash string as the commitment
+        commitment = self.election_hash # Using election hash as placeholder for ballot hash/commitment
 
-    def save_rows(self, rows):
-        """Writes pre-generated rows to the log file."""
+        vote_record = {
+            "election_id": self.election_id,
+            "voter_id": voter_id,
+            "booth_num": booth_num,
+            "commitment": commitment,
+            "pref_id": pref_id,
+            "hash_value": self.election_hash, # Could be a hash of the vote itself, using election_hash for now
+            "timestamp": timestamp
+        }
+        
+        return vote_record
+
+    def save_json(self, record):
+        """Writes the JSON object as a new line in the log file (JSONL format)."""
         try:
-            with open(self.log_file, "a", newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerows(rows)
-            print("Votes committed to log.")
+            with open(self.log_file, "a", encoding='utf-8') as f:
+                f.write(json.dumps(record) + "\n")
+            print("Vote committed to JSON log.")
         except Exception as e:
-            print(f"Error saving rows: {e}")
+            print(f"Error saving JSON: {e}")
             raise e
 
-    def save_vote(self, vote_data, voting_mode):
-        """Legacy convenience method."""
-        rows = self.generate_vote_rows(vote_data, voting_mode)
-        self.save_rows(rows)
+    def save_vote(self, vote_data, voting_mode, voter_id="UNKNOWN_VOTER", booth_num=1):
+        """Saves the vote data as a JSON line."""
+        record = self.generate_vote_json(vote_data, voting_mode, voter_id, booth_num)
+        self.save_json(record)
