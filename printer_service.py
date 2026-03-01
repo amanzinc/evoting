@@ -155,7 +155,7 @@ class PrinterService:
                 os.remove(temp_img)
 
             p.text(BOTTOM_BAR + "\n")
-            p.text("\n\n")
+            p.text("\n\n\n\n\n\n") # Feed paper past the cutter blade (6 blank lines)
             p.cut()
 
             # ==========================================
@@ -188,6 +188,7 @@ class PrinterService:
             p.text("\n")
             
             if is_final:
+                p.text("\n\n\n\n\n") # Feed paper past the cutter blade (5 blank lines)
                 p.cut()
             else:
                 p.text("\n\n\n\n_ _ _ _ NEXT ELECTION _ _ _ _\n\n\n")

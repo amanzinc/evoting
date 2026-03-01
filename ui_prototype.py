@@ -606,7 +606,7 @@ class VotingApp:
             
             p.text(BOTTOM_BAR + "\n")
             
-            p.text("\n\n")
+            p.text("\n\n\n\n\n\n") # Feed paper past the cutter blade (6 blank lines)
             p.cut()
 
             # ==========================================
@@ -662,7 +662,7 @@ class VotingApp:
             
             p.text(BOTTOM_BAR + "\n")
             p.text("Keep this receipt safe.\n")
-            p.text("\n")
+            p.text("\n\n\n\n\n\n") # Feed paper past the cutter blade (6 blank lines)
             p.cut()
             
             result_queue.put(True) # Success
