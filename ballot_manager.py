@@ -99,8 +99,24 @@ class BallotManager:
                 
                 # Double check the file is actually readable before returning
                 try:
-                    with open(selected_file, 'r') as f:
-                        json.load(f)
+                    with open(selected_file, 'rb') as f:
+                        file_content = f.read()
+
+                    try:
+                        # Try parsing as plain JSON
+                        json.loads(file_content.decode('utf-8'))
+                    except (ValueError, UnicodeDecodeError):
+                        # If plain JSON parsing fails, try to decrypt using Fernet
+                        from cryptography.fernet import Fernet
+                        key_path = "secret.key"
+                        if not os.path.exists(key_path):
+                            raise Exception("secret.key not found for decryption")
+                        with open(key_path, "rb") as kf:
+                            key = kf.read().strip()
+                        f_crypto = Fernet(key)
+                        decrypted_data = f_crypto.decrypt(file_content)
+                        json.loads(decrypted_data.decode('utf-8'))
+
                     return ballot_id, selected_file
                 except Exception as e:
                     print(f"File {selected_file} is corrupt or unreadable: {e}. Skipping...")

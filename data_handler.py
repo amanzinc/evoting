@@ -25,27 +25,42 @@ class DataHandler:
             raise FileNotFoundError(f"{self.candidates_file} not found!")
 
         try:
-            with open(self.candidates_file, mode='r', encoding='utf-8') as f:
-                data = json.load(f)
-                
-                self.election_id = data.get("election_id", "")
-                self.election_name = data.get("election_name", "General Election")
-                self.election_hash = data.get("hash_string", "")
-                self.ballot_id = data.get("ballot_id", "UNKNOWN")
-                
-                candidates_data = data.get("candidates", [])
-                if isinstance(candidates_data, dict):
-                    candidates_list = candidates_data.values()
-                else:
-                    candidates_list = candidates_data
+            with open(self.candidates_file, mode='rb') as f:
+                file_content = f.read()
 
-                for cand in candidates_list:
-                    self.candidates_base.append({
-                        "id": int(cand["serial_id"]),
-                        "name": cand["candidate_name"],
-                        "candidate_number": cand["candidate_number"],
-                        "party": cand.get("candidate_party", "")
-                    })
+            try:
+                # Try parsing as plain JSON first
+                data = json.loads(file_content.decode('utf-8'))
+            except (ValueError, UnicodeDecodeError):
+                # If plain JSON parsing fails, try to decrypt
+                from cryptography.fernet import Fernet
+                key_path = "secret.key"
+                if not os.path.exists(key_path):
+                    raise Exception(f"File appears encrypted but {key_path} not found!")
+                with open(key_path, "rb") as kf:
+                    key = kf.read().strip()
+                f_crypto = Fernet(key)
+                decrypted_bytes = f_crypto.decrypt(file_content)
+                data = json.loads(decrypted_bytes.decode('utf-8'))
+                
+            self.election_id = data.get("election_id", "")
+            self.election_name = data.get("election_name", "General Election")
+            self.election_hash = data.get("hash_string", "")
+            self.ballot_id = data.get("ballot_id", "UNKNOWN")
+            
+            candidates_data = data.get("candidates", [])
+            if isinstance(candidates_data, dict):
+                candidates_list = candidates_data.values()
+            else:
+                candidates_list = candidates_data
+
+            for cand in candidates_list:
+                self.candidates_base.append({
+                    "id": int(cand["serial_id"]),
+                    "name": cand["candidate_name"],
+                    "candidate_number": cand["candidate_number"],
+                    "party": cand.get("candidate_party", "")
+                })
             
             self.candidates_base.sort(key=lambda x: x['id'])
             return self.candidates_base
