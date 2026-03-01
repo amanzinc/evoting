@@ -309,7 +309,8 @@ class PrinterService:
                 
                 p.text(DIVIDER + "\n")
             
-            p.text("\n\n\n") # Just feed for VVPAT box
+            p.text("\n\n\n\n\n\n") # Feed for VVPAT box
+            p.cut()
             
             # ==============================
             # PART 2: CONSOLIDATED VOTER
@@ -339,7 +340,8 @@ class PrinterService:
                 
                 p.text(DIVIDER + "\n")
             
-            p.text("Keep Safe\n\n\n") # Just feed for Tear off
+            p.text("Keep Safe\n\n\n\n\n\n") # Feed past cutter blade
+            p.cut()
             
         except Exception as e:
             print(f"Batch Print Error: {e}")
