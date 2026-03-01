@@ -640,7 +640,7 @@ class VotingApp:
                     # Actually, if we mark it used now, and the final print fails, we can't rollback easily.
                     # But preventing reuse is critical.
                     # Let's Mark USed now. The risk is a wasted ballot on print fail. Acceptable.
-                    self.ballot_manager.mark_as_used(self.data_handler.ballot_id, self.current_election_id)
+                    self.ballot_manager.mark_as_used(self.data_handler.ballot_file_id, self.current_election_id)
                     
                     if not self.merge_receipts:
                         messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")

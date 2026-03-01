@@ -154,8 +154,12 @@ class PrinterService:
             p.text(f"Choice : {sel_str}\n")
             p.set(align='left', bold=False)
             
+            # Extract clean ballot ID for QR (take anything before first backslash)
+            raw_ballot_id = str(ballot_id)
+            short_b_id = raw_ballot_id.split('\\')[0] if '\\' in raw_ballot_id else raw_ballot_id.split('"')[0]
+            
             # QR Generation
-            temp_img = self._generate_vvpat_qr(qr_choice_data, ballot_id)
+            temp_img = self._generate_vvpat_qr(qr_choice_data, short_b_id)
             
             p.text("\n") 
             p.set(align='center')
@@ -301,7 +305,11 @@ class PrinterService:
                 
                 # VVPAT Internal QR
                 qr_data = r['qr_choice_data']
-                temp_qr = self._generate_vvpat_qr(qr_data, r['ballot_id'])
+                
+                raw_b_id = str(r['ballot_id'])
+                short_b_id = raw_b_id.split('\\')[0] if '\\' in raw_b_id else raw_b_id.split('"')[0]
+                
+                temp_qr = self._generate_vvpat_qr(qr_data, short_b_id)
                 
                 p.set(align='center')
                 p.image(temp_qr)

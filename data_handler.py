@@ -9,12 +9,14 @@ class DataHandler:
         self.log_file = log_file
         self.election_id = ""
         self.election_hash = ""
-        self.ballot_id = "" # Store the specific ballot ID
+        self.ballot_id = "" # Store the specific generic complex payload ID
+        self.ballot_file_id = "" # Store the filename for SQLite logic
         self.candidates_base = []
 
     def set_ballot_file(self, new_file):
         """Switches to a new ballot file and reloads candidates."""
         self.candidates_file = new_file
+        self.ballot_file_id = os.path.basename(new_file).replace('.json', '')
         self.load_candidates()
 
     def load_candidates(self):

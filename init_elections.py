@@ -7,9 +7,9 @@ import pymongo
 
 ELECTIONS_ROOT = "elections"
 CONFIGS = {
-    "E1": {"name": "Student Council", "candidates": ["Alice", "Bob", "Charlie", "NAFS"]},
-    "E3": {"name": "Sports Committee", "candidates": ["David", "Eve", "Frank", "NAFS"]},
-    "E6": {"name": "Cultural Society", "candidates": ["Grace", "Heidi", "Ivan", "NAFS"]}
+    "E1": {"name": "Student Council", "type": "Preferential", "candidates": ["Alice", "Bob", "Charlie", "NAFS"]},
+    "E3": {"name": "Sports Committee", "type": "Preferential", "candidates": ["David", "Eve", "Frank", "NAFS"]},
+    "E6": {"name": "Cultural Society", "type": "Preferential", "candidates": ["Grace", "Heidi", "Ivan", "NAFS"]}
 }
 
 def setup_election(eid, info):
@@ -32,6 +32,7 @@ def setup_election(eid, info):
 
     template = {
         "election_id": str(eid),
+        "election_type": info.get("type", "Preferential"),
         "election_name": info['name'],
         "candidates": candidates_list
     }
@@ -49,9 +50,10 @@ def setup_election(eid, info):
 def generate_ballots(eid, base_dir, ballots_dir, template, count=20):
     usage_map = {}
     
-    for _ in range(count):
+    for i in range(count):
         bid = uuid.uuid4().hex[:8].upper()
-        usage_map[bid] = "UNUSED"
+        file_id = f"ballot_{i+1}_{eid}"
+        usage_map[file_id] = "UNUSED"
         
         # Deep copy template
         ballot_data = copy.deepcopy(template)
@@ -74,31 +76,10 @@ def generate_ballots(eid, base_dir, ballots_dir, template, count=20):
             cand['pref_id'] = available_ids[idx]
             
         # Write Ballot File
-        b_path = os.path.join(ballots_dir, f"{bid}.json")
+        b_path = os.path.join(ballots_dir, f"{file_id}.json")
         with open(b_path, 'w') as f:
             json.dump(ballot_data, f, indent=4)
             
-    # Insert into MongoDB
-    try:
-        client = pymongo.MongoClient("mongodb://localhost:27017/")
-        db = client["evoting_db"]
-        collection = db["ballots"]
-        
-        docs = []
-        for bid in usage_map:
-             docs.append({
-                 "election_id": eid,
-                 "ballot_id": bid,
-                 "status": "UNUSED"
-             })
-             
-        if docs:
-            collection.insert_many(docs)
-            print(f"  -> Inserted {len(docs)} ballots into MongoDB for {eid}")
-            
-    except Exception as e:
-        print(f"  -> Failed to insert into MongoDB: {e}")
-        
     print(f"  -> Generated {count} ballots for {eid}")
 
 if __name__ == "__main__":
@@ -106,13 +87,6 @@ if __name__ == "__main__":
         import shutil
         print("Cleaning old elections data...")
         shutil.rmtree(ELECTIONS_ROOT)
-        
-        # Clear MongoDB Collection
-        try:
-             client = pymongo.MongoClient("mongodb://localhost:27017/")
-             client["evoting_db"]["ballots"].delete_many({})
-             print("Cleared MongoDB ballots collection.")
-        except: pass
         
     os.makedirs(ELECTIONS_ROOT)
     
