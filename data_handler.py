@@ -32,34 +32,84 @@ class DataHandler:
                 # Try parsing as plain JSON first
                 data = json.loads(file_content.decode('utf-8'))
             except (ValueError, UnicodeDecodeError):
-                # If plain JSON parsing fails, try to decrypt
-                from cryptography.fernet import Fernet
-                key_path = "secret.key"
+                # If plain JSON parsing fails, try to decrypt with RSA Chunks
+                from cryptography.hazmat.primitives.asymmetric import padding
+                from cryptography.hazmat.primitives import hashes
+                from cryptography.hazmat.primitives import serialization
+                import hardware_crypto
+
+                key_path = "private.pem"
                 if not os.path.exists(key_path):
                     raise Exception(f"File appears encrypted but {key_path} not found!")
-                with open(key_path, "rb") as kf:
-                    key = kf.read().strip()
-                f_crypto = Fernet(key)
-                decrypted_bytes = f_crypto.decrypt(file_content)
+
+                # 1. Unlock Private Key using Hardware Identity
+                try:
+                    passphrase = hardware_crypto.get_hardware_passphrase()
+                    with open(key_path, "rb") as kf:
+                        private_key = serialization.load_pem_private_key(
+                            kf.read(),
+                            password=passphrase
+                        )
+                except Exception as e:
+                    raise Exception(f"Hardware Identity mismatch or corrupt key! Could not unlock private.pem: {e}")
+
+                # 2. Decrypt in Chunks (2048-bit RSA = 256 byte chunks)
+                CHUNK_SIZE = 256
+                decrypted_bytes = bytearray()
+                
+                for i in range(0, len(file_content), CHUNK_SIZE):
+                    chunk = file_content[i:i+CHUNK_SIZE]
+                    if len(chunk) < CHUNK_SIZE:
+                         print(f"Warning: Encrypted chunk size {len(chunk)} is less than {CHUNK_SIZE}")
+                    
+                    decrypted_chunk = private_key.decrypt(
+                        chunk,
+                        padding.OAEP(
+                            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                            algorithm=hashes.SHA256(),
+                            label=None
+                        )
+                    )
+                    decrypted_bytes.extend(decrypted_chunk)
+                    
                 data = json.loads(decrypted_bytes.decode('utf-8'))
                 
-            self.election_id = data.get("election_id", "")
+            self.election_id = str(data.get("election_id", ""))
             self.election_name = data.get("election_name", "General Election")
-            self.election_hash = data.get("hash_string", "")
-            self.ballot_id = data.get("ballot_id", "UNKNOWN")
             
+            # Parse commitments array
+            raw_commitments = data.get("commitments", "")
+            self.commitments_list = []
+            if raw_commitments:
+                try:
+                    parsed_cmts = json.loads(raw_commitments)
+                    if isinstance(parsed_cmts, list) and len(parsed_cmts) > 0:
+                        self.commitments_list = parsed_cmts[0]
+                except Exception as e:
+                    print(f"Warning: could not parse commitments: {e}")
+
+            self.ballot_id = data.get("ballot_id", "UNKNOWN")
+            self.election_hash = str(self.ballot_id) # Fallback for VVPAT hash QR code
+
             candidates_data = data.get("candidates", [])
             if isinstance(candidates_data, dict):
-                candidates_list = candidates_data.values()
+                candidates_list = list(candidates_data.values())
             else:
                 candidates_list = candidates_data
 
-            for cand in candidates_list:
+            for i, cand in enumerate(candidates_list):
+                cand_commitment = self.commitments_list[i] if i < len(self.commitments_list) else ""
+                
+                # Support new "pref_id" & "entry_number" or fallback to old schema
+                pref_id = cand.get("pref_id", cand.get("serial_id", i))
+                entry_number = cand.get("entry_number", cand.get("candidate_number", ""))
+                
                 self.candidates_base.append({
-                    "id": int(cand["serial_id"]),
-                    "name": cand["candidate_name"],
-                    "candidate_number": cand["candidate_number"],
-                    "party": cand.get("candidate_party", "")
+                    "id": int(pref_id),
+                    "name": cand.get("candidate_name", "Unknown"),
+                    "candidate_number": entry_number,
+                    "party": cand.get("candidate_party", ""),
+                    "commitment": cand_commitment
                 })
             
             self.candidates_base.sort(key=lambda x: x['id'])
@@ -119,29 +169,25 @@ class DataHandler:
         
         selections = vote_data.get('selections', {})
         
-        # Determine preference ID based on mode
-        # If normal, pref_id is just the chosen candidate's serial ID.
-        # If preferential, pre_id is a formatted string of choices.
+        # Determine preference ID and commitment based on mode
         if voting_mode == 'normal':
             cid = selections.get(1)
             cand = self.get_candidate_by_id(cid)
             pref_id = str(cand['id']) if cand else ""
+            commitment = cand['commitment'] if cand else ""
         else:
             # For preferential, we join the candidate IDs by rank
             ranks = sorted(selections.keys())
             pref_id = "_".join(str(self.get_candidate_by_id(selections[r])['id']) for r in ranks if self.get_candidate_by_id(selections[r]))
+            commitment = "_".join(str(self.get_candidate_by_id(selections[r]).get('commitment', '')) for r in ranks if self.get_candidate_by_id(selections[r]))
             
-        # Commitment is not explicitly calculated here right now, we will use a placeholder
-        # However, we can use the encrypted ballot hash string as the commitment
-        commitment = self.election_hash # Using election hash as placeholder for ballot hash/commitment
-
         vote_record = {
             "election_id": self.election_id,
             "voter_id": voter_id,
             "booth_num": booth_num,
             "commitment": commitment,
             "pref_id": pref_id,
-            "hash_value": self.election_hash, # Could be a hash of the vote itself, using election_hash for now
+            "hash_value": str(self.ballot_id), # Ballot ID contains the proof needed
             "timestamp": timestamp
         }
         

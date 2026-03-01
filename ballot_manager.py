@@ -106,16 +106,44 @@ class BallotManager:
                         # Try parsing as plain JSON
                         json.loads(file_content.decode('utf-8'))
                     except (ValueError, UnicodeDecodeError):
-                        # If plain JSON parsing fails, try to decrypt using Fernet
-                        from cryptography.fernet import Fernet
-                        key_path = "secret.key"
+                        # If plain JSON parsing fails, try to decrypt with RSA Chunks
+                        from cryptography.hazmat.primitives.asymmetric import padding
+                        from cryptography.hazmat.primitives import hashes
+                        from cryptography.hazmat.primitives import serialization
+                        import hardware_crypto
+                        
+                        key_path = "private.pem"
                         if not os.path.exists(key_path):
-                            raise Exception("secret.key not found for decryption")
-                        with open(key_path, "rb") as kf:
-                            key = kf.read().strip()
-                        f_crypto = Fernet(key)
-                        decrypted_data = f_crypto.decrypt(file_content)
-                        json.loads(decrypted_data.decode('utf-8'))
+                            raise Exception("private.pem not found for decryption")
+                            
+                        # 1. Unlock Private Key using Hardware Identity
+                        try:
+                            passphrase = hardware_crypto.get_hardware_passphrase()
+                            with open(key_path, "rb") as kf:
+                                private_key = serialization.load_pem_private_key(
+                                    kf.read(),
+                                    password=passphrase
+                                )
+                        except Exception as e:
+                             raise Exception(f"Hardware Identity mismatch! Failed to unlock private.pem: {e}")
+
+                        # 2. Decrypt in Chunks (2048-bit RSA = 256 byte chunks)
+                        CHUNK_SIZE = 256
+                        decrypted_bytes = bytearray()
+                        
+                        for i in range(0, len(file_content), CHUNK_SIZE):
+                            chunk = file_content[i:i+CHUNK_SIZE]
+                            decrypted_chunk = private_key.decrypt(
+                                chunk,
+                                padding.OAEP(
+                                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                                    algorithm=hashes.SHA256(),
+                                    label=None
+                                )
+                            )
+                            decrypted_bytes.extend(decrypted_chunk)
+
+                        json.loads(decrypted_bytes.decode('utf-8'))
 
                     return ballot_id, selected_file
                 except Exception as e:
