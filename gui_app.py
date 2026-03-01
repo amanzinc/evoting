@@ -524,8 +524,8 @@ class VotingApp:
             getattr(self, 'current_booth', 1)
         )
 
-        # Generate Voter Receipt QR string for batched printing
-        voter_qr_data = f"Election:{self.data_handler.election_hash}\nCommitments:{getattr(self.data_handler, 'raw_commitments', '')}"
+        # Generate Voter Receipt QR string for batched printing (Raw Commitments ONLY)
+        voter_qr_data = getattr(self.data_handler, 'raw_commitments', '')
 
         receipt_entry = {
             'election_id': getattr(self.data_handler, 'election_id', '???'),

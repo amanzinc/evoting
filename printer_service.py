@@ -193,7 +193,7 @@ class PrinterService:
             
             # Combine the election hash and the raw commitments JSON string 
             # so the voter has cryptographically verifiable proof of what choices were offered
-            voter_qr_data = f"Election:{election_hash}\nCommitments:{raw_comm}"
+            voter_qr_data = raw_comm
             
             temp_img_v = self._generate_voter_qr(voter_qr_data)
 
