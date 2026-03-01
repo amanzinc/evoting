@@ -207,10 +207,17 @@ class VotingApp:
         print(f"Starting Election Context: {self.current_election_id}")
         
         # Start Session for this election
-        self.start_session(self.current_election_id)
+        success = self.start_session(self.current_election_id)
         
-        # Show Mode Selection for this election
-        self.show_mode_selection_screen()
+        if success:
+            # Show Mode Selection for this election
+            self.show_mode_selection_screen()
+        else:
+            # Abort session and return to home screen
+            self.election_queue = []
+            self.active_token = None
+            self.current_election_id = None
+            self.show_rfid_screen()
 
     def finish_voter_session(self):
         """Called when all eligible elections are completed."""
@@ -269,9 +276,11 @@ class VotingApp:
             new_id, new_file = self.ballot_manager.get_unused_ballot(election_id)
             print(f"Starting Session for {election_id} with Ballot ID: {new_id}")
             self.data_handler.set_ballot_file(new_file)
+            return True
         except Exception as e:
             print(f"Failed to load new ballot: {e}")
             messagebox.showerror("Ballot Error", f"Could not load new ballot for {election_id}: {e}")
+            return False
 
     def show_mode_selection_screen(self):
         self.clear_container()
