@@ -1,20 +1,33 @@
 import json
 import os
-import pymongo
+import sqlite3
 
 class BallotManager:
-    def __init__(self, usb_mount_point=None):
+    def __init__(self, usb_mount_point=None, db_path="evoting_ballots.db"):
         self.usb_mount_point = self._find_usb_drive(usb_mount_point)
+        self.db_path = db_path
         print(f"BallotManager using USB Path: {self.usb_mount_point}")
         
+        self._init_db()
+
+    def _init_db(self):
+        """Initializes the SQLite database for tracking used ballots."""
         try:
-             self.client = pymongo.MongoClient("mongodb://localhost:27017/")
-             self.db = self.client["evoting_db"]
-             self.collection = self.db["ballots"]
-             print("Connected to MongoDB.")
+             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+             self.cursor = self.conn.cursor()
+             self.cursor.execute('''
+                 CREATE TABLE IF NOT EXISTS ballots (
+                     ballot_id TEXT,
+                     election_id TEXT,
+                     status TEXT,
+                     PRIMARY KEY (ballot_id, election_id)
+                 )
+             ''')
+             self.conn.commit()
+             print("Connected to SQLite Database.")
         except Exception as e:
-             print(f"Failed to connect to MongoDB: {e}")
-             self.collection = None
+             print(f"Failed to initialize SQLite Database: {e}")
+             self.conn = None
 
     def _find_usb_drive(self, user_provided_path):
         """
@@ -58,8 +71,8 @@ class BallotManager:
         if not election_id:
              raise Exception("Election ID Required to fetch ballots.")
 
-        if self.collection is None:
-             raise Exception("MongoDB not connected! Cannot verify ballot usage.")
+        if self.conn is None:
+             raise Exception("SQLite DB not connected! Cannot verify ballot usage.")
 
         # Construct USB Path
         ballots_dir = os.path.join(self.usb_mount_point, "elections", election_id, "ballots")
@@ -72,9 +85,9 @@ class BallotManager:
         if not available_files:
             raise Exception(f"No ballot files found in {ballots_dir}")
 
-        # Fetch all USED ballot IDs for this election from MongoDB
-        used_ballots_cursor = self.collection.find({"election_id": election_id, "status": "USED"})
-        used_ids = {doc["ballot_id"] for doc in used_ballots_cursor}
+        # Fetch all USED ballot IDs for this election from SQLite
+        self.cursor.execute("SELECT ballot_id FROM ballots WHERE election_id = ? AND status = 'USED'", (election_id,))
+        used_ids = {row[0] for row in self.cursor.fetchall()}
 
         # Find the first available file that hasn't been used
         for file_name in available_files:
@@ -92,31 +105,31 @@ class BallotManager:
                 except Exception as e:
                     print(f"File {selected_file} is corrupt or unreadable: {e}. Skipping...")
                     # Mark it as 'CORRUPT' so we don't try it again
-                    self.collection.update_one(
-                        {"ballot_id": ballot_id, "election_id": election_id},
-                        {"$set": {"status": "CORRUPT"}},
-                        upsert=True
-                    )
+                    self.cursor.execute('''
+                        INSERT OR REPLACE INTO ballots (ballot_id, election_id, status)
+                        VALUES (?, ?, 'CORRUPT')
+                    ''', (ballot_id, election_id))
+                    self.conn.commit()
                     used_ids.add(ballot_id) # Skip in this loop
 
         raise Exception(f"No unused ballots remaining for {election_id} on the USB drive!")
 
     def mark_as_used(self, ballot_id, election_id=None):
         """
-        Marks a ballot ID as USED in MongoDB so it cannot be drawn again from the USB.
+        Marks a ballot ID as USED in SQLite so it cannot be drawn again from the USB.
         """
-        if self.collection is None:
+        if self.conn is None:
             return
 
         try:
-            self.collection.update_one(
-                {"ballot_id": ballot_id, "election_id": election_id},
-                {"$set": {"status": "USED"}},
-                upsert=True # Insert it if it's the first time we've seen it
-            )
+            self.cursor.execute('''
+                INSERT OR REPLACE INTO ballots (ballot_id, election_id, status)
+                VALUES (?, ?, 'USED')
+            ''', (ballot_id, election_id))
+            self.conn.commit()
             print(f"Marked ballot {ballot_id} as USED in DB.")
         except Exception as e:
-            print(f"Error updating MongoDB: {e}")
+            print(f"Error updating SQLite: {e}")
 
 if __name__ == "__main__":
     pass

@@ -8,7 +8,6 @@
 python-escpos
 Pillow
 qrcode
-pymongo
 
 # Raspberry Pi specific dependencies (Hardware and Crypto)
 # These will only be installed on Linux platforms
