@@ -329,6 +329,7 @@ class VotingApp:
 
         # In both modes, we render all options.
         # For preferential, we will disable the previously selected ones instead of hiding them.
+        all_opts = self.data_handler.candidates_base
         available_candidates = all_opts
 
         total_options = len(available_candidates)
