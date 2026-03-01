@@ -15,11 +15,6 @@ def main():
     bm = BallotManager()
     rfid_service = RFIDService()
     
-    # Auto-generate if missing (Dev convenience)
-    if not os.path.exists("ballots") or not os.listdir("ballots"):
-        print("No ballots found. Generating new pool...")
-        bm.generate_ballots(50)
-
     # Initialize Core Services with Template (candidates.json) initially
     try:
         data_handler = DataHandler("candidates.json") 

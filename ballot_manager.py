@@ -1,27 +1,11 @@
 import json
 import os
-import random
-import uuid
-import shutil
-
-import copy
 import pymongo
 
 class BallotManager:
-    def __init__(self, tracking_file="ballots.json", template_file="candidates.json", ballots_dir="ballots"):
-        # Legacy support
-        self.tracking_file = tracking_file
-        self.template_file = template_file
-        self.ballots_dir = ballots_dir
-        self.ballots = {} # Legacy cache
+    def __init__(self, usb_mount_point="/media/pi/USB"):
+        self.usb_mount_point = usb_mount_point
         
-        # Multi-Election Root (Absolute Path)
-        self.base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.elections_root = os.path.join(self.base_dir, "elections")
-        
-        if os.path.exists(tracking_file):
-            self.load_ballots_legacy()
-
         try:
              self.client = pymongo.MongoClient("mongodb://localhost:27017/")
              self.db = self.client["evoting_db"]
@@ -31,62 +15,69 @@ class BallotManager:
              print(f"Failed to connect to MongoDB: {e}")
              self.collection = None
 
-    def generate_ballots(self, n=50):
-        # Legacy generation code... (keeping mostly same but simplified for this tool call)
-        # Assuming init_elections.py handles the multi-election generation now.
-        pass 
-
-    def load_ballots_legacy(self):
-        try:
-            with open(self.tracking_file, 'r') as f:
-                data = json.load(f)
-                self.ballots = data.get("ballots", {})
-        except: self.ballots = {}
-
     def get_unused_ballot(self, election_id=None):
         """
-        Returns (ballot_id, absolute_path_to_json) using MongoDB query.
+        Returns (ballot_id, absolute_path_to_json) by reading from the USB drive
+        and ensuring the ID is not marked as USED in MongoDB.
         """
-        # Determine paths
-        if election_id:
-            base_path = os.path.join(self.elections_root, election_id)
-            ballot_dir = os.path.join(base_path, "ballots")
-        else:
-             # Legacy or Default context
-             raise Exception("Election ID Required for MongoDB Mode")
+        if not election_id:
+             raise Exception("Election ID Required to fetch ballots.")
 
         if self.collection is None:
-             raise Exception("MongoDB not connected!")
+             raise Exception("MongoDB not connected! Cannot verify ballot usage.")
 
-        # Find One Unused
-        # Ensure we pick randomly or just the first available
-        ballot_doc = self.collection.find_one({
-            "election_id": election_id, 
-            "status": "UNUSED"
-        })
+        # Construct USB Path
+        ballots_dir = os.path.join(self.usb_mount_point, "elections", election_id, "ballots")
         
-        if not ballot_doc:
-             raise Exception(f"No unused ballots found for {election_id} in MongoDB!")
-             
-        selected_id = ballot_doc['ballot_id']
-        selected_file = os.path.abspath(os.path.join(ballot_dir, f"{selected_id}.json"))
-        
-        if not os.path.exists(selected_file):
-             # Self-healing: Mark as used (broken) and recurse
-             print(f"Warning: File {selected_file} missing. Skipping.")
-             self.mark_as_used(selected_id, election_id)
-             return self.get_unused_ballot(election_id)
-             
-        return selected_id, selected_file
+        if not os.path.exists(ballots_dir):
+            raise Exception(f"USB drive or election folder not found at: {ballots_dir}")
+
+        # Get all JSON files from the USB drive
+        available_files = [f for f in os.listdir(ballots_dir) if f.endswith('.json')]
+        if not available_files:
+            raise Exception(f"No ballot files found in {ballots_dir}")
+
+        # Fetch all USED ballot IDs for this election from MongoDB
+        used_ballots_cursor = self.collection.find({"election_id": election_id, "status": "USED"})
+        used_ids = {doc["ballot_id"] for doc in used_ballots_cursor}
+
+        # Find the first available file that hasn't been used
+        for file_name in available_files:
+            ballot_id = file_name.replace('.json', '')
+            
+            if ballot_id not in used_ids:
+                # Found an unused ballot!
+                selected_file = os.path.join(ballots_dir, file_name)
+                
+                # Double check the file is actually readable before returning
+                try:
+                    with open(selected_file, 'r') as f:
+                        json.load(f)
+                    return ballot_id, selected_file
+                except Exception as e:
+                    print(f"File {selected_file} is corrupt or unreadable: {e}. Skipping...")
+                    # Mark it as 'CORRUPT' so we don't try it again
+                    self.collection.update_one(
+                        {"ballot_id": ballot_id, "election_id": election_id},
+                        {"$set": {"status": "CORRUPT"}},
+                        upsert=True
+                    )
+                    used_ids.add(ballot_id) # Skip in this loop
+
+        raise Exception(f"No unused ballots remaining for {election_id} on the USB drive!")
 
     def mark_as_used(self, ballot_id, election_id=None):
+        """
+        Marks a ballot ID as USED in MongoDB so it cannot be drawn again from the USB.
+        """
         if self.collection is None:
             return
 
         try:
             self.collection.update_one(
                 {"ballot_id": ballot_id, "election_id": election_id},
-                {"$set": {"status": "USED"}}
+                {"$set": {"status": "USED"}},
+                upsert=True # Insert it if it's the first time we've seen it
             )
             print(f"Marked ballot {ballot_id} as USED in DB.")
         except Exception as e:
