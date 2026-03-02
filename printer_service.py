@@ -402,3 +402,56 @@ class PrinterService:
             except IOError:
                 continue
         return ImageFont.load_default()
+
+    def print_startup_ticket(self, genesis_hash, log_dir):
+        """Prints a physical ticket with the generated Genesis block and EVM details."""
+        import datetime
+        try:
+            import hardware_crypto
+            mac_addr = hardware_crypto.get_mac_address()
+        except:
+            mac_addr = "UNKNOWN"
+            
+        try:
+            p = self.printer
+            TOP_BAR = "=" * 32
+            
+            p.set(align='center', font='a', width=1, height=1, bold=True)
+            p.text(TOP_BAR + "\n")
+            p.text("EVM STARTUP PROTOCOL\n")
+            p.text("GENESIS BLOCK CREATED\n")
+            p.text(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S") + "\n")
+            p.text(TOP_BAR + "\n\n")
+            
+            p.set(align='left', bold=False)
+            p.text(f"Device MAC : {mac_addr}\n")
+            p.text(f"Log Volume : {log_dir}\n\n")
+            
+            p.set(align='left', bold=True)
+            p.text("GENESIS SEED (RECORD THIS):\n")
+            p.set(align='left', bold=False)
+            
+            # Print the hash in chunks so it fits nicely
+            if genesis_hash:
+                p.text(f"{genesis_hash[:32]}\n")
+                p.text(f"{genesis_hash[32:]}\n\n")
+            
+            # Print QR code of genesis hash
+            try:
+                if genesis_hash:
+                    temp_img = self._generate_voter_qr(genesis_hash)
+                    p.set(align='center')
+                    p.image(temp_img)
+                    if os.path.exists(temp_img):
+                        os.remove(temp_img)
+            except Exception as e:
+                p.text(f"QR Error: {e}\n")
+            
+            p.set(align='left')
+            p.text("\n")
+            p.text(TOP_BAR + "\n")
+            p.text("ELECTION READY\n")
+            p.text("Keep this slip for auditing.\n\n\n\n\n\n")
+            p.cut()
+        except Exception as e:
+            print(f"Failed to print startup ticket: {e}")

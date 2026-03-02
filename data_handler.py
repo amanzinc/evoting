@@ -16,6 +16,7 @@ class DataHandler:
         
         # Initialize cryptographic hash chain
         self.last_hash = None
+        self.is_new_genesis = False
         self._initialize_hash_chain()
 
     def _initialize_hash_chain(self):
@@ -38,6 +39,7 @@ class DataHandler:
         # If file didn't exist, was empty, or parsing failed, generate a Random Genesis Seed
         if not self.last_hash:
             self.last_hash = secrets.token_hex(32)
+            self.is_new_genesis = True
             print(f"\n=======================================================")
             print(f"NEW ELECTION INSTANCE DETECTED - NO EXISTING VOTE LOG")
             print(f"GENESIS HASH SEED: {self.last_hash}")

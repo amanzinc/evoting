@@ -43,9 +43,13 @@ def main():
             raise Exception("No USB thermal printer detected! Cannot safely run election.")
 
         try:
-            printer_service.printer.text("\n\n\n\n\n\n") # Feed past blade
-            printer_service.printer.cut()
-            print("Printer connected and initialized with a startup cut.")
+            if data_handler.is_new_genesis:
+                printer_service.print_startup_ticket(data_handler.last_hash, log_dir)
+                print("Genesis startup ticket printed.")
+            else:
+                printer_service.printer.text("\n\n\n\n\n\n") # Feed past blade
+                printer_service.printer.cut()
+                print("Printer connected and initialized with a startup cut.")
         except Exception as e:
             raise Exception(f"Startup cut failed, printer may be jammed: {e}")
                 
