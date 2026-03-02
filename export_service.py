@@ -17,12 +17,12 @@ class ExportService:
             raise FileNotFoundError(f"Private key not found at {self.key_path}")
             
         # Get hardware-specific passphrase
-        passphrase = hardware_crypto.generate_passphrase()
+        passphrase = hardware_crypto.get_hardware_passphrase()
         
         with open(self.key_path, "rb") as key_file:
             self.private_key = serialization.load_pem_private_key(
                 key_file.read(),
-                password=passphrase.encode('utf-8')
+                password=passphrase if isinstance(passphrase, bytes) else passphrase.encode('utf-8')
             )
 
     def sign_file(self, file_path):
