@@ -21,7 +21,7 @@ except (ImportError, NotImplementedError, AttributeError):
     HARDWARE_AVAILABLE = False
 
 class RFIDService:
-    def __init__(self, key_path="secret.key"):
+    def __init__(self, key_path="private.pem"):
         self.pn532 = None
         self.key_path = key_path
         self.private_key = None
