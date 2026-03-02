@@ -65,14 +65,18 @@ def get_cpu_serial():
 
 def get_hardware_passphrase():
     """
-    Derives a deterministic, strong passphrase from the physical device's MAC and CPU serial.
+    Derives a deterministic, strong passphrase from the physical device's CPU serial.
     This passphrase will unlock the private.pem file.
     """
-    mac = get_mac_address()
     serial = get_cpu_serial()
     
-    # Combine them
-    raw_identity = f"EVM_SECURE_{mac}_{serial}"
+    # If a real CPU Serial is found (Raspberry Pi), strictly use it for perfection
+    if serial not in ("DEV_MACHINE_SERIAL_001", "NO_SERIAL_FOUND", "ERROR_READING_SERIAL"):
+        raw_identity = f"EVM_SECURE_RPI_{serial}"
+    else:
+        # Fallback for Dev Machines/VMs
+        mac = get_mac_address()
+        raw_identity = f"EVM_SECURE_{mac}_{serial}"
     
     # Hash it to ensure a consistent, strong passphrase length
     passphrase = hashlib.sha256(raw_identity.encode('utf-8')).hexdigest()
