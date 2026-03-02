@@ -455,3 +455,56 @@ class PrinterService:
             p.cut()
         except Exception as e:
             print(f"Failed to print startup ticket: {e}")
+
+    def print_end_election_ticket(self, final_hash, export_path):
+        """Prints a physical ticket confirming the election has ended and showing the final hash."""
+        import datetime
+        try:
+            import hardware_crypto
+            mac_addr = hardware_crypto.get_mac_address()
+        except:
+            mac_addr = "UNKNOWN"
+            
+        try:
+            p = self.printer
+            TOP_BAR = "=" * 32
+            
+            p.set(align='left', font='a', width=1, height=1, bold=True)
+            p.text(TOP_BAR + "\n")
+            p.text("ELECTION TERMINATED".center(32) + "\n")
+            p.text("FINAL BLOCK SEALED".center(32) + "\n")
+            p.text(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S").center(32) + "\n")
+            p.text(TOP_BAR + "\n\n")
+            
+            p.set(align='left', bold=False)
+            p.text(f"Device MAC : {mac_addr}\n")
+            p.text(f"Export Dir : {export_path}\n\n")
+            
+            p.set(align='left', bold=True)
+            p.text("FINAL SEED (RECORD THIS):\n")
+            p.set(align='left', bold=False)
+            
+            # Print the hash in chunks
+            if final_hash:
+                p.text(f"{final_hash[:32]}\n")
+                p.text(f"{final_hash[32:]}\n\n")
+            
+            # Print QR code of final hash
+            try:
+                if final_hash:
+                    temp_img = self._generate_voter_qr(final_hash)
+                    p.set(align='left')
+                    p.image(temp_img)
+                    if os.path.exists(temp_img):
+                        os.remove(temp_img)
+            except Exception as e:
+                p.text(f"QR Error: {e}\n")
+            
+            p.set(align='left')
+            p.text("\n")
+            p.text(TOP_BAR + "\n")
+            p.text("SAFE TO POWER OFF\n")
+            p.text("Submit this slip with USB.\n\n\n\n\n\n")
+            p.cut()
+        except Exception as e:
+            print(f"Failed to print end election ticket: {e}")

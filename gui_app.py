@@ -56,12 +56,46 @@ class VotingApp:
         
         # Try to find the USB drive
         usb_path = self.ballot_manager._find_usb_drive(None)
-        
+
         if usb_path and os.path.exists(os.path.join(usb_path, "elections")):
             self.ballot_manager.usb_mount_point = usb_path
             self.initialize_core_services()
         else:
             self.root.after(2000, self.show_usb_waiting_screen)
+
+        # Admin Button to End Election
+        tk.Button(frame, text="End Election & Export", font=('Helvetica', 14, 'bold'), 
+                  command=self.end_election, bg="#ff4c4c", fg="white", 
+                  padx=20, pady=10).pack(side=tk.BOTTOM, pady=40)
+
+    def end_election(self):
+        """Triggers the secure export process and halts the EVM."""
+        if messagebox.askyesno("Confirm End Election", "Are you sure you want to officially end the election?\nThis will export data to USB and shut down the terminal.", icon='warning'):
+            try:
+                # Find the USB drive explicitly in case it was unplugged
+                usb_path = self.ballot_manager._find_usb_drive(None)
+                if not usb_path:
+                    messagebox.showerror("Export Failed", "USB Drive not found! Please insert the admin USB drive to export logs.")
+                    return
+                
+                from export_service import ExportService
+                exporter = ExportService("private.pem")
+                export_path = exporter.export_election_data(self.log_dir, usb_path)
+                
+                # Fetch final hash to print on the receipt
+                from data_handler import DataHandler
+                # We need a headless data handler just to read the final hash from the existing file
+                temp_dh = DataHandler(None, log_file=self.votes_log, token_log_file=self.tokens_log)
+                final_hash = temp_dh.last_hash
+                
+                from printer_service import PrinterService
+                temp_printer = PrinterService(temp_dh)
+                temp_printer.print_end_election_ticket(final_hash, export_path)
+                
+                messagebox.showinfo("Export Successful", f"Election successfully ended.\nEncrypted logs safely exported to:\n{export_path}\n\nYou can now safely power off the machine.")
+                self.root.destroy()
+            except Exception as e:
+                messagebox.showerror("Export Error", f"A critical error occurred during export:\n{str(e)}")
 
     def initialize_core_services(self):
         try:
