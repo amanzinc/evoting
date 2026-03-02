@@ -53,11 +53,6 @@ class VotingApp:
         
         tk.Label(frame, text="System Initialization", font=('Helvetica', 32, 'bold'), bg="#E8F5E9", fg="#2E7D32").pack(pady=(150, 20))
         tk.Label(frame, text="Please insert the Election Data USB Drive to start.", font=('Helvetica', 24), bg="#E8F5E9", fg="#333").pack(pady=20)
-        
-        # Admin Button to End Election
-        tk.Button(frame, text="End Election & Export", font=('Helvetica', 14, 'bold'), 
-                  command=self.end_election, bg="#ff4c4c", fg="white", 
-                  padx=20, pady=10).pack(side=tk.BOTTOM, pady=40)
 
         # Try to find the USB drive
         usb_path = self.ballot_manager._find_usb_drive(None)
@@ -199,6 +194,11 @@ class VotingApp:
         
         # Dev Reset Log Button (Top Left, discreet)
         tk.Button(frame, text="[DEV] Reset Log", font=('Helvetica', 10), command=self.reset_token_log, bg="#ffcccb", fg="black").place(relx=0.05, rely=0.05, anchor=tk.NW)
+        
+        # Admin Button to End Election (Bottom Right)
+        tk.Button(frame, text="End Election & Export", font=('Helvetica', 12, 'bold'), 
+                  command=self.end_election, bg="#ff4c4c", fg="white", 
+                  padx=10, pady=5).place(relx=0.95, rely=0.95, anchor=tk.SE)
         
         # Start Scanning Thread
         self.stop_scanning = False
