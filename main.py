@@ -20,8 +20,8 @@ def main():
         elif os.path.isdir("/logs"):
             log_dir = "/logs"
         else:
-            # Fallback to current directory for local testing
-            log_dir = "."
+            messagebox.showerror("Fatal Error", "Log partition not found! The system cannot start without a writable log partition. Please ensure the USB/SD partition is mounted at /media/evoting/LOGS.")
+            return
 
     db_path = os.path.join(log_dir, "evoting_ballots.db")
     votes_log = os.path.join(log_dir, "votes.json")
