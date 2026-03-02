@@ -36,11 +36,21 @@ def encrypt_ballots():
             with open(file_path, "rb") as f:
                 data = f.read()
 
-            # Skip if already looks encrypted (Not strictly necessary if running on clean data)
-            if data[:4] == b'\x00\x00\x00\x00' or data[:4] == b'\x01\x02\x03\x04': 
-                 print(f"Skipping already encrypted file: {file_path}")
-                 # Naive check is hard for raw bytes. Let's just encrypt and overwrite.
-                 # If it fails json.loads() it's already encrypted, but we are just running this once anyway.
+            if data[:4] == b'\x00\x00\x00\x00': 
+                 print(f"Skipping already RSA encrypted file: {file_path}")
+                 continue
+                 
+            # Attempt to decrypt with secret.key (Fernet) first (Migration step)
+            try:
+                import cryptography.fernet
+                if os.path.exists("secret.key"):
+                    with open("secret.key", "rb") as kf:
+                        fkey = kf.read().strip()
+                    f_crypto = cryptography.fernet.Fernet(fkey)
+                    data = f_crypto.decrypt(data)
+                    print(f"Migrated {file_path} from old Fernet encryption.")
+            except Exception:
+                pass # If it fails, assume it's already plain JSON or something else
 
             encrypted_chunks = []
             

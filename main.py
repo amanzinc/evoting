@@ -28,38 +28,14 @@ def main():
     tokens_log = os.path.join(log_dir, "tokens.log")
     
     print(f"System logging routed to: {log_dir}")
-
+    
     # Core Services
     bm = BallotManager(db_path=db_path)
     rfid_service = RFIDService()
     
-    # Initialize Core Services with Template (candidates.json) initially
-    try:
-        data_handler = DataHandler("candidates.json", log_file=votes_log, token_log_file=tokens_log) 
-        printer_service = PrinterService(data_handler)
-        
-        # Perform an initial cut to clear the printer roll on startup
-        if not printer_service.is_printer_connected():
-            raise Exception("No USB thermal printer detected! Cannot safely run election.")
-
-        try:
-            if data_handler.is_new_genesis:
-                printer_service.print_startup_ticket(data_handler.last_hash, log_dir)
-                print("Genesis startup ticket printed.")
-            else:
-                printer_service.printer.text("\n\n\n\n\n\n") # Feed past blade
-                printer_service.printer.cut()
-                print("Printer connected and initialized with a startup cut.")
-        except Exception as e:
-            raise Exception(f"Startup cut failed, printer may be jammed: {e}")
-                
-    except Exception as e:
-        print(f"Critical Startup Error: {e}")
-        # Show graphic error and abort boot
-        messagebox.showerror("System Security Error", str(e))
-        return
-
-    app = VotingApp(root, data_handler, printer_service, bm, rfid_service)
+    # We will initialize DataHandler and PrinterService AFTER the USB is detected.
+    # For now, we launch the GUI with placeholders.
+    app = VotingApp(root, None, None, bm, rfid_service, db_path, votes_log, tokens_log, log_dir)
     root.mainloop()
 
 if __name__ == "__main__":

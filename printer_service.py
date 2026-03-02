@@ -156,10 +156,10 @@ class PrinterService:
             # ==========================================
             # RECEIPT 1: VVPAT (Internal / Box)
             # ==========================================
-            p.set(align='center', font='a', width=1, height=1, bold=True)
+            p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
-            p.text("** VVPAT SLIP **\n")
-            p.set(align='center', bold=False)
+            p.text("** VVPAT SLIP **".center(32) + "\n")
+            p.set(align='left', bold=False)
             p.text("\n") 
 
             p.set(align='left')
@@ -180,7 +180,7 @@ class PrinterService:
             temp_img = self._generate_vvpat_qr(qr_choice_data, short_b_id)
             
             p.text("\n") 
-            p.set(align='center')
+            p.set(align='left')
             p.image(temp_img)
             p.text("\n")
             if os.path.exists(temp_img):
@@ -193,10 +193,10 @@ class PrinterService:
             # ==========================================
             # RECEIPT 2: VOTER RECEIPT
             # ==========================================
-            p.set(align='center', font='a', width=1, height=1, bold=True)
+            p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
-            p.text("** VOTER RECEIPT **\n")
-            p.set(align='center', bold=False)
+            p.text("** VOTER RECEIPT **".center(32) + "\n")
+            p.set(align='left', bold=False)
             p.text("\n")
             
             p.set(align='left')
@@ -215,7 +215,7 @@ class PrinterService:
             
             temp_img_v = self._generate_voter_qr(voter_qr_data)
 
-            p.set(align='center')
+            p.set(align='left')
             p.image(temp_img_v)
             p.text("\n")
             if os.path.exists(temp_img_v):
@@ -314,11 +314,11 @@ class PrinterService:
             # ==============================
             # PART 1: CONSOLIDATED VVPAT
             # ==============================
-            p.set(align='center', font='a', width=1, height=1, bold=True)
+            p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
-            p.text("CONSOLIDATED VVPAT SLIPS\n")
-            p.text("(Internal Audit Trail)\n")
-            p.text(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S") + "\n")
+            p.text("CONSOLIDATED VVPAT SLIPS".center(32) + "\n")
+            p.text("(Internal Audit Trail)".center(32) + "\n")
+            p.text(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S").center(32) + "\n")
             p.text(TOP_BAR + "\n\n")
             
             p.set(align='left', bold=False)
@@ -340,7 +340,7 @@ class PrinterService:
                 
                 temp_qr = self._generate_vvpat_qr(qr_data, short_b_id)
                 
-                p.set(align='center')
+                p.set(align='left')
                 p.image(temp_qr)
                 if os.path.exists(temp_qr): os.remove(temp_qr)
                 
@@ -352,11 +352,11 @@ class PrinterService:
             # ==============================
             # PART 2: CONSOLIDATED VOTER
             # ==============================
-            p.set(align='center', font='a', width=1, height=1, bold=True)
+            p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
-            p.text("CONSOLIDATED VOTER RECEIPT\n")
-            p.text("(For Voter)\n")
-            p.text(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S") + "\n")
+            p.text("CONSOLIDATED VOTER RECEIPT".center(32) + "\n")
+            p.text("(For Voter)".center(32) + "\n")
+            p.text(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S").center(32) + "\n")
             p.text(TOP_BAR + "\n\n")
             
             p.set(align='left', bold=False)
@@ -371,7 +371,7 @@ class PrinterService:
                 qr_data_v = r.get('voter_qr_data', r.get('election_hash', 'N/A'))
                 temp_qr_v = self._generate_voter_qr(qr_data_v)
                 
-                p.set(align='center')
+                p.set(align='left')
                 p.image(temp_qr_v)
                 if os.path.exists(temp_qr_v): os.remove(temp_qr_v)
                 
@@ -416,11 +416,11 @@ class PrinterService:
             p = self.printer
             TOP_BAR = "=" * 32
             
-            p.set(align='center', font='a', width=1, height=1, bold=True)
+            p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
-            p.text("EVM STARTUP PROTOCOL\n")
-            p.text("GENESIS BLOCK CREATED\n")
-            p.text(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S") + "\n")
+            p.text("EVM STARTUP PROTOCOL".center(32) + "\n")
+            p.text("GENESIS BLOCK CREATED".center(32) + "\n")
+            p.text(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S").center(32) + "\n")
             p.text(TOP_BAR + "\n\n")
             
             p.set(align='left', bold=False)
@@ -440,7 +440,7 @@ class PrinterService:
             try:
                 if genesis_hash:
                     temp_img = self._generate_voter_qr(genesis_hash)
-                    p.set(align='center')
+                    p.set(align='left')
                     p.image(temp_img)
                     if os.path.exists(temp_img):
                         os.remove(temp_img)

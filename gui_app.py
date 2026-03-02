@@ -6,12 +6,19 @@ import datetime
 import time
 
 class VotingApp:
-    def __init__(self, root, data_handler, printer_service, ballot_manager, rfid_service):
+    def __init__(self, root, data_handler, printer_service, ballot_manager, rfid_service, db_path, votes_log, tokens_log, log_dir):
         self.root = root
         self.data_handler = data_handler
         self.printer_service = printer_service
         self.ballot_manager = ballot_manager
         self.rfid_service = rfid_service
+        
+        # Store paths for deferred initialization
+        self.db_path = db_path
+        self.votes_log = votes_log
+        self.tokens_log = tokens_log
+        self.log_dir = log_dir
+        
         self.active_token = None
         
         self.root.title("Ballot Marking Device")
@@ -35,17 +42,75 @@ class VotingApp:
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
         
-        # Initialize RFID
-        self.rfid_service.load_key()
-        self.rfid_service.connect()
+        # Start with USB Polling Screen
+        self.show_usb_waiting_screen()
 
+    def show_usb_waiting_screen(self):
+        self.clear_container()
+        frame = tk.Frame(self.main_container, bg="#E8F5E9")
+        frame.pack(expand=True, fill=tk.BOTH)
+        
+        tk.Label(frame, text="System Initialization", font=('Helvetica', 32, 'bold'), bg="#E8F5E9", fg="#2E7D32").pack(pady=(150, 20))
+        tk.Label(frame, text="Please insert the Election Data USB Drive to start.", font=('Helvetica', 24), bg="#E8F5E9", fg="#333").pack(pady=20)
+        
+        # Try to find the USB drive
+        usb_path = self.ballot_manager._find_usb_drive(None)
+        
+        if usb_path and os.path.exists(os.path.join(usb_path, "elections")):
+            self.ballot_manager.usb_mount_point = usb_path
+            self.initialize_core_services()
+        else:
+            self.root.after(2000, self.show_usb_waiting_screen)
+
+    def initialize_core_services(self):
         try:
-            self.data_handler.load_candidates()
-        except Exception as e:
-            messagebox.showerror("Initialization Error", str(e))
+            from data_handler import DataHandler
+            from printer_service import PrinterService
+            
+            # Since candidate.json might not exist at the root, we default to the first election found
+            elections_base = os.path.join(self.ballot_manager.usb_mount_point, "elections")
+            first_election = next(os.scandir(elections_base)).name if os.path.exists(elections_base) else None
+            candidate_path = os.path.join(elections_base, first_election, "candidates.json") if first_election else "candidates.json"
 
-        # Start with RFID Screen
-        self.show_rfid_screen()
+            print(f"Initializing DataHandler with base candidate map: {candidate_path}")
+            self.data_handler = DataHandler(candidate_path, log_file=self.votes_log, token_log_file=self.tokens_log) 
+            self.printer_service = PrinterService(self.data_handler)
+            
+            # Perform an initial cut to clear the printer roll on startup
+            if not self.printer_service.is_printer_connected():
+                messagebox.showerror("Printer Error", "No USB thermal printer detected! Cannot safely run election. Please connect printer and restart system.")
+                return
+
+            try:
+                # In DataHandler, we will set a flag if genesis was generated
+                if hasattr(self.data_handler, 'is_new_genesis') and self.data_handler.is_new_genesis:
+                    self.printer_service.print_startup_ticket(self.data_handler.last_hash, self.log_dir)
+                    print("Genesis startup ticket printed.")
+                else:
+                    self.printer_service.printer.text("\n\n\n\n\n\n") # Feed past blade
+                    self.printer_service.printer.cut()
+                    print("Printer connected and initialized with a startup cut.")
+            except Exception as e:
+                messagebox.showerror("Printer Error", f"Startup print failed, printer may be jammed: {e}")
+                return
+                    
+            # Initialize RFID
+            self.rfid_service.load_key()
+            self.rfid_service.connect()
+            
+            # Try to load base candidates mapping
+            try:
+                self.data_handler.load_candidates()
+            except Exception as e:
+                print(f"Base candidate load failed (normal if generic): {e}")
+
+            # Proceed to RFID Screen
+            self.show_rfid_screen()
+
+        except Exception as e:
+            messagebox.showerror("System Security Error", f"Failed to initialize election data from USB: {e}")
+            # Keep polling in case they inserted the wrong USB
+            self.root.after(3000, self.show_usb_waiting_screen)
 
     def clear_container(self):
         for widget in self.main_container.winfo_children():

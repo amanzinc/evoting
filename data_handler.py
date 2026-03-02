@@ -25,6 +25,8 @@ class DataHandler:
         import json
         import secrets
         
+        self.is_new_genesis = False
+        
         if os.path.exists(self.log_file) and os.path.getsize(self.log_file) > 0:
             try:
                 # Read the last line of the JSON file to get the previous hash
