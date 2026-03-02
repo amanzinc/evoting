@@ -3,10 +3,11 @@ import csv
 import os
 
 class DataHandler:
-    def __init__(self, candidates_file, log_file="votes.json"):
+    def __init__(self, candidates_file, log_file="votes.json", token_log_file="tokens.log"):
         # candidates_file is now the specific ballot file path
         self.candidates_file = candidates_file 
         self.log_file = log_file
+        self.token_log_file = token_log_file
         self.election_id = ""
         self.election_hash = ""
         self.ballot_id = "" # Store the specific generic complex payload ID
@@ -126,11 +127,11 @@ class DataHandler:
 
     def is_token_used(self, token_id):
         """Checks if the token_id has already been logged."""
-        if not os.path.exists("tokens.log"):
+        if not os.path.exists(self.token_log_file):
             return False
             
         try:
-            with open("tokens.log", "r", encoding='utf-8') as f:
+            with open(self.token_log_file, "r", encoding='utf-8') as f:
                 for line in f:
                     # Format: Timestamp,TokenID
                     parts = line.strip().split(',')
@@ -159,7 +160,7 @@ class DataHandler:
                 pass # Use full string if not JSON
 
             timestamp = datetime.datetime.now().isoformat()
-            with open("tokens.log", "a", encoding='utf-8') as f:
+            with open(self.token_log_file, "a", encoding='utf-8') as f:
                 f.write(f"{timestamp},{token_id}\n")
             print(f"Token Logged: {token_id}")
         except Exception as e:

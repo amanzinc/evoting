@@ -135,8 +135,9 @@ class VotingApp:
     def reset_token_log(self):
         try:
             import os
-            if os.path.exists("tokens.log"):
-                os.remove("tokens.log")
+            token_log = getattr(self.data_handler, 'token_log_file', "tokens.log")
+            if os.path.exists(token_log):
+                os.remove(token_log)
                 messagebox.showinfo("Dev Tool", "Token Log Cleared!\nAll cards can be used again.")
             else:
                 messagebox.showinfo("Dev Tool", "Token Log is already empty.")
@@ -150,6 +151,12 @@ class VotingApp:
         self.on_card_scanned(payload)
 
     def on_card_scanned(self, token_payload):
+        # 0. Check Printer Status First
+        if hasattr(self.printer_service, 'is_printer_connected') and not self.printer_service.is_printer_connected():
+            print("❌ Printer not connected. Rejecting voter session.")
+            self.show_rfid_error("Printer Error\nPlease check printer connection.")
+            return
+
         # 1. Parse Token ID & EID Vector
         import json
         token_id = token_payload
@@ -223,15 +230,36 @@ class VotingApp:
             self.current_election_id = None
             self.show_rfid_screen()
 
-    def finish_voter_session(self):
+    def finish_voter_session(self, aborted=False):
         """Called when all eligible elections are completed."""
         # 1. BATCH PRINTING IF ENABLED
-        if self.merge_receipts and hasattr(self, 'receipt_buffer') and self.receipt_buffer:
+        if not aborted and self.merge_receipts and hasattr(self, 'receipt_buffer') and self.receipt_buffer:
             self.show_printing_modal(text="Printing Consolidated Receipt...")
-            try:
-                # 1. Print
-                self.printer_service.print_session_receipts(self.receipt_buffer)
-                
+            
+            self.batch_print_queue = queue.Queue()
+            
+            def batch_printer_worker(receipts):
+                try:
+                    self.printer_service.print_session_receipts(receipts)
+                    self.batch_print_queue.put(True)
+                except Exception as e:
+                    self.batch_print_queue.put(e)
+
+            self.batch_print_thread = threading.Thread(target=batch_printer_worker, args=(self.receipt_buffer,))
+            self.batch_print_thread.daemon = True
+            self.batch_print_thread.start()
+            
+            self.batch_print_start_time = datetime.datetime.now()
+            self.check_batch_print_status(aborted)
+            return
+
+        self._finalize_session(aborted)
+
+    def check_batch_print_status(self, aborted=False):
+        try:
+            result = self.batch_print_queue.get_nowait()
+            self.close_printing_modal()
+            if result is True:
                 # 2. Log Votes (Only if Print Succeeded)
                 all_records = []
                 for entry in self.receipt_buffer:
@@ -241,23 +269,43 @@ class VotingApp:
                 if all_records:
                     for r in all_records:
                         self.data_handler.save_json(r)
-                
-            except Exception as e:
-                messagebox.showerror("Print Error", f"Failed to print session receipt: {e}")
-                self.close_printing_modal()
-                return # Stop here so we can retry or investigate
-
-            finally:
-                self.close_printing_modal()
                 self.receipt_buffer = []
+                self._finalize_session(aborted)
+            else:
+                print(f"Batch print error: {result}")
+                retry = messagebox.askretrycancel("Printer Error", f"Failed to print session receipt: {result}\n\nRetry?")
+                if retry:
+                    self.finish_voter_session(aborted)
+                else:
+                    self.receipt_buffer = []
+                    self._finalize_session(aborted)
+            return
+        except queue.Empty:
+            pass
 
+        elapsed = (datetime.datetime.now() - self.batch_print_start_time).total_seconds()
+        if elapsed > 60:
+            self.close_printing_modal()
+            retry = messagebox.askretrycancel("Printer Timeout", "Printer is taking too long.\n\nRetry?")
+            if retry:
+                self.finish_voter_session(aborted)
+            else:
+                self.receipt_buffer = []
+                self._finalize_session(aborted)
+            return
 
+        self.root.after(500, self.check_batch_print_status, aborted)
+
+    def _finalize_session(self, aborted=False):
         # 2. LOG SESSION TOKEN
-        if self.active_token:
+        if not aborted and self.active_token:
             self.data_handler.log_token(self.active_token)
             
-        messagebox.showinfo("Session Complete", "Thank you for voting in all elections!")
-        
+        if not aborted:
+            messagebox.showinfo("Session Complete", "Thank you for voting in all elections!")
+        else:
+            messagebox.showinfo("Session Aborted", "Your session has been cancelled.")
+            
         self.active_token = None
         self.current_election_id = None
         self.show_rfid_screen()

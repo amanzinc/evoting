@@ -17,6 +17,10 @@ class PrinterService:
         self.printer = None
         self.connect_printer()
 
+    def is_printer_connected(self):
+        self.connect_printer()
+        return self.printer is not None
+
     def connect_printer(self):
         # First try USB class auto-discovery
         if Usb:
