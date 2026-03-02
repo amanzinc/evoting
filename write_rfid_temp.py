@@ -19,15 +19,16 @@ def write_rfid():
     print("Connected.")
 
     # 2. Setup Data
-    payload = "UpBRu7R1ZJx7qBg3He/zqu7JF0bftH4FahTMKwNhvRGWlU9xE59BegiD9OrL+LKHs+Ex5dCBwOhvUJAHLTQG1wAQFIiDHVSBVLDH4XFKUOHZ7GE+5BiWBwzMznQSNrgLyV+JdJLmXyEK/AHFa+9KtFBXZQnarJKLEQ3SoS8D56QXRe2IvmYsnzTZhJpTXUjapxwZegjsHfb/o+JhrE38GsaXRC5HD9C7mMogTWAh1/YNV+9jM8cQS9PcZQbzQTCj6xrf1Q1APyuWg3fVEt3UZ0n/jYlNnDdxBptFDNo0pG0OCEaLcIn9iqVoK1bOct8u/PXXsZgxK6wbacdG84KXTw=="
+    # Define a fresh voter token JSON payload
+    raw_payload = '{"token_id": "VOTER_001", "eid_vector": "E1;E3;E6", "entry_number": "123", "booth": 1}'
 
-    print("Encrypting payload with public.pem...")
+    print("Encrypting fresh JSON payload with public.pem...")
     try:
         with open("public.pem", "rb") as key_file:
             public_key = serialization.load_pem_public_key(key_file.read())
             
         encrypted_bytes = public_key.encrypt(
-            payload.encode('utf-8'),
+            raw_payload.encode('utf-8'),
             padding.OAEP(
                 mgf=padding.MGF1(algorithm=hashes.SHA256()),
                 algorithm=hashes.SHA256(),
