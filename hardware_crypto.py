@@ -2,6 +2,7 @@ import platform
 import uuid
 import hashlib
 import os
+import base64
 
 def get_machine_id():
     """Gets a stable, unique machine identifier on Linux or falls back to UUID node."""
@@ -55,9 +56,12 @@ def get_hardware_passphrase():
     
     raw_identity = f"EVM_SECURE_V2_{machine_id}"
     
-    # Hash it to ensure a consistent, strong passphrase length
-    passphrase = hashlib.sha256(raw_identity.encode('utf-8')).hexdigest()
-    return passphrase.encode('utf-8')
+    # Use standard digest, encode as urlsafe base64, and strictly take the first 32 chars
+    # This prevents the "unsupported" OpenSSL format exception caused by trailing bytes 
+    # or oversized hex strings in some OpenSSL > 3.0 backends.
+    digest = hashlib.sha256(raw_identity.encode('utf-8')).digest()
+    passphrase = base64.urlsafe_b64encode(digest)[:32] 
+    return passphrase
 
 def get_mac_address():
     # Legacy wrapper so printer_service doesn't break
