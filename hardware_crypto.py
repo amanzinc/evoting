@@ -6,27 +6,28 @@ import os
 def get_mac_address():
     """Gets the MAC Address of the current machine deterministically."""
     
-    # On Linux, uuid.getnode() can return random spoofed addresses if network is down
-    # or can fluctuate between interfaces (wlan0/eth0). Let's read the hardware directly.
+    # On Linux, interface names can change during boot (e.g., eth0 -> end0).
+    # To be 100% deterministic, we collect ALL hardware MAC addresses, 
+    # sort them, and pick the first one. This guarantees the same MAC is chosen 
+    # regardless of whether it's called eth0, wlan0, or end0.
     if platform.system() == "Linux":
+        macs = []
         try:
-            # We enforce an order: always try ethernet first, then wifi. 
-            # This ensures stable mapping regardless of which network is active.
-            interfaces = ["eth0", "wlan0", "en0"]
-            
-            # Add any other dynamically found eth/wlan interfaces
-            for iface in sorted(os.listdir('/sys/class/net/')):
-                if iface not in interfaces and (iface.startswith('e') or iface.startswith('w')):
-                    interfaces.append(iface)
-
-            for iface in interfaces:
+            for iface in os.listdir('/sys/class/net/'):
+                # Ignore loopback and common virtual adapters
+                if iface == 'lo' or iface.startswith('veth') or iface.startswith('docker') or iface.startswith('br-'):
+                    continue
+                    
                 path = f"/sys/class/net/{iface}/address"
                 if os.path.exists(path):
                     with open(path, 'r') as f:
                         mac = f.read().strip().upper()
-                        # Avoid virtual or null MACs
-                        if mac and mac != "00:00:00:00:00:00":
-                            return mac
+                        if mac and mac != "00:00:00:00:00:00" and mac not in macs:
+                            macs.append(mac)
+                            
+            if macs:
+                macs.sort() # Alphabetical sort guarantees the same MAC is always picked
+                return macs[0]
         except Exception as e:
             print(f"Fallback reading MAC: {e}")
 
