@@ -14,8 +14,10 @@ def main():
     # Determine the log directory for read-only RPi compatibility
     log_dir = os.environ.get("EVOTING_LOG_DIR")
     if not log_dir:
-        # Check if the /logs partition exists (typical for our RPi setup)
-        if os.path.isdir("/logs"):
+        # Check if the /media/evoting/LOGS partition exists (typical for our RPi setup)
+        if os.path.isdir("/media/evoting/LOGS"):
+            log_dir = "/media/evoting/LOGS"
+        elif os.path.isdir("/logs"):
             log_dir = "/logs"
         else:
             # Fallback to current directory for local testing
