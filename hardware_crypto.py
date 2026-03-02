@@ -48,16 +48,9 @@ def get_machine_id():
 
 def get_hardware_passphrase():
     """
-    Derives a deterministic, strong passphrase from the physical device's machine ID.
-    This passphrase will unlock the private.pem file.
+    Returns a fast, hardcoded passphrase for debugging OpenSSL decryption faults.
     """
-    machine_id = get_machine_id()
-    
-    raw_identity = f"EVM_SECURE_V2_{machine_id}"
-    
-    # Hash it to ensure a consistent, strong passphrase length
-    passphrase = hashlib.sha256(raw_identity.encode('utf-8')).hexdigest()
-    return passphrase.encode('utf-8')
+    return b"EVM_DEBUG_PASSPHRASE_123"
 
 def get_mac_address():
     # Legacy wrapper so printer_service doesn't break
