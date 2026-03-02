@@ -18,10 +18,24 @@ class PrinterService:
         self.connect_printer()
 
     def is_printer_connected(self):
-        self.connect_printer()
+        if self.printer is None:
+            self.connect_printer()
         return self.printer is not None
 
     def connect_printer(self):
+        if self.printer is not None:
+            return
+            
+        # Try to actively detach any OS kernel drivers (usblp) blocking the USB endpoints to prevent Errno 16
+        try:
+            import usb.core
+            for vid, pid in [(0x0483, 0x5743), (0x0416, 0x5011), (0x04b8, 0x0202)]:
+                dev = usb.core.find(idVendor=vid, idProduct=pid)
+                if dev is not None and dev.is_kernel_driver_active(0):
+                    dev.detach_kernel_driver(0)
+        except Exception:
+            pass
+
         # First try USB class auto-discovery
         if Usb:
             # 1. Specific STMicroelectronics POS80 (Default endpoints)
@@ -220,7 +234,12 @@ class PrinterService:
             return True
 
         except Exception as e:
-            # p.text(f"\nError: {e}\n") # Optional: print error on slip?
+            try:
+                if self.printer:
+                    self.printer.close()
+            except:
+                pass
+            self.printer = None
             raise e
 
 
@@ -363,6 +382,12 @@ class PrinterService:
             
         except Exception as e:
             print(f"Batch Print Error: {e}")
+            try:
+                if self.printer:
+                    self.printer.close()
+            except:
+                pass
+            self.printer = None
             raise e
 
     def _get_font(self, size):
