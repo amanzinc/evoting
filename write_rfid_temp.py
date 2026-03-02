@@ -5,6 +5,10 @@ import busio
 from adafruit_pn532.i2c import PN532_I2C
 from adafruit_pn532.adafruit_pn532 import MIFARE_CMD_AUTH_B
 import RPi.GPIO as GPIO # if error, might need to adjust or remove
+import base64
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization
 
 def write_rfid():
     # 1. Connect
@@ -16,7 +20,26 @@ def write_rfid():
 
     # 2. Setup Data
     payload = "UpBRu7R1ZJx7qBg3He/zqu7JF0bftH4FahTMKwNhvRGWlU9xE59BegiD9OrL+LKHs+Ex5dCBwOhvUJAHLTQG1wAQFIiDHVSBVLDH4XFKUOHZ7GE+5BiWBwzMznQSNrgLyV+JdJLmXyEK/AHFa+9KtFBXZQnarJKLEQ3SoS8D56QXRe2IvmYsnzTZhJpTXUjapxwZegjsHfb/o+JhrE38GsaXRC5HD9C7mMogTWAh1/YNV+9jM8cQS9PcZQbzQTCj6xrf1Q1APyuWg3fVEt3UZ0n/jYlNnDdxBptFDNo0pG0OCEaLcIn9iqVoK1bOct8u/PXXsZgxK6wbacdG84KXTw=="
-    payload_bytes = payload.encode('utf-8')
+
+    print("Encrypting payload with public.pem...")
+    try:
+        with open("public.pem", "rb") as key_file:
+            public_key = serialization.load_pem_public_key(key_file.read())
+            
+        encrypted_bytes = public_key.encrypt(
+            payload.encode('utf-8'),
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+        # Encode as Base64 so it can be handled as a string later safely
+        payload_bytes = base64.b64encode(encrypted_bytes)
+        print(f"Encrypted size: {len(payload_bytes)} bytes")
+    except Exception as e:
+        print(f"Error encrypting: {e}")
+        return False
     
     # 3. Wait for Card
     print("Place card on reader to write...")

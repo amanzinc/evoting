@@ -3,9 +3,12 @@ import sys
 import os
 
 try:
-    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives import serialization
+    import hardware_crypto
 except ImportError:
-    Fernet = None
+    pass
 
 # Hardware libraries - Wrapped to prevent crash on Dev machine
 try:
@@ -21,7 +24,7 @@ class RFIDService:
     def __init__(self, key_path="secret.key"):
         self.pn532 = None
         self.key_path = key_path
-        self.fernet = None
+        self.private_key = None
         self.connected = False
         
         self.START_BLOCK = 4
@@ -29,20 +32,20 @@ class RFIDService:
         self.KEY_DEFAULT = b'\xFF' * 6
 
     def load_key(self):
-        if not Fernet:
-            print("Cryptography module missing.")
-            return False
-            
         if not os.path.exists(self.key_path):
             print(f"Key file {self.key_path} not found.")
             return False
             
         try:
-            with open(self.key_path, "rb") as f:
-                self.fernet = Fernet(f.read())
+            passphrase = hardware_crypto.get_hardware_passphrase()
+            with open(self.key_path, "rb") as kf:
+                self.private_key = serialization.load_pem_private_key(
+                    kf.read(),
+                    password=passphrase
+                )
             return True
         except Exception as e:
-            print(f"Error loading key: {e}")
+            print(f"Error loading private key: {e}")
             return False
 
     def connect(self):
@@ -114,12 +117,26 @@ class RFIDService:
                 return None
 
             # Decrypt
-            if not self.fernet:
+            if not self.private_key:
                 if not self.load_key():
                     return (uid.hex(), "DECRYPTION_FAILED_NO_KEY")
 
-            encrypted_token = raw_bytes.decode("utf-8")
-            decrypted = self.fernet.decrypt(encrypted_token.encode("utf-8")).decode("utf-8")
+            try:
+                import base64
+                encrypted_bytes = base64.b64decode(raw_bytes.decode('utf-8'))
+                
+                decrypted_bytes = self.private_key.decrypt(
+                    encrypted_bytes,
+                    padding.OAEP(
+                        mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                        algorithm=hashes.SHA256(),
+                        label=None
+                    )
+                )
+                decrypted = decrypted_bytes.decode("utf-8")
+            except Exception as e:
+                print(f"Decryption failed: {e}")
+                return (uid.hex(), "DECRYPTION_FAILED")
             
             try:
                 import json
