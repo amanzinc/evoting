@@ -33,8 +33,16 @@ def generate_sample():
     dh.set_ballot_file("mock_plain_ballot.json")
     
     vote_data = {'selections': {1: 1}}  # Vote for Alice who is ID 1
-    # Save vote!
+    # Save vote 1!
     dh.save_vote(vote_data, "normal", "VOTER-1234", 5)
+    
+    # Save vote 2!
+    vote_data = {'selections': {1: 2}}  # Vote for ID 2
+    dh.save_vote(vote_data, "normal", "VOTER-5678", 5)
+    
+    # Save vote 3!
+    vote_data = {'selections': {1: 3}}  # Vote for ID 3
+    dh.save_vote(vote_data, "normal", "VOTER-9012", 5)
 
     print("\n[SAMPLE votes.json OUTPUT]")
     with open("mock_votes.json", "r") as f:

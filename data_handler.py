@@ -13,6 +13,36 @@ class DataHandler:
         self.ballot_id = "" # Store the specific generic complex payload ID
         self.ballot_file_id = "" # Store the filename for SQLite logic
         self.candidates_base = []
+        
+        # Initialize cryptographic hash chain
+        self.last_hash = None
+        self._initialize_hash_chain()
+
+    def _initialize_hash_chain(self):
+        """Reads the last known hash from votes.json, or generates a secure random genesis seed."""
+        import os
+        import json
+        import secrets
+        
+        if os.path.exists(self.log_file) and os.path.getsize(self.log_file) > 0:
+            try:
+                # Read the last line of the JSON file to get the previous hash
+                with open(self.log_file, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                    if lines:
+                        last_record = json.loads(lines[-1].strip())
+                        self.last_hash = last_record.get("hash_value")
+            except Exception as e:
+                print(f"Warning: Failed to read existing hash chain from {self.log_file}: {e}")
+                
+        # If file didn't exist, was empty, or parsing failed, generate a Random Genesis Seed
+        if not self.last_hash:
+            self.last_hash = secrets.token_hex(32)
+            print(f"\n=======================================================")
+            print(f"NEW ELECTION INSTANCE DETECTED - NO EXISTING VOTE LOG")
+            print(f"GENESIS HASH SEED: {self.last_hash}")
+            print(f"=======================================================\n")
+
 
     def set_ballot_file(self, new_file):
         """Switches to a new ballot file and reloads candidates."""
@@ -185,15 +215,37 @@ class DataHandler:
             pref_id = "_".join(str(self.get_candidate_by_id(selections[r])['id']) for r in ranks if self.get_candidate_by_id(selections[r]))
             commitment = "_".join(str(self.get_candidate_by_id(selections[r]).get('commitment', '')) for r in ranks if self.get_candidate_by_id(selections[r]))
             
+        # Generate secure rolling hash
+        import hashlib
+        import json
+        
+        hash_payload = {
+            "election_id": self.election_id,
+            "voter_id": voter_id,
+            "booth_num": booth_num,
+            "commitment": commitment,
+            "pref_id": pref_id,
+            "timestamp": timestamp,
+            "previous_hash": self.last_hash
+        }
+        
+        # We sort keys to ensure deterministic JSON stringification for standard hashing
+        payload_str = json.dumps(hash_payload, sort_keys=True)
+        current_hash = hashlib.sha256(payload_str.encode('utf-8')).hexdigest()
+        
         vote_record = {
             "election_id": self.election_id,
             "voter_id": voter_id,
             "booth_num": booth_num,
             "commitment": commitment,
             "pref_id": pref_id,
-            "hash_value": str(self.ballot_id), # Ballot ID contains the proof needed
+            "previous_hash": self.last_hash,
+            "hash_value": current_hash,
             "timestamp": timestamp
         }
+        
+        # Advance the chain in memory for the next vote
+        self.last_hash = current_hash
         
         return vote_record
 
