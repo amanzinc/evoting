@@ -78,14 +78,9 @@ class VotingApp:
                 export_path = exporter.export_election_data(self.log_dir, usb_path)
                 
                 # Fetch final hash to print on the receipt
-                from data_handler import DataHandler
-                # We need a headless data handler just to read the final hash from the existing file
-                temp_dh = DataHandler(None, log_file=self.votes_log, token_log_file=self.tokens_log)
-                final_hash = temp_dh.last_hash
-                
-                from printer_service import PrinterService
-                temp_printer = PrinterService(temp_dh)
-                temp_printer.print_end_election_ticket(final_hash, export_path)
+                if hasattr(self, 'data_handler') and hasattr(self, 'printer_service'):
+                    final_hash = self.data_handler.last_hash
+                    self.printer_service.print_end_election_ticket(final_hash, export_path)
                 
                 messagebox.showinfo("Export Successful", f"Election successfully ended.\nEncrypted logs safely exported to:\n{export_path}\n\nYou can now safely power off the machine.")
                 self.root.destroy()
