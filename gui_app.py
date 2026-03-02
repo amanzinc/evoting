@@ -278,7 +278,8 @@ class VotingApp:
                     self.finish_voter_session(aborted)
                 else:
                     self.receipt_buffer = []
-                    self._finalize_session(aborted)
+                    # Pass True so we don't log votes if the receipt failed to print!
+                    self._finalize_session(True)
             return
         except queue.Empty:
             pass
@@ -291,7 +292,7 @@ class VotingApp:
                 self.finish_voter_session(aborted)
             else:
                 self.receipt_buffer = []
-                self._finalize_session(aborted)
+                self._finalize_session(True)
             return
 
         self.root.after(500, self.check_batch_print_status, aborted)

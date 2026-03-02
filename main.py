@@ -37,16 +37,20 @@ def main():
         printer_service = PrinterService(data_handler)
         
         # Perform an initial cut to clear the printer roll on startup
-        if printer_service.printer:
-            try:
-                printer_service.printer.text("\n\n\n\n\n\n") # Feed past blade
-                printer_service.printer.cut()
-                print("Printer connected and initialized with a startup cut.")
-            except Exception as e:
-                print(f"Startup cut failed: {e}")
+        if not printer_service.is_printer_connected():
+            raise Exception("No USB thermal printer detected! Cannot safely run election.")
+
+        try:
+            printer_service.printer.text("\n\n\n\n\n\n") # Feed past blade
+            printer_service.printer.cut()
+            print("Printer connected and initialized with a startup cut.")
+        except Exception as e:
+            raise Exception(f"Startup cut failed, printer may be jammed: {e}")
                 
     except Exception as e:
         print(f"Critical Startup Error: {e}")
+        # Show graphic error and abort boot
+        messagebox.showerror("System Security Error", str(e))
         return
 
     app = VotingApp(root, data_handler, printer_service, bm, rfid_service)
