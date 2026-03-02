@@ -4,6 +4,7 @@ import threading
 import queue
 import datetime
 import time
+import os
 
 class VotingApp:
     def __init__(self, root, data_handler, printer_service, ballot_manager, rfid_service, db_path, votes_log, tokens_log, log_dir):
