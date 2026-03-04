@@ -61,6 +61,37 @@ This project is a Python-based prototype for a Ballot Marking Device (BMD), desi
     python main.py
     ```
 
+### USB Drive Structure
+The EVM requires a USB drive to be inserted before voting can begin. The USB drive must contain the following structure:
+
+```text
+[USB_ROOT]/
+├── server_key.pem                 # (Required) Server's public RSA key for exporting votes
+└── elections/                     # (Required) Directory containing all election data
+    ├── E1/                        # (Example) Election ID Folder
+    │   ├── candidates.json        # The roster/candidates for this specific election
+    │   └── ballots/               # Pre-generated, encrypted individual ballot JSON files
+    │       ├── 0AC024CB.json
+    │       └── 1BFF34B3.json
+    └── E2/                        # (Example) Another Election ID Folder
+        ├── candidates.json
+        └── ballots/
+            └── ...
+```
+*Note: Upon export ending the election, the EVM will create an `exports/` folder on this USB drive containing `votes.json.enc`.*
+
+### RFID Card Format (Decrypted Payload)
+When a voter scans their RFID card, the `rfid_service` decrypts the payload. The EVM expects this decrypted payload to be a valid JSON string with the following structure:
+
+```json
+{
+  "token_id": "UNIQUE_VOTER_TOKEN_123",
+  "eid_vector": "E1;E2"
+}
+```
+*   **`token_id`**: A unique string identifying the voter's session. Used to prevent double-voting.
+*   **`eid_vector`**: A semicolon-separated string of Election IDs (matching the folder names on the USB drive) that the voter is eligible to vote in. The EVM will iterate through these elections sequentially.
+
 ### Configuring Candidates (`candidates.json`)
 
 Update `candidates.json` to change the election roster. The format is a dictionary of candidates.
