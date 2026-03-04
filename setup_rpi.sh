@@ -45,21 +45,21 @@ EOF
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 
-# 4. Disable USB Automount Popups
+# 4. Disable USB Automount Popups globally
 echo "[*] Disabling USB 'Open in File Manager' popups..."
-# Ensure directory exists for LXDE (X11)
-mkdir -p "$HOME/.config/pcmanfm/LXDE-pi"
-# Create/Overwrite the volume section
-if [ -f "$HOME/.config/pcmanfm/LXDE-pi/pcmanfm.conf" ]; then
-    sed -i -e '/\[volume\]/,+4d' "$HOME/.config/pcmanfm/LXDE-pi/pcmanfm.conf" || true
-fi
-cat << EOF >> "$HOME/.config/pcmanfm/LXDE-pi/pcmanfm.conf"
 
-[volume]
-mount_on_startup=0
-mount_removable=0
-autorun=0
-EOF
+# Remove potentially corrupted local config so it regenerates from global
+if [ -f "$HOME/.config/pcmanfm/LXDE-pi/pcmanfm.conf" ]; then
+    rm "$HOME/.config/pcmanfm/LXDE-pi/pcmanfm.conf"
+fi
+
+# Apply to global configuration safely
+GLOBAL_CONF="/etc/xdg/pcmanfm/LXDE-pi/pcmanfm.conf"
+if [ -f "$GLOBAL_CONF" ]; then
+    sudo sed -i 's/mount_on_startup=1/mount_on_startup=0/g' "$GLOBAL_CONF"
+    sudo sed -i 's/mount_removable=1/mount_removable=0/g' "$GLOBAL_CONF"
+    sudo sed -i 's/autorun=1/autorun=0/g' "$GLOBAL_CONF"
+fi
 
 # For newer Bookworm OS (Wayland / Wayfire), disable pcmanfm-qt automounts via dconf/gsettings if applicable
 if command -v gsettings >/dev/null 2>&1; then
