@@ -54,9 +54,58 @@ class ExportService:
         print(f"Signature saved to {sig_path}")
         return sig_path
 
+    def hybrid_encrypt_file(self, source_path, server_key_path="server_key.pem"):
+        """
+        Encrypts a file of any size using Hybrid Encryption:
+        1. Generates a random AES key (Fernet).
+        2. Encrypts the large file with AES.
+        3. Encrypts the AES key itself with the Server's RSA Public Key.
+        """
+        if not os.path.exists(server_key_path):
+            raise FileNotFoundError(f"Server public key not found at {server_key_path}")
+            
+        # 1. Load Server's Public RSA Key
+        with open(server_key_path, "rb") as key_file:
+            server_public_key = serialization.load_pem_public_key(key_file.read())
+            
+        print(f"Encrypting {source_path} using Hybrid Encryption (AES + RSA)...")
+            
+        # 2. Generate random AES (Fernet) key
+        from cryptography.fernet import Fernet
+        aes_key = Fernet.generate_key()
+        fernet = Fernet(aes_key)
+        
+        # 3. Encrypt the actual file data with AES
+        with open(source_path, "rb") as f:
+            plaintext_data = f.read()
+            
+        encrypted_data = fernet.encrypt(plaintext_data)
+        
+        enc_file_path = source_path + ".enc"
+        with open(enc_file_path, "wb") as f:
+            f.write(encrypted_data)
+            
+        # 4. Encrypt the AES key with the Server's Public RSA Key
+        encrypted_aes_key = server_public_key.encrypt(
+            aes_key,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+        
+        enc_key_path = source_path + ".key.enc"
+        with open(enc_key_path, "wb") as f:
+            f.write(encrypted_aes_key)
+            
+        print(f"Generated encrypted payload: {enc_file_path}")
+        print(f"Generated encrypted AES key: {enc_key_path}")
+        return enc_file_path, enc_key_path
+
     def export_election_data(self, source_log_dir, usb_mount_point):
         """
-        Signs the critical log files and copies them to the USB drive.
+        Signs the critical log files, encrypts them, and copies them to the USB drive.
         Returns the path to the export directory on the USB drive.
         """
         if not usb_mount_point or not os.path.exists(usb_mount_point):
@@ -71,20 +120,31 @@ class ExportService:
         
         exported_files = []
         
-        # 1. Sign and Export Votes Log
+        # 1. Sign and Encrypt Votes Log
         if os.path.exists(votes_log):
+            # A. Sign the *plaintext* data so the server can verify it hasn't been tampered with
             sig_path = self.sign_file(votes_log)
             
-            dest_votes = os.path.join(export_dir, "votes.json")
+            # B. Encrypt the file using the server's public key (Hybrid Encryption)
+            enc_file_path, enc_key_path = self.hybrid_encrypt_file(votes_log)
+            
+            # C. Copy the resulting encrypted files and signature to USB
+            dest_votes_enc = os.path.join(export_dir, "votes.json.enc")
+            dest_votes_key = os.path.join(export_dir, "votes.json.key.enc")
             dest_sig = os.path.join(export_dir, "votes.json.sig")
             
-            shutil.copy2(votes_log, dest_votes)
+            shutil.copy2(enc_file_path, dest_votes_enc)
+            shutil.copy2(enc_key_path, dest_votes_key)
             shutil.copy2(sig_path, dest_sig)
             
-            exported_files.extend([dest_votes, dest_sig])
-            print(f"Exported: votes.json and signature")
+            # Cleanup local temporary encrypted files 
+            os.remove(enc_file_path)
+            os.remove(enc_key_path)
             
-        # 2. Export Tokens Log (Optional to sign, but let's just copy for now)
+            exported_files.extend([dest_votes_enc, dest_votes_key, dest_sig])
+            print(f"Exported: Encrypted votes.json, Encrypted Key, and Signature")
+            
+        # 2. Export Tokens Log (Optional to encrypt, but let's just copy for now depending on threat model)
         if os.path.exists(tokens_log):
             dest_tokens = os.path.join(export_dir, "tokens.log")
             shutil.copy2(tokens_log, dest_tokens)
