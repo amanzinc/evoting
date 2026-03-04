@@ -45,15 +45,17 @@ EOF
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 
-# 4. Disable USB Automount Popups globally
-echo "[*] Disabling USB 'Open in File Manager' popups..."
+# 4. Disable USB Automount Popups (PCManFM / Wayfire)
+echo "[*] Disabling 'Show options for removable media' GUI popup..."
 
 # Remove potentially corrupted local config so it regenerates from global
 if [ -f "$HOME/.config/pcmanfm/LXDE-pi/pcmanfm.conf" ]; then
     rm "$HOME/.config/pcmanfm/LXDE-pi/pcmanfm.conf"
 fi
 
-# Apply to global configuration safely
+# Apply to global configuration safely using sed
+# This is the exact equivalent of:
+# File Manager -> Edit > Preferences > Volume Management > Uncheck "Show available options for removable media when they are inserted"
 GLOBAL_CONF="/etc/xdg/pcmanfm/LXDE-pi/pcmanfm.conf"
 if [ -f "$GLOBAL_CONF" ]; then
     sudo sed -i 's/mount_on_startup=1/mount_on_startup=0/g' "$GLOBAL_CONF"
