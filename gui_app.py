@@ -54,6 +54,9 @@ class VotingApp:
         tk.Label(frame, text="System Initialization", font=('Helvetica', 32, 'bold'), bg="#E8F5E9", fg="#2E7D32").pack(pady=(150, 20))
         tk.Label(frame, text="Please insert the Election Data USB Drive to start.", font=('Helvetica', 24), bg="#E8F5E9", fg="#333").pack(pady=20)
 
+        self.check_usb_loop()
+
+    def check_usb_loop(self):
         # Try to find the USB drive
         usb_path = self.ballot_manager._find_usb_drive(None)
 
@@ -61,7 +64,7 @@ class VotingApp:
             self.ballot_manager.usb_mount_point = usb_path
             self.initialize_core_services()
         else:
-            self.root.after(2000, self.show_usb_waiting_screen)
+            self.root.after(2000, self.check_usb_loop)
 
     def end_election(self):
         """Triggers the secure export process and halts the EVM."""
@@ -84,6 +87,7 @@ class VotingApp:
                 
                 messagebox.showinfo("Export Successful", f"Election successfully ended.\nEncrypted logs safely exported to:\n{export_path}\n\nYou can now safely power off the machine.")
                 self.root.destroy()
+                os.system("sudo shutdown now")
             except Exception as e:
                 messagebox.showerror("Export Error", f"A critical error occurred during export:\n{str(e)}")
 

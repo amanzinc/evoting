@@ -45,6 +45,16 @@ EOF
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 
+# 4. Disable PCManFM Automount Popups
+echo "[*] Disabling USB automount popups in PCManFM..."
+mkdir -p "$HOME/.config/pcmanfm/LXDE-pi"
+cat << EOF > "$HOME/.config/pcmanfm/LXDE-pi/pcmanfm.conf"
+[volume]
+mount_on_startup=0
+mount_removable=0
+autorun=0
+EOF
+
 echo "============================================="
 echo "   Setup Complete!"
 echo "============================================="
