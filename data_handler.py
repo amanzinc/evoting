@@ -200,7 +200,7 @@ class DataHandler:
         except Exception as e:
             print(f"Error logging token: {e}")
 
-    def generate_vote_json(self, vote_data, voting_mode, voter_id="UNKNOWN_VOTER", booth_num=1):
+    def generate_vote_json(self, vote_data, voting_mode, voter_id="UNKNOWN_VOTER", booth_num=1, token_id="UNKNOWN"):
         """Generates a JSON object matching the MongoDB schema."""
         import datetime
         timestamp = vote_data.get('timestamp', datetime.datetime.now().isoformat())
@@ -226,6 +226,7 @@ class DataHandler:
         hash_payload = {
             "election_id": self.election_id,
             "voter_id": voter_id,
+            "token_id": token_id,
             "booth_num": booth_num,
             "commitment": commitment,
             "pref_id": pref_id,
@@ -240,6 +241,7 @@ class DataHandler:
         vote_record = {
             "election_id": self.election_id,
             "voter_id": voter_id,
+            "token_id": token_id,
             "booth_num": booth_num,
             "commitment": commitment,
             "pref_id": pref_id,
@@ -263,7 +265,7 @@ class DataHandler:
             print(f"Error saving JSON: {e}")
             raise e
 
-    def save_vote(self, vote_data, voting_mode, voter_id="UNKNOWN_VOTER", booth_num=1):
+    def save_vote(self, vote_data, voting_mode, voter_id="UNKNOWN_VOTER", booth_num=1, token_id="UNKNOWN"):
         """Saves the vote data as a JSON line."""
-        record = self.generate_vote_json(vote_data, voting_mode, voter_id, booth_num)
+        record = self.generate_vote_json(vote_data, voting_mode, voter_id, booth_num, token_id)
         self.save_json(record)

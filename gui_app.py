@@ -261,15 +261,19 @@ class VotingApp:
         token_id = token_payload
         eid_vector_str = ""
         self.current_voter_id = token_id
+        self.current_token_id = token_id
         self.current_booth = 1
         
         try:
             data = json.loads(token_payload)
             if 'token_id' in data:
                 token_id = data['token_id']
+                self.current_token_id = token_id
             if 'eid_vector' in data:
                 eid_vector_str = data['eid_vector']
-            if 'entry_number' in data:
+            if 'voter_id' in data:
+                self.current_voter_id = data['voter_id']
+            elif 'entry_number' in data:
                 self.current_voter_id = data['entry_number']
             if 'booth' in data:
                 self.current_booth = data['booth']
@@ -755,7 +759,8 @@ class VotingApp:
                             vote_data, 
                             self.voting_mode,
                             getattr(self, 'current_voter_id', 'UNKNOWN'),
-                            getattr(self, 'current_booth', 1)
+                            getattr(self, 'current_booth', 1),
+                            getattr(self, 'current_token_id', 'UNKNOWN')
                         )
                     
                     # Mark ballot as used for this election (ALWAYS MARK USED TO PREVENT REUSE)

@@ -81,16 +81,22 @@ The EVM requires a USB drive to be inserted before voting can begin. The USB dri
 *Note: Upon export ending the election, the EVM will create an `exports/` folder on this USB drive containing `votes.json.enc`.*
 
 ### RFID Card Format (Decrypted Payload)
-When a voter scans their RFID card, the `rfid_service` decrypts the payload. The EVM expects this decrypted payload to be a valid JSON string with the following structure:
+When a voter scans their RFID card, the `rfid_service` decrypts the payload using the EVM's private hardware key. The EVM expects this decrypted payload to be a valid JSON string with the following structure:
 
 ```json
 {
-  "token_id": "UNIQUE_VOTER_TOKEN_123",
-  "eid_vector": "E1;E2"
+  "token_id": "UNIQUE_SESSION_123",
+  "voter_id": "VOTER_1044A",
+  "eid_vector": "E1;E2",
+  "booth": 1,
+  "issued_at": "2026-03-05T12:00:00.000000"
 }
 ```
-*   **`token_id`**: A unique string identifying the voter's session. Used to prevent double-voting.
+*   **`token_id`**: A unique string identifying the voter's session. Used to prevent double-voting. Logged in `votes.json`.
+*   **`voter_id`**: The official ID or entry number of the voter (formerly `entry_number`). Logged in `votes.json`.
 *   **`eid_vector`**: A semicolon-separated string of Election IDs (matching the folder names on the USB drive) that the voter is eligible to vote in. The EVM will iterate through these elections sequentially.
+*   **`booth`**: Integer defining the polling booth.
+*   **`issued_at`**: ISO-formatted timestamp of when the token was generated.
 
 ### Configuring Candidates (`candidates.json`)
 
