@@ -615,10 +615,19 @@ class VotingApp:
                 row.pack(fill=tk.X)
                 if cand:
                     tk.Label(row, text=f"Preference {rank})", font=('Helvetica', 18, 'bold'), fg="#666", bg="white").pack(side=tk.LEFT, padx=(10, 6))
-                    t = cand['name'] if cand['id'] == 0 else f"{cand['id']}. {cand['name']}"
+                    candidate_number = cand.get('candidate_number')
+                    if candidate_number:
+                        t = f"{cand['name']} ({candidate_number})"
+                    else:
+                        t = cand['name']
                     tk.Label(row, text=t, font=('Helvetica', 20), bg="white").pack(side=tk.LEFT, padx=10)
-                    if cand.get('candidate_number'):
-                        tk.Label(row, text=f"({cand['candidate_number']})", font=('Helvetica', 16, 'italic'), fg="#666", bg="white").pack(side=tk.LEFT, padx=10)
+                    tk.Label(
+                        row,
+                        text=f"Choice Number {cand['id']}",
+                        font=('Helvetica', 16, 'italic'),
+                        fg="#666",
+                        bg="white"
+                    ).pack(side=tk.LEFT, padx=10)
                 else:
                      tk.Label(row, text=f"Preference {rank})  [No Selection]", font=('Helvetica', 20), fg="#aaa", bg="white").pack(side=tk.LEFT, padx=10)
 
