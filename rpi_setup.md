@@ -97,6 +97,43 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
+### G. USB-to-Parallel Thermal Printers
+If your 58 mm thermal printer appears on the Pi as something like `ICS Advent Parallel Adaptor`, the operating system is detecting the USB-to-parallel bridge rather than the printer brand. That is still usable as long as the printer speaks ESC/POS over the adapter.
+
+1. Confirm the adapter is detected:
+    ```bash
+    lsusb
+    dmesg | grep -i -E 'lp|usblp|parallel|usb'
+    ls -l /dev/usb/lp* /dev/lp* 2>/dev/null
+    ```
+2. If no `lp` device appears, load the printer driver and re-check:
+    ```bash
+    sudo modprobe usblp
+    ls -l /dev/usb/lp* /dev/lp* 2>/dev/null
+    ```
+3. Set the app to use the raw device file directly. Replace the path with whichever device exists on your Pi:
+    ```bash
+    export EVOTING_PRINTER_DEVICE=/dev/lp0
+    export EVOTING_PRINTER_PROFILE=default
+    ```
+4. Test the printer directly from the Pi without adding any extra project files:
+    ```bash
+    cd ~/evoting
+    source venv/bin/activate
+    python - <<'PY'
+from escpos.printer import File
+
+p = File('/dev/lp0', profile='default')
+p.text('EVOTING PRINTER TEST\n')
+p.text('Raw /dev/lp0 path OK\n\n\n')
+p.cut(mode='FULL')
+PY
+    ```
+5. If your printer is actually on `/dev/usb/lp0`, change the path in both `EVOTING_PRINTER_DEVICE` and the Python snippet.
+6. If text prints but cutting or formatting is wrong, keep the same device path and try a different profile value supported by `python-escpos`.
+
+The app now checks `EVOTING_PRINTER_DEVICE` first, then falls back to `/dev/usb/lp0` through `/dev/usb/lp5` and `/dev/lp0` through `/dev/lp5`.
+
 ## 4. Optional: Hardware Specifics
 
 ### Screen Rotation

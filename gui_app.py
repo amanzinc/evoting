@@ -80,10 +80,12 @@ class VotingApp:
                 exporter = ExportService("private.pem")
                 export_path = exporter.export_election_data(self.log_dir, usb_path)
                 
-                # Fetch final hash to print on the receipt
+                # Fetch final hash and force printing of final receipt before shutdown.
                 if hasattr(self, 'data_handler') and hasattr(self, 'printer_service'):
-                    final_hash = self.data_handler.last_hash
+                    final_hash = self.data_handler.last_hash or "UNKNOWN_HASH"
                     self.printer_service.print_end_election_ticket(final_hash, export_path)
+                else:
+                    raise Exception("Core services unavailable for end-of-election receipt printing.")
                 
                 messagebox.showinfo("Export Successful", f"Election successfully ended.\nEncrypted logs safely exported to:\n{export_path}\n\nYou can now safely power off the machine.")
                 self.root.destroy()

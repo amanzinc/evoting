@@ -5,11 +5,12 @@ import qrcode
 from PIL import Image, ImageDraw, ImageFont
 
 try:
-    from escpos.printer import Usb, File
+    from escpos.printer import Usb, File, Win32Raw
 except ImportError:
     print("Warning: python-escpos not installed. Printing will fail silently or log errors.")
     Usb = None
     File = None
+    Win32Raw = None
 
 class PrinterService:
     def __init__(self, data_handler):
@@ -25,6 +26,12 @@ class PrinterService:
     def connect_printer(self):
         if self.printer is not None:
             return
+
+        # Allow deployment-specific printer selection without code edits.
+        configured_printer_name = os.environ.get("EVOTING_PRINTER_NAME", "POS50")
+        configured_usb_lp = os.environ.get("EVOTING_PRINTER_USB_LP", "3")
+        configured_device_path = os.environ.get("EVOTING_PRINTER_DEVICE", "").strip()
+        configured_profile = os.environ.get("EVOTING_PRINTER_PROFILE", "default").strip() or "default"
             
         # Try to actively detach any OS kernel drivers (usblp) blocking the USB endpoints to prevent Errno 16
         try:
@@ -35,6 +42,29 @@ class PrinterService:
                     dev.detach_kernel_driver(0)
         except Exception:
             pass
+
+        if Win32Raw:
+            # Try Windows printer queue names in priority order.
+            win_names = [
+                configured_printer_name,
+                "KPOS_58 Printer",
+                "POS50",
+                "POS-50",
+                "POS58",
+                "POS-58",
+                "POS-80C",
+            ]
+            seen = set()
+            for name in win_names:
+                if not name or name in seen:
+                    continue
+                seen.add(name)
+                try:
+                    self.printer = Win32Raw(name)
+                    print(f"Printer connected via Win32Raw ({name}) successfully.")
+                    return
+                except Exception:
+                    pass
 
         # First try USB class auto-discovery
         if Usb:
@@ -78,22 +108,47 @@ class PrinterService:
             except Exception as e:
                 pass
                 
-        # Fallback to File class (/dev/usb/lpX)
+        # Fallback to File class (/dev/usb/lpX or /dev/lpX)
         if File:
             connected = False
-            for port_num in range(6):
-                port_path = f"/dev/usb/lp{port_num}"
-                if os.path.exists(port_path):
+            device_candidates = []
+            if configured_device_path:
+                device_candidates.append(configured_device_path)
+
+            # Prioritize configured USB port first, then try standard ports.
+            port_candidates = []
+            try:
+                port_candidates.append(int(configured_usb_lp))
+            except Exception:
+                pass
+            port_candidates.extend([0, 1, 2, 3, 4, 5])
+
+            for port_num in port_candidates:
+                device_candidates.append(f"/dev/usb/lp{port_num}")
+                device_candidates.append(f"/dev/lp{port_num}")
+
+            seen_paths = set()
+            for device_path in device_candidates:
+                if not device_path or device_path in seen_paths:
+                    continue
+                seen_paths.add(device_path)
+                if os.path.exists(device_path):
                     try:
-                        self.printer = File(port_path, profile="POS-80")
-                        print(f"Printer connected successfully at {port_path} with POS-80 profile.")
+                        self.printer = File(device_path, profile=configured_profile)
+                        print(
+                            f"Printer connected successfully at {device_path} "
+                            f"with {configured_profile} profile."
+                        )
                         connected = True
                         break
                     except Exception as e:
-                        print(f"Printer Connection Failed on {port_path}: {e}")
+                        print(f"Printer connection failed on {device_path}: {e}")
             
             if not connected:
-                 print("Printer device file /dev/usb/lp0 through lp5 not found or could not connect.")
+                 print(
+                     "Printer device file not found or could not connect. "
+                     "Checked EVOTING_PRINTER_DEVICE, /dev/usb/lp0-/dev/usb/lp5, and /dev/lp0-/dev/lp5."
+                 )
                  self.printer = None
         else:
              print("escpos library not available.")
@@ -188,7 +243,7 @@ class PrinterService:
 
             p.text(BOTTOM_BAR + "\n")
             p.text("\n\n\n\n\n\n") # Feed paper past the cutter blade (6 blank lines)
-            p.cut()
+            p.cut(mode='FULL')
 
             # ==========================================
             # RECEIPT 2: VOTER RECEIPT
@@ -227,7 +282,7 @@ class PrinterService:
             
             if is_final:
                 p.text("\n\n\n\n\n") # Feed paper past the cutter blade (5 blank lines)
-                p.cut()
+                p.cut(mode='FULL')
             else:
                 p.text("\n\n\n\n_ _ _ _ NEXT ELECTION _ _ _ _\n\n\n")
             
@@ -347,7 +402,7 @@ class PrinterService:
                 p.text(DIVIDER + "\n")
             
             p.text("\n\n\n\n\n\n") # Feed for VVPAT box
-            p.cut()
+            p.cut(mode='FULL')
             
             # ==============================
             # PART 2: CONSOLIDATED VOTER
@@ -378,7 +433,7 @@ class PrinterService:
                 p.text(DIVIDER + "\n")
             
             p.text("Keep Safe\n\n\n\n\n\n") # Feed past cutter blade
-            p.cut()
+            p.cut(mode='FULL')
             
         except Exception as e:
             print(f"Batch Print Error: {e}")
@@ -452,18 +507,25 @@ class PrinterService:
             p.text(TOP_BAR + "\n")
             p.text("ELECTION READY\n")
             p.text("Keep this slip for auditing.\n\n\n\n\n\n")
-            p.cut()
+            p.cut(mode='FULL')
         except Exception as e:
             print(f"Failed to print startup ticket: {e}")
 
     def print_end_election_ticket(self, final_hash, export_path):
-        """Prints a physical ticket confirming the election has ended and showing the final hash."""
+        """Prints a physical ticket confirming the election has ended and showing the final hash.
+
+        Returns True on success, raises Exception on printer/connectivity errors.
+        """
         import datetime
         try:
             import hardware_crypto
             mac_addr = hardware_crypto.get_mac_address()
         except:
             mac_addr = "UNKNOWN"
+
+        # Ensure we have an active printer handle before attempting to print.
+        if not self.is_printer_connected():
+            raise Exception("Printer not connected")
             
         try:
             p = self.printer
@@ -505,6 +567,13 @@ class PrinterService:
             p.text(TOP_BAR + "\n")
             p.text("SAFE TO POWER OFF\n")
             p.text("Submit this slip with USB.\n\n\n\n\n\n")
-            p.cut()
+            p.cut(mode='FULL')
+            return True
         except Exception as e:
-            print(f"Failed to print end election ticket: {e}")
+            try:
+                if self.printer:
+                    self.printer.close()
+            except Exception:
+                pass
+            self.printer = None
+            raise Exception(f"Failed to print end election ticket: {e}")
