@@ -606,7 +606,17 @@ class VotingApp:
             # Show Serial ID (The number displayed on the ballot)
             serial_num = str(cand['id'])
             tk.Label(f, text=f"Choice: {serial_num}", font=('Helvetica', 28, 'bold'), bg="#e8f5e9", fg="#333").pack()
-            tk.Label(f, text=cand['name'], font=('Helvetica', 22), bg="#e8f5e9").pack(pady=5)
+            name_row = tk.Frame(f, bg="#e8f5e9")
+            name_row.pack(pady=5)
+            tk.Label(name_row, text=cand['name'], font=('Helvetica', 22), bg="#e8f5e9").pack(side=tk.LEFT)
+            if cand.get('candidate_number'):
+                tk.Label(
+                    name_row,
+                    text=f"({cand['candidate_number']})",
+                    font=('Helvetica', 14, 'italic'),
+                    fg="#666",
+                    bg="#e8f5e9"
+                ).pack(side=tk.LEFT, padx=(8, 0))
         else:
             for rank in range(1, self.max_ranks + 1):
                 cid = self.selections.get(rank)
