@@ -273,7 +273,7 @@ class PrinterService:
                 os.remove(temp_img)
 
             p.text(BOTTOM_BAR + "\n")
-            p.text("\n\n\n\n\n\n") # Feed paper past the cutter blade (6 blank lines)
+            p.text("\n") # Minimal feed before first cut to avoid large blank gap
             p.cut(mode='FULL')
 
             # ==========================================
@@ -312,8 +312,9 @@ class PrinterService:
             p.text("\n")
             
             if is_final:
-                p.text("\n\n\n\n\n") # Feed paper past the cutter blade (5 blank lines)
+                p.text("\n") # Minimal feed before second cut
                 p.cut(mode='FULL')
+                p.text("\n\n") # Slight post-cut feed so the paper drops cleanly
             else:
                 p.text("\n\n\n\n_ _ _ _ NEXT ELECTION _ _ _ _\n\n\n")
             
