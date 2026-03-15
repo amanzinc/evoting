@@ -314,7 +314,7 @@ class PrinterService:
             if is_final:
                 p.text("\n") # Minimal feed before second cut
                 p.cut(mode='FULL')
-                p.text("\n\n") # Slight post-cut feed so the paper drops cleanly
+                p.text("\n\n\n\n\n") # Larger post-cut feed so the paper drops cleanly
             else:
                 p.text("\n\n\n\n_ _ _ _ NEXT ELECTION _ _ _ _\n\n\n")
             
