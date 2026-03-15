@@ -16,7 +16,24 @@ class PrinterService:
     def __init__(self, data_handler):
         self.data_handler = data_handler
         self.printer = None
+        self.paper_width_chars = self._read_int_env("EVOTING_PAPER_WIDTH_CHARS", 32)
+        self.paper_width_dots = self._read_int_env("EVOTING_PAPER_WIDTH_DOTS", 384)
         self.connect_printer()
+
+    def _read_int_env(self, name, default_value):
+        raw_value = os.environ.get(name)
+        if raw_value is None:
+            return default_value
+        try:
+            return int(raw_value)
+        except Exception:
+            return default_value
+
+    def _bar(self, char):
+        return char * self.paper_width_chars
+
+    def _center_line(self, text):
+        return text.center(self.paper_width_chars)
 
     def is_printer_connected(self):
         if self.printer is None:
@@ -29,8 +46,9 @@ class PrinterService:
 
         # Allow deployment-specific printer selection without code edits.
         configured_printer_name = os.environ.get("EVOTING_PRINTER_NAME", "POS50")
-        configured_usb_lp = os.environ.get("EVOTING_PRINTER_USB_LP", "3")
-        configured_device_path = os.environ.get("EVOTING_PRINTER_DEVICE", "").strip()
+        configured_usb_lp = os.environ.get("EVOTING_PRINTER_USB_LP", "0")
+        default_device_path = "/dev/usb/lp0" if os.name != "nt" else ""
+        configured_device_path = os.environ.get("EVOTING_PRINTER_DEVICE", default_device_path).strip()
         configured_profile = os.environ.get("EVOTING_PRINTER_PROFILE", "default").strip() or "default"
             
         # Try to actively detach any OS kernel drivers (usblp) blocking the USB endpoints to prevent Errno 16
@@ -204,8 +222,8 @@ class PrinterService:
             qr_choice_data = "_".join(qr_parts)
 
         p = self.printer
-        TOP_BAR = "_" * 32
-        BOTTOM_BAR = "_" * 32
+        TOP_BAR = self._bar("_")
+        BOTTOM_BAR = self._bar("_")
 
         try:
             # ==========================================
@@ -213,7 +231,7 @@ class PrinterService:
             # ==========================================
             p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
-            p.text("** VVPAT SLIP **".center(32) + "\n")
+            p.text(self._center_line("** VVPAT SLIP **") + "\n")
             p.set(align='left', bold=False)
             p.text("\n") 
 
@@ -250,7 +268,7 @@ class PrinterService:
             # ==========================================
             p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
-            p.text("** VOTER RECEIPT **".center(32) + "\n")
+            p.text(self._center_line("** VOTER RECEIPT **") + "\n")
             p.set(align='left', bold=False)
             p.text("\n")
             
@@ -306,7 +324,7 @@ class PrinterService:
             qr_c = qr_c.resize((qr_size, qr_size))
             qr_b = qr_b.resize((qr_size, qr_size))
             
-            total_width = 384
+            total_width = self.paper_width_dots
             title_height = 30 
             height = qr_size + title_height
             
@@ -336,7 +354,7 @@ class PrinterService:
             qr_size = 250 
             qr_h = qr_h.resize((qr_size, qr_size))
             
-            total_width = 384
+            total_width = self.paper_width_dots
             height = qr_size + 10
             
             img_v = Image.new('RGB', (total_width, height), 'white')
@@ -362,8 +380,8 @@ class PrinterService:
             return # Fail silently or log
             
         p = self.printer
-        TOP_BAR = "=" * 32
-        DIVIDER = "-" * 32
+        TOP_BAR = self._bar("=")
+        DIVIDER = self._bar("-")
         
         try:
             # ==============================
@@ -371,9 +389,9 @@ class PrinterService:
             # ==============================
             p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
-            p.text("CONSOLIDATED VVPAT SLIPS".center(32) + "\n")
-            p.text("(Internal Audit Trail)".center(32) + "\n")
-            p.text(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S").center(32) + "\n")
+            p.text(self._center_line("CONSOLIDATED VVPAT SLIPS") + "\n")
+            p.text(self._center_line("(Internal Audit Trail)") + "\n")
+            p.text(self._center_line(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")) + "\n")
             p.text(TOP_BAR + "\n\n")
             
             p.set(align='left', bold=False)
@@ -409,9 +427,9 @@ class PrinterService:
             # ==============================
             p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
-            p.text("CONSOLIDATED VOTER RECEIPT".center(32) + "\n")
-            p.text("(For Voter)".center(32) + "\n")
-            p.text(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S").center(32) + "\n")
+            p.text(self._center_line("CONSOLIDATED VOTER RECEIPT") + "\n")
+            p.text(self._center_line("(For Voter)") + "\n")
+            p.text(self._center_line(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")) + "\n")
             p.text(TOP_BAR + "\n\n")
             
             p.set(align='left', bold=False)
@@ -469,13 +487,13 @@ class PrinterService:
             
         try:
             p = self.printer
-            TOP_BAR = "=" * 32
+            TOP_BAR = self._bar("=")
             
             p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
-            p.text("EVM STARTUP PROTOCOL".center(32) + "\n")
-            p.text("GENESIS BLOCK CREATED".center(32) + "\n")
-            p.text(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S").center(32) + "\n")
+            p.text(self._center_line("EVM STARTUP PROTOCOL") + "\n")
+            p.text(self._center_line("GENESIS BLOCK CREATED") + "\n")
+            p.text(self._center_line(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")) + "\n")
             p.text(TOP_BAR + "\n\n")
             
             p.set(align='left', bold=False)
@@ -529,13 +547,13 @@ class PrinterService:
             
         try:
             p = self.printer
-            TOP_BAR = "=" * 32
+            TOP_BAR = self._bar("=")
             
             p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
-            p.text("ELECTION TERMINATED".center(32) + "\n")
-            p.text("FINAL BLOCK SEALED".center(32) + "\n")
-            p.text(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S").center(32) + "\n")
+            p.text(self._center_line("ELECTION TERMINATED") + "\n")
+            p.text(self._center_line("FINAL BLOCK SEALED") + "\n")
+            p.text(self._center_line(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")) + "\n")
             p.text(TOP_BAR + "\n\n")
             
             p.set(align='left', bold=False)
