@@ -613,6 +613,9 @@ class VotingApp:
                 cand = self.data_handler.get_candidate_by_id(cid)
                 row = tk.Frame(content, bg="white", pady=5)
                 row.pack(fill=tk.X)
+                row.grid_columnconfigure(0, weight=0)
+                row.grid_columnconfigure(1, weight=1)
+                row.grid_columnconfigure(2, weight=0)
                 if cand:
                     tk.Label(
                         row,
@@ -620,13 +623,11 @@ class VotingApp:
                         font=('Helvetica', 18, 'bold'),
                         fg="#666",
                         bg="white",
-                        width=14,
                         anchor='w'
-                    ).pack(side=tk.LEFT, padx=(10, 6))
+                    ).grid(row=0, column=0, sticky='w', padx=(10, 12))
                     candidate_number = cand.get('candidate_number')
-                    candidate_col = tk.Frame(row, bg="white", width=520)
-                    candidate_col.pack(side=tk.LEFT, padx=10)
-                    candidate_col.pack_propagate(False)
+                    candidate_col = tk.Frame(row, bg="white")
+                    candidate_col.grid(row=0, column=1, sticky='w')
                     tk.Label(
                         candidate_col,
                         text=cand['name'],
@@ -648,9 +649,8 @@ class VotingApp:
                         font=('Helvetica', 16, 'italic'),
                         fg="#666",
                         bg="white",
-                        width=18,
                         anchor='w'
-                    ).pack(side=tk.LEFT, padx=10)
+                    ).grid(row=0, column=2, sticky='w', padx=(18, 10))
                 else:
                      tk.Label(
                          row,
@@ -658,18 +658,16 @@ class VotingApp:
                          font=('Helvetica', 18, 'bold'),
                          fg="#666",
                          bg="white",
-                         width=14,
                          anchor='w'
-                     ).pack(side=tk.LEFT, padx=(10, 6))
+                     ).grid(row=0, column=0, sticky='w', padx=(10, 12))
                      tk.Label(
                          row,
                          text="[No Selection]",
                          font=('Helvetica', 20),
                          fg="#aaa",
                          bg="white",
-                         width=28,
                          anchor='w'
-                     ).pack(side=tk.LEFT, padx=10)
+                     ).grid(row=0, column=1, sticky='w')
 
         footer = tk.Frame(self.main_container, bg="#f0f0f0", pady=15)
         footer.pack(fill=tk.X, side=tk.BOTTOM)
