@@ -50,6 +50,19 @@ class PrinterService:
         default_device_path = "/dev/usb/lp0" if os.name != "nt" else ""
         configured_device_path = os.environ.get("EVOTING_PRINTER_DEVICE", default_device_path).strip()
         configured_profile = os.environ.get("EVOTING_PRINTER_PROFILE", "default").strip() or "default"
+
+        # On Linux, if a raw lp device is configured and exists, use it first.
+        # This avoids unnecessary USB detach/probe paths that can interfere with usblp-backed printers.
+        if File and configured_device_path and os.path.exists(configured_device_path):
+            try:
+                self.printer = File(configured_device_path, profile=configured_profile)
+                print(
+                    f"Printer connected successfully at {configured_device_path} "
+                    f"with {configured_profile} profile."
+                )
+                return
+            except Exception as e:
+                print(f"Configured printer device failed on {configured_device_path}: {e}")
             
         # Try to actively detach any OS kernel drivers (usblp) blocking the USB endpoints to prevent Errno 16
         try:
