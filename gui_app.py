@@ -614,22 +614,62 @@ class VotingApp:
                 row = tk.Frame(content, bg="white", pady=5)
                 row.pack(fill=tk.X)
                 if cand:
-                    tk.Label(row, text=f"Preference {rank})", font=('Helvetica', 18, 'bold'), fg="#666", bg="white").pack(side=tk.LEFT, padx=(10, 6))
+                    tk.Label(
+                        row,
+                        text=f"Preference {rank})",
+                        font=('Helvetica', 18, 'bold'),
+                        fg="#666",
+                        bg="white",
+                        width=14,
+                        anchor='w'
+                    ).pack(side=tk.LEFT, padx=(10, 6))
                     candidate_number = cand.get('candidate_number')
+                    candidate_col = tk.Frame(row, bg="white", width=520)
+                    candidate_col.pack(side=tk.LEFT, padx=10)
+                    candidate_col.pack_propagate(False)
+                    tk.Label(
+                        candidate_col,
+                        text=cand['name'],
+                        font=('Helvetica', 20),
+                        bg="white",
+                        anchor='w'
+                    ).pack(side=tk.LEFT)
                     if candidate_number:
-                        t = f"{cand['name']} ({candidate_number})"
-                    else:
-                        t = cand['name']
-                    tk.Label(row, text=t, font=('Helvetica', 20), bg="white").pack(side=tk.LEFT, padx=10)
+                        tk.Label(
+                            candidate_col,
+                            text=f"({candidate_number})",
+                            font=('Helvetica', 14, 'italic'),
+                            fg="#666",
+                            bg="white"
+                        ).pack(side=tk.LEFT, padx=(6, 0))
                     tk.Label(
                         row,
                         text=f"Choice Number {cand['id']}",
                         font=('Helvetica', 16, 'italic'),
                         fg="#666",
-                        bg="white"
+                        bg="white",
+                        width=18,
+                        anchor='w'
                     ).pack(side=tk.LEFT, padx=10)
                 else:
-                     tk.Label(row, text=f"Preference {rank})  [No Selection]", font=('Helvetica', 20), fg="#aaa", bg="white").pack(side=tk.LEFT, padx=10)
+                     tk.Label(
+                         row,
+                         text=f"Preference {rank})",
+                         font=('Helvetica', 18, 'bold'),
+                         fg="#666",
+                         bg="white",
+                         width=14,
+                         anchor='w'
+                     ).pack(side=tk.LEFT, padx=(10, 6))
+                     tk.Label(
+                         row,
+                         text="[No Selection]",
+                         font=('Helvetica', 20),
+                         fg="#aaa",
+                         bg="white",
+                         width=28,
+                         anchor='w'
+                     ).pack(side=tk.LEFT, padx=10)
 
         footer = tk.Frame(self.main_container, bg="#f0f0f0", pady=15)
         footer.pack(fill=tk.X, side=tk.BOTTOM)
