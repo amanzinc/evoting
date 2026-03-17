@@ -875,12 +875,21 @@ class VotingApp:
                     "This ballot has been invalidated and will NOT be counted.\n\n"
                     "You may use your receipt to verify the commitments independently."
                 )
-                satisfied = messagebox.askyesno(
-                    "Challenge Verification",
-                    "Are you satisfied after the challenge verification?\n\n"
-                    "Yes: You will vote again in this same election using a new ballot.\n"
-                    "No: Session will be paused/aborted for Presiding Officer review."
-                )
+                while True:
+                    satisfied = messagebox.askyesno(
+                        "Challenge Verification",
+                        "Are you satisfied after the challenge verification?\n\n"
+                        "Yes: You will vote again in this same election using a new ballot.\n"
+                        "No: Session will be paused/aborted for Presiding Officer review."
+                    )
+                    chosen_label = "SATISFIED" if satisfied else "NOT SATISFIED"
+                    confirmed = messagebox.askyesno(
+                        "Confirm Selection",
+                        f"You selected: {chosen_label}.\n\n"
+                        "Press Yes to confirm this choice, or No to choose again."
+                    )
+                    if confirmed:
+                        break
                 if satisfied:
                     self.restart_current_election_after_challenge()
                 else:
