@@ -922,7 +922,9 @@ class VotingApp:
             text="Ballot Marking Device is Temporarily Down",
             font=('Helvetica', 30, 'bold'),
             bg="#FFF3E0",
-            fg="#E65100"
+            fg="#E65100",
+            wraplength=820,
+            justify='center'
         ).pack(pady=(140, 20))
 
         tk.Label(
@@ -941,6 +943,17 @@ class VotingApp:
             fg="#555"
         ).pack(pady=20)
 
+        tk.Button(
+            frame,
+            text="Polling Officer Menu",
+            font=('Helvetica', 14, 'bold'),
+            bg="#1565C0",
+            fg="white",
+            padx=18,
+            pady=8,
+            command=self.show_polling_officer_action_menu
+        ).pack(pady=10)
+
         self.stop_scanning = False
         self.officer_scan_queue = queue.Queue()
         self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
@@ -957,6 +970,9 @@ class VotingApp:
             time.sleep(0.5)
 
     def check_officer_scan_queue(self):
+        if self.stop_scanning:
+            return
+
         try:
             result = self.officer_scan_queue.get_nowait()
             if result:
@@ -1002,9 +1018,13 @@ class VotingApp:
             return
 
         self.stop_scanning = True
+        self.show_polling_officer_action_menu()
+
+    def show_polling_officer_action_menu(self):
+        self.stop_scanning = True
         continue_election = messagebox.askyesno(
             "Officer Action Required",
-            "Polling Officer authenticated.\n\n"
+            "Polling Officer menu.\n\n"
             "Yes: Continue election for this voter with a fresh ballot.\n"
             "No: Permanently stop election (End Election & Export)."
         )
