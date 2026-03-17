@@ -21,6 +21,8 @@ class VotingApp:
         self.log_dir = log_dir
         
         self.active_token = None
+        self.challenge_count_current_session = 0
+        self.max_challenges_per_session = 1
         
         self.root.title("Ballot Marking Device")
         self.root.attributes('-fullscreen', True)
@@ -150,6 +152,7 @@ class VotingApp:
     def show_rfid_screen(self):
         self.clear_container()
         self.active_token = None
+        self.challenge_count_current_session = 0
         
         # Background
         frame = tk.Frame(self.main_container, bg="black") # Dark bg for image
@@ -685,7 +688,10 @@ class VotingApp:
         edit_cmd = self.show_selection_screen if self.voting_mode == 'normal' else self.restart_editing
         tk.Button(footer, text="Edit", font=('Helvetica', 16), command=edit_cmd, padx=20, pady=10).pack(side=tk.LEFT, padx=30)
         tk.Button(footer, text="CAST VOTE", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.cast_vote, padx=20, pady=10).pack(side=tk.RIGHT, padx=30)
-        tk.Button(footer, text="CHALLENGE", font=('Helvetica', 16, 'bold'), bg="#FF9800", fg="white", command=self.challenge_vote, padx=20, pady=10).pack(side=tk.RIGHT, padx=10)
+        if self.challenge_count_current_session < self.max_challenges_per_session:
+            tk.Button(footer, text="CHALLENGE", font=('Helvetica', 16, 'bold'), bg="#FF9800", fg="white", command=self.challenge_vote, padx=20, pady=10).pack(side=tk.RIGHT, padx=10)
+        else:
+            tk.Button(footer, text="CHALLENGE USED", font=('Helvetica', 16, 'bold'), bg="#BDBDBD", fg="#444", state=tk.DISABLED, padx=20, pady=10).pack(side=tk.RIGHT, padx=10)
 
     def restart_editing(self):
         self.current_rank = 1
@@ -792,6 +798,14 @@ class VotingApp:
         The voter sees a receipt showing their ballot ID and selection so they
         can independently verify the cryptographic commitments.
         """
+        if self.challenge_count_current_session >= self.max_challenges_per_session:
+            messagebox.showwarning(
+                "Challenge Limit Reached",
+                "You have already used your one allowed challenge in this session.\n"
+                "Please cast your vote."
+            )
+            return
+
         if not messagebox.askyesno(
             "Challenge Ballot",
             "Challenging this ballot will:\n\n"
@@ -841,6 +855,7 @@ class VotingApp:
             result = self.print_queue.get_nowait()
             self.close_printing_modal()
             if result is True:
+                self.challenge_count_current_session += 1
                 try:
                     self.ballot_manager.mark_as_challenged(
                         self.data_handler.ballot_file_id,
@@ -863,13 +878,7 @@ class VotingApp:
                 if satisfied:
                     self.restart_current_election_after_challenge()
                 else:
-                    self.election_queue = []
-                    messagebox.showwarning(
-                        "Officer Assistance Required",
-                        "Please inform the Presiding Officer.\n"
-                        "This session will be cancelled for manual review."
-                    )
-                    self.finish_voter_session(aborted=True)
+                    self.show_temporarily_down_screen()
             else:
                 self.close_printing_modal()
                 retry = messagebox.askretrycancel("Printer Error", f"Printing Failed: {result}\n\nRetry?")
@@ -901,6 +910,109 @@ class VotingApp:
             self.start_preferential_voting()
         else:
             self.start_normal_voting()
+
+    def show_temporarily_down_screen(self):
+        """Show temporary outage screen and require polling officer RFID to recover."""
+        self.clear_container()
+        frame = tk.Frame(self.main_container, bg="#FFF3E0")
+        frame.pack(expand=True, fill=tk.BOTH)
+
+        tk.Label(
+            frame,
+            text="Ballot Marking Device is Temporarily Down",
+            font=('Helvetica', 30, 'bold'),
+            bg="#FFF3E0",
+            fg="#E65100"
+        ).pack(pady=(140, 20))
+
+        tk.Label(
+            frame,
+            text="Polling Officer RFID required to continue.",
+            font=('Helvetica', 22),
+            bg="#FFF3E0",
+            fg="#333"
+        ).pack(pady=10)
+
+        tk.Label(
+            frame,
+            text="Please place officer card on reader...",
+            font=('Helvetica', 16, 'italic'),
+            bg="#FFF3E0",
+            fg="#555"
+        ).pack(pady=20)
+
+        self.stop_scanning = False
+        self.officer_scan_queue = queue.Queue()
+        self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
+        self.officer_scan_thread.daemon = True
+        self.officer_scan_thread.start()
+        self.check_officer_scan_queue()
+
+    def officer_scan_loop(self):
+        while not self.stop_scanning:
+            result = self.rfid_service.read_card()
+            if result:
+                self.officer_scan_queue.put(result)
+                break
+            time.sleep(0.5)
+
+    def check_officer_scan_queue(self):
+        try:
+            result = self.officer_scan_queue.get_nowait()
+            if result:
+                uid, token_payload = result
+                self.on_officer_card_scanned(token_payload)
+                return
+        except queue.Empty:
+            pass
+
+        self.root.after(500, self.check_officer_scan_queue)
+
+    def _is_polling_officer_token(self, token_payload):
+        """Returns True if token payload indicates polling officer/admin authorization."""
+        try:
+            import json
+            data = json.loads(token_payload)
+            role = str(data.get('role', '')).strip().lower()
+            token_type = str(data.get('token_type', '')).strip().lower()
+            is_admin = bool(data.get('is_admin', False))
+            if role in {'polling_officer', 'presiding_officer', 'officer', 'admin'}:
+                return True
+            if token_type in {'polling_officer', 'presiding_officer', 'admin'}:
+                return True
+            if is_admin:
+                return True
+            return False
+        except Exception:
+            return False
+
+    def on_officer_card_scanned(self, token_payload):
+        if not self._is_polling_officer_token(token_payload):
+            messagebox.showerror(
+                "Authorization Failed",
+                "This card is not authorized as Polling Officer.\n"
+                "Please scan a valid officer RFID card."
+            )
+            self.stop_scanning = False
+            self.officer_scan_queue = queue.Queue()
+            self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
+            self.officer_scan_thread.daemon = True
+            self.officer_scan_thread.start()
+            self.check_officer_scan_queue()
+            return
+
+        self.stop_scanning = True
+        continue_election = messagebox.askyesno(
+            "Officer Action Required",
+            "Polling Officer authenticated.\n\n"
+            "Yes: Continue election for this voter with a fresh ballot.\n"
+            "No: Permanently stop election (End Election & Export)."
+        )
+
+        if continue_election:
+            self.restart_current_election_after_challenge()
+        else:
+            self.end_election()
 
     def show_printing_modal(self, text="Printing VVPAT Receipt..."):
         self.printing_overlay = tk.Toplevel(self.root)
