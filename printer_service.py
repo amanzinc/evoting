@@ -609,3 +609,58 @@ class PrinterService:
                 pass
             self.printer = None
             raise Exception(f"Failed to print end election ticket: {e}")
+
+    def print_challenge_receipt(self, ballot_id, sel_str, voter_qr_data):
+        """Prints a CHALLENGE receipt (voter copy only, no VVPAT).
+
+        Includes the ballot ID so the voter can later verify the cryptographic
+        commitment is correct.  The ballot is NOT counted as a cast vote.
+        Returns True on success, raises Exception on error.
+        """
+        if not self.is_printer_connected():
+            raise Exception("Printer not connected")
+
+        import datetime
+        try:
+            p = self.printer
+            TOP_BAR = self._bar("=")
+            timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
+
+            p.set(align='left', font='a', width=1, height=1, bold=True)
+            p.text(TOP_BAR + "\n")
+            p.text(self._center_line("** CHALLENGE RECEIPT **") + "\n")
+            p.text(self._center_line("  (NOT A CAST VOTE)  ") + "\n")
+            p.set(align='left', bold=False)
+            p.text(self._center_line(timestamp) + "\n")
+            p.text(TOP_BAR + "\n\n")
+
+            p.set(align='left')
+            p.text(f"Ballot ID : {ballot_id}\n")
+            p.text("\n")
+            p.set(align='left', bold=True)
+            p.text(f"Choice    : {sel_str}\n")
+            p.set(align='left', bold=False)
+            p.text("\n")
+
+            # QR of voter commitments
+            temp_img = self._generate_voter_qr(voter_qr_data)
+            p.set(align='left')
+            p.image(temp_img)
+            p.text("\n")
+            if os.path.exists(temp_img):
+                os.remove(temp_img)
+
+            p.text(TOP_BAR + "\n")
+            p.text("This ballot was CHALLENGED.\n")
+            p.text("Keep this slip to verify your\n")
+            p.text("vote was NOT counted.\n\n\n\n\n\n")
+            p.cut(mode='FULL')
+            return True
+        except Exception as e:
+            try:
+                if self.printer:
+                    self.printer.close()
+            except Exception:
+                pass
+            self.printer = None
+            raise Exception(f"Failed to print challenge receipt: {e}")

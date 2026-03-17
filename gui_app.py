@@ -684,7 +684,8 @@ class VotingApp:
         
         edit_cmd = self.show_selection_screen if self.voting_mode == 'normal' else self.restart_editing
         tk.Button(footer, text="Edit", font=('Helvetica', 16), command=edit_cmd, padx=20, pady=10).pack(side=tk.LEFT, padx=30)
-        tk.Button(footer, text="CONFIRM & CAST VOTE", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.cast_vote, padx=20, pady=10).pack(side=tk.RIGHT, padx=30)
+        tk.Button(footer, text="CAST VOTE", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.cast_vote, padx=20, pady=10).pack(side=tk.RIGHT, padx=30)
+        tk.Button(footer, text="CHALLENGE", font=('Helvetica', 16, 'bold'), bg="#FF9800", fg="white", command=self.challenge_vote, padx=20, pady=10).pack(side=tk.RIGHT, padx=10)
 
     def restart_editing(self):
         self.current_rank = 1
@@ -695,7 +696,7 @@ class VotingApp:
         e_name = getattr(self.data_handler, 'election_name', 'General Election')
         ballot_id = self.data_handler.ballot_id
         timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
-        
+
         # Helper to find candidate display string (Captured now!)
         def get_cand_display(cid):
             cand = self.data_handler.get_candidate_by_id(cid)
@@ -718,7 +719,7 @@ class VotingApp:
                 c = self.selections[r]
                 vals.append(get_cand_display(c))
             sel_str = ", ".join(vals)
-            
+
             qr_parts = []
             for r in ranks:
                 cand = self.data_handler.get_candidate_by_id(self.selections[r])
@@ -729,7 +730,7 @@ class VotingApp:
 
         # Pre-generate log JSON while context is valid
         vote_record = self.data_handler.generate_vote_json(
-            {'selections': self.selections, 'timestamp': timestamp}, 
+            {'selections': self.selections, 'timestamp': timestamp},
             self.voting_mode,
             getattr(self, 'current_voter_id', 'UNKNOWN'),
             getattr(self, 'current_booth', 1)
@@ -749,27 +750,27 @@ class VotingApp:
             'election_hash': self.data_handler.election_hash,
             # Data for deferred logging
             'vote_record': vote_record,
-            'internal_ballot_id': ballot_id 
+            'internal_ballot_id': ballot_id
         }
 
         # MERGE LOGIC
         if self.merge_receipts:
             self.receipt_buffer.append(receipt_entry)
-            
+
             # Show "Saving..." briefly
             self.show_printing_modal(text="Recording Vote...")
-            
+
             # Simulate Success (Skip Printer Thread)
             self.print_queue = queue.Queue()
-            self.print_queue.put(True) 
+            self.print_queue.put(True)
             self.print_start_time = datetime.datetime.now()
             self.check_print_status()
-            
+
         else:
             # NORMAL PRINTING
             self.show_printing_modal()
             self.print_queue = queue.Queue()
-            
+
             def printer_worker(mode, sel):
                 try:
                     self.printer_service.print_vote(mode, sel, is_final=True)
@@ -783,6 +784,90 @@ class VotingApp:
 
             self.print_start_time = datetime.datetime.now()
             self.check_print_status()
+
+    def challenge_vote(self):
+        """Voter challenges the ballot: print a challenge receipt (no VVPAT, no vote recorded).
+
+        The ballot is marked CHALLENGED so it cannot be cast or reused.
+        The voter sees a receipt showing their ballot ID and selection so they
+        can independently verify the cryptographic commitments.
+        """
+        if not messagebox.askyesno(
+            "Challenge Ballot",
+            "Challenging this ballot will:\n\n"
+            "\u2022 Print a receipt with your Ballot ID and selection\n"
+            "\u2022 NOT count your vote\n"
+            "\u2022 Invalidate this ballot (it cannot be used again)\n\n"
+            "Do you want to challenge?",
+            icon='question'
+        ):
+            return
+
+        ballot_id = self.data_handler.ballot_id
+        timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
+
+        def get_cand_display(cid):
+            cand = self.data_handler.get_candidate_by_id(cid)
+            return str(cand['id']) if cand else str(cid)
+
+        if self.voting_mode == 'normal':
+            cid = self.selections.get(1)
+            sel_str = get_cand_display(cid)
+        else:
+            ranks = sorted(self.selections.keys())
+            sel_str = ", ".join(get_cand_display(self.selections[r]) for r in ranks)
+
+        voter_qr_data = getattr(self.data_handler, 'raw_commitments', '')
+
+        self.show_printing_modal(text="Printing Challenge Receipt...")
+        self.print_queue = queue.Queue()
+
+        def _worker():
+            try:
+                self.printer_service.print_challenge_receipt(ballot_id, sel_str, voter_qr_data)
+                self.print_queue.put(True)
+            except Exception as e:
+                self.print_queue.put(e)
+
+        t = threading.Thread(target=_worker)
+        t.daemon = True
+        t.start()
+
+        self.print_start_time = datetime.datetime.now()
+        self._check_challenge_print_status()
+
+    def _check_challenge_print_status(self):
+        try:
+            result = self.print_queue.get_nowait()
+            self.close_printing_modal()
+            if result is True:
+                try:
+                    self.ballot_manager.mark_as_challenged(
+                        self.data_handler.ballot_file_id,
+                        self.current_election_id
+                    )
+                except Exception as e:
+                    print(f"Error marking ballot as challenged: {e}")
+                messagebox.showinfo(
+                    "Ballot Challenged",
+                    "Your challenge receipt has been printed.\n"
+                    "This ballot has been invalidated and will NOT be counted.\n\n"
+                    "You may use your receipt to verify the commitments independently."
+                )
+                self.start_next_election()
+            else:
+                self.close_printing_modal()
+                retry = messagebox.askretrycancel("Printer Error", f"Printing Failed: {result}\n\nRetry?")
+                if retry:
+                    self.challenge_vote()
+            return
+        except queue.Empty:
+            elapsed = (datetime.datetime.now() - self.print_start_time).total_seconds()
+            if elapsed > 30:
+                self.close_printing_modal()
+                messagebox.showerror("Timeout", "Challenge receipt print timed out.")
+                return
+            self.root.after(200, self._check_challenge_print_status)
 
     def show_printing_modal(self, text="Printing VVPAT Receipt..."):
         self.printing_overlay = tk.Toplevel(self.root)

@@ -162,6 +162,23 @@ class BallotManager:
 
         raise Exception(f"No unused ballots remaining for {election_id} on the USB drive!")
 
+    def mark_as_challenged(self, ballot_id, election_id=None):
+        """
+        Marks a ballot ID as CHALLENGED in SQLite.
+        A challenged ballot cannot be cast or reused, but is not counted as a vote.
+        """
+        if self.conn is None:
+            return
+        try:
+            self.cursor.execute('''
+                INSERT OR REPLACE INTO ballots (ballot_id, election_id, status)
+                VALUES (?, ?, 'CHALLENGED')
+            ''', (ballot_id, election_id))
+            self.conn.commit()
+            print(f"Marked ballot {ballot_id} as CHALLENGED in DB.")
+        except Exception as e:
+            print(f"Error updating SQLite: {e}")
+
     def mark_as_used(self, ballot_id, election_id=None):
         """
         Marks a ballot ID as USED in SQLite so it cannot be drawn again from the USB.
