@@ -854,7 +854,22 @@ class VotingApp:
                     "This ballot has been invalidated and will NOT be counted.\n\n"
                     "You may use your receipt to verify the commitments independently."
                 )
-                self.start_next_election()
+                satisfied = messagebox.askyesno(
+                    "Challenge Verification",
+                    "Are you satisfied after the challenge verification?\n\n"
+                    "Yes: You will vote again in this same election using a new ballot.\n"
+                    "No: Session will be paused/aborted for Presiding Officer review."
+                )
+                if satisfied:
+                    self.restart_current_election_after_challenge()
+                else:
+                    self.election_queue = []
+                    messagebox.showwarning(
+                        "Officer Assistance Required",
+                        "Please inform the Presiding Officer.\n"
+                        "This session will be cancelled for manual review."
+                    )
+                    self.finish_voter_session(aborted=True)
             else:
                 self.close_printing_modal()
                 retry = messagebox.askretrycancel("Printer Error", f"Printing Failed: {result}\n\nRetry?")
@@ -868,6 +883,24 @@ class VotingApp:
                 messagebox.showerror("Timeout", "Challenge receipt print timed out.")
                 return
             self.root.after(200, self._check_challenge_print_status)
+
+    def restart_current_election_after_challenge(self):
+        """Load a fresh ballot and restart the same election after a successful challenge."""
+        if not self.current_election_id:
+            messagebox.showerror("Session Error", "No active election context found.")
+            self.finish_voter_session(aborted=True)
+            return
+
+        success = self.start_session(self.current_election_id)
+        if not success:
+            self.finish_voter_session(aborted=True)
+            return
+
+        e_type = self.data_handler.election_type.lower()
+        if "preferential" in e_type or "ranked" in e_type:
+            self.start_preferential_voting()
+        else:
+            self.start_normal_voting()
 
     def show_printing_modal(self, text="Printing VVPAT Receipt..."):
         self.printing_overlay = tk.Toplevel(self.root)
