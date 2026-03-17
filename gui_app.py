@@ -21,8 +21,8 @@ class VotingApp:
         self.log_dir = log_dir
         
         self.active_token = None
-        self.challenge_count_current_session = 0
-        self.max_challenges_per_session = 1
+        self.challenge_counts_by_election = {}
+        self.max_challenges_per_election = 1
         
         self.root.title("Ballot Marking Device")
         self.root.attributes('-fullscreen', True)
@@ -152,7 +152,7 @@ class VotingApp:
     def show_rfid_screen(self):
         self.clear_container()
         self.active_token = None
-        self.challenge_count_current_session = 0
+        self.challenge_counts_by_election = {}
         
         # Background
         frame = tk.Frame(self.main_container, bg="black") # Dark bg for image
@@ -292,6 +292,8 @@ class VotingApp:
             return
 
         self.active_token = token_payload
+        # Fresh voter session => reset per-election challenge counters.
+        self.challenge_counts_by_election = {}
         
         # 3. Setup Election Queue
         if eid_vector_str:
@@ -688,7 +690,8 @@ class VotingApp:
         edit_cmd = self.show_selection_screen if self.voting_mode == 'normal' else self.restart_editing
         tk.Button(footer, text="Edit", font=('Helvetica', 16), command=edit_cmd, padx=20, pady=10).pack(side=tk.LEFT, padx=30)
         tk.Button(footer, text="CAST VOTE", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.cast_vote, padx=20, pady=10).pack(side=tk.RIGHT, padx=30)
-        if self.challenge_count_current_session < self.max_challenges_per_session:
+        current_challenges = self.challenge_counts_by_election.get(self.current_election_id, 0)
+        if current_challenges < self.max_challenges_per_election:
             tk.Button(footer, text="CHALLENGE", font=('Helvetica', 16, 'bold'), bg="#FF9800", fg="white", command=self.challenge_vote, padx=20, pady=10).pack(side=tk.RIGHT, padx=10)
         else:
             tk.Button(footer, text="CHALLENGE USED", font=('Helvetica', 16, 'bold'), bg="#BDBDBD", fg="#444", state=tk.DISABLED, padx=20, pady=10).pack(side=tk.RIGHT, padx=10)
@@ -798,10 +801,11 @@ class VotingApp:
         The voter sees a receipt showing their ballot ID and selection so they
         can independently verify the cryptographic commitments.
         """
-        if self.challenge_count_current_session >= self.max_challenges_per_session:
+        current_challenges = self.challenge_counts_by_election.get(self.current_election_id, 0)
+        if current_challenges >= self.max_challenges_per_election:
             messagebox.showwarning(
                 "Challenge Limit Reached",
-                "You have already used your one allowed challenge in this session.\n"
+                "You have already used your one allowed challenge in this election.\n"
                 "Please cast your vote."
             )
             return
@@ -855,7 +859,9 @@ class VotingApp:
             result = self.print_queue.get_nowait()
             self.close_printing_modal()
             if result is True:
-                self.challenge_count_current_session += 1
+                self.challenge_counts_by_election[self.current_election_id] = (
+                    self.challenge_counts_by_election.get(self.current_election_id, 0) + 1
+                )
                 try:
                     self.ballot_manager.mark_as_challenged(
                         self.data_handler.ballot_file_id,
