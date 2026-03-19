@@ -10,6 +10,8 @@ class DataHandler:
         self.token_log_file = token_log_file
         self.election_id = ""
         self.election_hash = ""
+        self.election_type = "Normal"
+        self.election_type_normalized = "normal"
         self.ballot_id = "" # Store the specific generic complex payload ID
         self.ballot_file_id = "" # Store the filename for SQLite logic
         self.candidates_base = []
@@ -118,6 +120,7 @@ class DataHandler:
                 
             self.election_id = str(data.get("election_id", ""))
             self.election_type = data.get("election_type", "Normal")
+            self.election_type_normalized = self._normalize_election_type(self.election_type)
             self.election_name = data.get("election_name", "General Election")
             
             # Parse commitments array
@@ -151,7 +154,7 @@ class DataHandler:
                         has_pair_layout = True
                         break
 
-            if has_pair_layout and "preferential" in str(self.election_type).lower():
+            if has_pair_layout and self.is_preferential_election():
                 unique_by_name = {}
                 ordered_names = []
                 self.pref_rank_name_sets = {1: set(), 2: set()}
@@ -232,6 +235,16 @@ class DataHandler:
 
     def get_candidate_by_id(self, cid):
         return next((c for c in self.candidates_base if c['id'] == cid), None)
+
+    def _normalize_election_type(self, value):
+        """Normalize election type to simplify robust matching across case/style variants."""
+        return str(value or "").strip().lower()
+
+    def is_preferential_election(self):
+        """Return True for preferential/ranked election types, case-insensitive."""
+        et = self.election_type_normalized or self._normalize_election_type(self.election_type)
+        keywords = ("preferential", "ranked", "rank", "preference")
+        return any(k in et for k in keywords)
 
     def get_candidates_for_rank(self, rank):
         """Return unique candidate options for a given preferential rank screen."""

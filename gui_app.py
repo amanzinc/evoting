@@ -430,8 +430,7 @@ class VotingApp:
         
         if success:
             # Switch modes automatically based on parsed ballot JSON!
-            e_type = self.data_handler.election_type.lower()
-            if "preferential" in e_type or "ranked" in e_type:
+            if hasattr(self.data_handler, 'is_preferential_election') and self.data_handler.is_preferential_election():
                 self.start_preferential_voting()
             else:
                 self.start_normal_voting()
