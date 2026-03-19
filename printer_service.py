@@ -199,7 +199,7 @@ class PrinterService:
             raise Exception("Printer not connected")
 
         # Mock Data Setup
-        ballot_id = self.data_handler.ballot_id
+        ballot_id = self.data_handler.get_short_ballot_id()
         station_id = "PS-105-DELHI"
         timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
 
@@ -214,9 +214,8 @@ class PrinterService:
         if mode == 'normal':
             cid = selections.get(1)
             sel_str = get_cand_display(cid)
-            cand = self.data_handler.get_candidate_by_id(cid)
-            cand_commitment = cand.get('commitment', '') if cand else ""
-            qr_choice_data = f"{sel_str}:{cand_commitment}"
+            # QR must contain only choice number.
+            qr_choice_data = sel_str
         else:
             ranks = sorted(selections.keys())
             vals = []
@@ -224,15 +223,9 @@ class PrinterService:
                 c = selections[r]
                 vals.append(get_cand_display(c))
             sel_str = ", ".join(vals)
-            
-            # For preferential, include all commitments in order
-            qr_parts = []
-            for r in ranks:
-                cand = self.data_handler.get_candidate_by_id(selections[r])
-                c_disp = get_cand_display(selections[r])
-                c_comm = cand.get('commitment', '') if cand else ""
-                qr_parts.append(f"{c_disp}:{c_comm}")
-            qr_choice_data = "_".join(qr_parts)
+
+            # QR must contain only choice numbers in preference order.
+            qr_choice_data = ",".join(vals)
 
         p = self.printer
         TOP_BAR = self._bar("_")
@@ -258,9 +251,8 @@ class PrinterService:
             p.text(f"Choice : {sel_str}\n")
             p.set(align='left', bold=False)
             
-            # Extract clean ballot ID for QR (take anything before first backslash)
-            raw_ballot_id = str(ballot_id)
-            short_b_id = raw_ballot_id.split('\\')[0] if '\\' in raw_ballot_id else raw_ballot_id.split('"')[0]
+            # Ballot ID for QR is truncated to part before first comma.
+            short_b_id = self.data_handler.get_short_ballot_id(ballot_id)
             
             # QR Generation
             temp_img = self._generate_vvpat_qr(qr_choice_data, short_b_id)
@@ -414,7 +406,8 @@ class PrinterService:
                 p.set(align='left', bold=True)
                 p.text(f"#{i+1}: {r.get('election_id', '???')}\n")
                 p.set(align='left', bold=False)
-                p.text(f"Ballot: {r['ballot_id']}\n")
+                short_b_id = self.data_handler.get_short_ballot_id(r['ballot_id'])
+                p.text(f"Ballot: {short_b_id}\n")
                 p.set(align='left', bold=True)
                 p.text(f"Choice: {r['choice_str']}\n")
                 p.set(align='left', bold=False)
@@ -422,8 +415,7 @@ class PrinterService:
                 # VVPAT Internal QR
                 qr_data = r['qr_choice_data']
                 
-                raw_b_id = str(r['ballot_id'])
-                short_b_id = raw_b_id.split('\\')[0] if '\\' in raw_b_id else raw_b_id.split('"')[0]
+                short_b_id = self.data_handler.get_short_ballot_id(r['ballot_id'])
                 
                 temp_qr = self._generate_vvpat_qr(qr_data, short_b_id)
                 
@@ -634,8 +626,9 @@ class PrinterService:
             p.text(self._center_line(timestamp) + "\n")
             p.text(TOP_BAR + "\n\n")
 
+            short_b_id = self.data_handler.get_short_ballot_id(ballot_id)
             p.set(align='left')
-            p.text(f"Ballot ID : {ballot_id}\n")
+            p.text(f"Ballot ID : {short_b_id}\n")
             p.text("\n")
             p.set(align='left', bold=True)
             p.text(f"Choice    : {sel_str}\n")

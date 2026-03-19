@@ -578,9 +578,10 @@ class VotingApp:
         # Dynamic Header
         e_name = getattr(self.data_handler, 'election_name', 'General Election')
         e_id = getattr(self.data_handler, 'election_id', 'E01')
+        short_ballot_id = self.data_handler.get_short_ballot_id()
         
         tk.Label(header, text=e_name, font=('Helvetica', 16, 'bold'), bg=header_bg).pack()
-        tk.Label(header, text=f"Election ID: {e_id} | Ballot ID: {self.data_handler.ballot_id}", font=('Helvetica', 10), bg=header_bg, fg="#555").pack()
+        tk.Label(header, text=f"Election ID: {e_id} | Ballot ID: {short_ballot_id}", font=('Helvetica', 10), bg=header_bg, fg="#555").pack()
         tk.Label(header, text=mode_text, font=('Helvetica', 20, 'bold'), bg=header_bg, fg="#333").pack(pady=2)
         
         content = tk.Frame(self.main_container, bg="#ffffff", pady=5, padx=20)
@@ -809,7 +810,7 @@ class VotingApp:
     def cast_vote(self):
         # Prepare Receipt Data Snapshot
         e_name = getattr(self.data_handler, 'election_name', 'General Election')
-        ballot_id = self.data_handler.ballot_id
+        ballot_id = self.data_handler.get_short_ballot_id()
         timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
 
         # Helper to find candidate display string (Captured now!)
@@ -824,9 +825,8 @@ class VotingApp:
         if self.voting_mode == 'normal':
             cid = self.selections.get(1)
             sel_str = get_cand_display(cid)
-            cand = self.data_handler.get_candidate_by_id(cid)
-            cand_commitment = cand.get('commitment', '') if cand else ""
-            qr_data = f"{sel_str}:{cand_commitment}"
+            # QR must contain only choice number.
+            qr_data = sel_str
         else:
             ranks = sorted(self.selections.keys())
             vals = []
@@ -835,18 +835,8 @@ class VotingApp:
                 vals.append(get_cand_display(c))
             sel_str = ", ".join(vals)
 
-            pref_id, pref_commitment, pref_label = self.data_handler.resolve_preferential_selection(self.selections)
-            if pref_commitment:
-                # Print commitment corresponding to selected preference tuple.
-                qr_data = f"{pref_label}:{pref_commitment}"
-            else:
-                qr_parts = []
-                for r in ranks:
-                    cand = self.data_handler.get_candidate_by_id(self.selections[r])
-                    c_disp = get_cand_display(self.selections[r])
-                    c_comm = cand.get('commitment', '') if cand else ""
-                    qr_parts.append(f"{c_disp}:{c_comm}")
-                qr_data = "_".join(qr_parts)
+            # QR must contain only choice numbers in preference order.
+            qr_data = ",".join(vals)
 
         # Pre-generate log JSON while context is valid
         vote_record = self.data_handler.generate_vote_json(
