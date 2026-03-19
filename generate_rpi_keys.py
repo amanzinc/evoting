@@ -1,7 +1,32 @@
 import os
+import json
+from datetime import datetime, timezone
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from hardware_crypto import get_hardware_passphrase
+
+
+def _resolve_bmd_id(default_value=1):
+    """Resolve BMD ID from env or fallback default."""
+    raw = os.environ.get("EVOTING_BMD_ID", str(default_value)).strip()
+    try:
+        return int(raw)
+    except Exception:
+        return default_value
+
+
+def _resolve_key_version(default_value=1):
+    """Resolve key version from env or fallback default."""
+    raw = os.environ.get("EVOTING_KEY_VERSION", str(default_value)).strip()
+    try:
+        return int(raw)
+    except Exception:
+        return default_value
+
+
+def _iso_utc_now():
+    """UTC timestamp in ISO-8601 with milliseconds and Z suffix."""
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 def generate_keys():
     print("Generating 2048-bit RSA Hardware-Bound Keys...")
@@ -36,7 +61,21 @@ def generate_keys():
     with open('public.pem', 'wb') as f:
         f.write(public_pem)
 
-    print("Success! Generated 'public.pem' and 'private.pem'.")
+    # 5. Generate bmd_key.json for key distribution workflows.
+    bmd_key_payload = [
+        {
+            "bmd_id": _resolve_bmd_id(1),
+            "rsa_public_key_pem": public_pem.decode("utf-8"),
+            "is_active": True,
+            "key_version": _resolve_key_version(1),
+            "created_at": _iso_utc_now()
+        }
+    ]
+
+    with open('bmd_key.json', 'w', encoding='utf-8') as f:
+        json.dump(bmd_key_payload, f, indent=2)
+
+    print("Success! Generated 'public.pem', 'private.pem', and 'bmd_key.json'.")
     print("Give 'public.pem' to the Election Admin to encrypt ballots.")
     print("Keep 'private.pem' on this exact Raspberry Pi.")
 
