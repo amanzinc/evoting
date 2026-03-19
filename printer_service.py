@@ -281,12 +281,8 @@ class PrinterService:
             p.set(align='left', bold=False)
 
             # QR Generation
-            election_hash = self.data_handler.election_hash or "UNKNOWN_HASH"
-            raw_comm = getattr(self.data_handler, 'raw_commitments', '')
-            
-            # Combine the election hash and the raw commitments JSON string 
-            # so the voter has cryptographically verifiable proof of what choices were offered
-            voter_qr_data = raw_comm
+            # Voter receipt QR should contain only selected commitment.
+            voter_qr_data = qr_choice_data
             
             temp_img_v = self._generate_voter_qr(voter_qr_data)
 

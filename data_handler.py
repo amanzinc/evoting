@@ -243,17 +243,16 @@ class DataHandler:
     def build_receipt_qr_payload(self, selections, voting_mode):
         """
         Build receipt QR payload using commitments mapped to selected candidates.
-        - Normal: "<choice_number>:<commitment>"
-        - Preferential pair-layout: match selected candidate-name pair to mapped commitment
+        - Normal: "<commitment>"
+        - Preferential pair-layout: commitment matched from selected candidate-name pair
         """
         if voting_mode == 'normal':
             cid = selections.get(1)
             cand = self.get_candidate_by_id(cid)
             if not cand:
                 return ""
-            choice_num = str(cand.get('id', cid))
             commitment = str(cand.get('commitment', ''))
-            return f"{choice_num}:{commitment}"
+            return commitment
 
         # Preferential mode
         ranks = sorted(selections.keys())
@@ -265,11 +264,10 @@ class DataHandler:
 
         pref_id, pref_commitment, pref_label = self.resolve_preferential_selection(selections)
         if pref_commitment:
-            # Keep candidate-pair label for audit readability (e.g., NAFS,NAFS).
-            return f"{pref_label}:{pref_commitment}"
+            return str(pref_commitment)
 
         # Fallback when no exact pair commitment is found.
-        return ",".join(choice_nums)
+        return ""
 
     def get_short_ballot_id(self, ballot_id=None):
         """Return ballot id truncated to the part before first comma."""

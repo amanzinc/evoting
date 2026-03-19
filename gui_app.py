@@ -843,8 +843,8 @@ class VotingApp:
             getattr(self, 'current_booth', 1)
         )
 
-        # Generate Voter Receipt QR string for batched printing (Raw Commitments ONLY)
-        voter_qr_data = getattr(self.data_handler, 'raw_commitments', '')
+        # Voter receipt QR should contain only selected commitment.
+        voter_qr_data = qr_data
 
         receipt_entry = {
             'election_id': getattr(self.data_handler, 'election_id', '???'),
@@ -933,7 +933,7 @@ class VotingApp:
             ranks = sorted(self.selections.keys())
             sel_str = ", ".join(get_cand_display(self.selections[r]) for r in ranks)
 
-        voter_qr_data = getattr(self.data_handler, 'raw_commitments', '')
+        voter_qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
 
         self.show_printing_modal(text="Printing Challenge Receipt...")
         self.print_queue = queue.Queue()
