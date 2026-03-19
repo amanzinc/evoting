@@ -132,18 +132,30 @@ class BallotManager:
 
     def _resolve_ballots_dir(self, election_id):
         """Resolve local ballots directory for either E1 or election_id_1 style IDs."""
-        local_root = "elections"
-        direct_dir = os.path.join(local_root, str(election_id), "ballots")
+        temp_root = "ballots"
+        elections_root = "elections"
+
+        # Primary location: temporary decrypted ballots folder.
+        direct_dir = os.path.join(temp_root, str(election_id))
         if os.path.isdir(direct_dir):
             return direct_dir, str(election_id)
+
+        # Backward compatibility fallback: elections/<id>/ballots
+        legacy_dir = os.path.join(elections_root, str(election_id), "ballots")
+        if os.path.isdir(legacy_dir):
+            return legacy_dir, str(election_id)
 
         # Legacy token format E<number> -> election_id_<number>
         eid = str(election_id)
         if eid.upper().startswith("E") and eid[1:].isdigit():
             mapped_id = f"election_id_{int(eid[1:])}"
-            mapped_dir = os.path.join(local_root, mapped_id, "ballots")
-            if os.path.isdir(mapped_dir):
-                return mapped_dir, mapped_id
+            mapped_temp_dir = os.path.join(temp_root, mapped_id)
+            if os.path.isdir(mapped_temp_dir):
+                return mapped_temp_dir, mapped_id
+
+            mapped_legacy_dir = os.path.join(elections_root, mapped_id, "ballots")
+            if os.path.isdir(mapped_legacy_dir):
+                return mapped_legacy_dir, mapped_id
 
         # Reverse mapping if token already has election_id_<n> and local uses E<n>
         prefix = "election_id_"
@@ -151,12 +163,16 @@ class BallotManager:
             suffix = eid[len(prefix):]
             if suffix.isdigit():
                 mapped_id = f"E{int(suffix)}"
-                mapped_dir = os.path.join(local_root, mapped_id, "ballots")
-                if os.path.isdir(mapped_dir):
-                    return mapped_dir, mapped_id
+                mapped_temp_dir = os.path.join(temp_root, mapped_id)
+                if os.path.isdir(mapped_temp_dir):
+                    return mapped_temp_dir, mapped_id
+
+                mapped_legacy_dir = os.path.join(elections_root, mapped_id, "ballots")
+                if os.path.isdir(mapped_legacy_dir):
+                    return mapped_legacy_dir, mapped_id
 
         # Keep old error shape for compatibility.
-        return os.path.join(local_root, str(election_id), "ballots"), str(election_id)
+        return os.path.join(temp_root, str(election_id)), str(election_id)
 
     def mark_as_challenged(self, ballot_id, election_id=None):
         """

@@ -257,7 +257,7 @@ class USBBallotImporter:
         except Exception as e:
             raise Exception(f"Failed to decrypt ballot [{type(e).__name__}]: {e}")
 
-    def import_usb_ballots(self, usb_ballot_path, elections_base_dir="elections"):
+    def import_usb_ballots(self, usb_ballot_path, elections_base_dir="elections", temp_ballots_dir="ballots"):
         """
         Main function to import all ballots from USB.
         
@@ -270,7 +270,8 @@ class USBBallotImporter:
         
         Args:
             usb_ballot_path: Path to the 'ballot' folder on USB
-            elections_base_dir: Local directory to store imported elections
+            elections_base_dir: Local directory to store imported election metadata (e.g. candidates.json)
+            temp_ballots_dir: Local temporary directory to store decrypted ballot JSON files
             
         Returns:
             dict: Summary of import results
@@ -294,10 +295,15 @@ class USBBallotImporter:
             # Step 2: Store AES key locally
             print("[2/3] Storing AES key locally...")
             self.store_aes_key_locally()
+
+            # Reset temporary decrypted ballots directory on each fresh import.
+            if os.path.isdir(temp_ballots_dir):
+                shutil.rmtree(temp_ballots_dir)
+            os.makedirs(temp_ballots_dir, exist_ok=True)
             
             # Step 3: Import elections
             print("[3/3] Importing ballot elections...")
-            self._import_elections(usb_ballot_path, elections_base_dir, summary)
+            self._import_elections(usb_ballot_path, elections_base_dir, temp_ballots_dir, summary)
             
         except Exception as e:
             summary["status"] = "error"
@@ -306,7 +312,7 @@ class USBBallotImporter:
         
         return summary
 
-    def _import_elections(self, usb_ballot_path, elections_base_dir, summary):
+    def _import_elections(self, usb_ballot_path, elections_base_dir, temp_ballots_dir, summary):
         """
         Helper function to recursively import all elections from USB.
         """
@@ -336,9 +342,13 @@ class USBBallotImporter:
             # Find candidates.json in the election folder (if it exists)
             candidates_file = os.path.join(election_path, "candidates.json")
             
-            # Create local election structure
+            # Create local election metadata structure
             local_election_dir = os.path.join(elections_base_dir, election_folder)
-            local_ballots_dir = os.path.join(local_election_dir, "ballots")
+            os.makedirs(local_election_dir, exist_ok=True)
+
+            # Create temporary local decrypted ballots structure.
+            # Example: ballots/election_id_1/ballot_1.json
+            local_ballots_dir = os.path.join(temp_ballots_dir, election_folder)
             os.makedirs(local_ballots_dir, exist_ok=True)
             
             # Copy candidates.json if it exists
@@ -420,6 +430,11 @@ def main():
         default="elections",
         help="Output directory for imported ballots (default: elections)"
     )
+    parser.add_argument(
+        "--temp-ballots-dir",
+        default="ballots",
+        help="Temporary local directory for decrypted ballot JSON files (default: ballots)"
+    )
     
     args = parser.parse_args()
     
@@ -438,7 +453,8 @@ def main():
     # Import ballots
     summary = importer.import_usb_ballots(
         usb_ballot_path=args.usb_ballot_path,
-        elections_base_dir=args.out_dir
+        elections_base_dir=args.out_dir,
+        temp_ballots_dir=args.temp_ballots_dir
     )
     
     # Print summary
