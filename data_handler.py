@@ -154,7 +154,11 @@ class DataHandler:
                         has_pair_layout = True
                         break
 
-            if has_pair_layout and self.is_preferential_election():
+            if has_pair_layout:
+                # Pair-layout ballots are inherently preferential even if election_type
+                # text is inconsistent or mislabeled.
+                self.election_type = "preferential"
+                self.election_type_normalized = "preferential"
                 unique_by_name = {}
                 ordered_names = []
                 self.pref_rank_name_sets = {1: set(), 2: set()}

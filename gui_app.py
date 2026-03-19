@@ -430,7 +430,10 @@ class VotingApp:
         
         if success:
             # Switch modes automatically based on parsed ballot JSON!
-            if hasattr(self.data_handler, 'is_preferential_election') and self.data_handler.is_preferential_election():
+            is_pair_layout = bool(getattr(self.data_handler, 'pref_combo_map', {}))
+            is_preferential = hasattr(self.data_handler, 'is_preferential_election') and self.data_handler.is_preferential_election()
+
+            if is_preferential or is_pair_layout:
                 self.start_preferential_voting()
             else:
                 self.start_normal_voting()
