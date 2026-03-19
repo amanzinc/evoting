@@ -1,14 +1,17 @@
 import os
-import shutil
+import json
+import base64
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import hardware_crypto
 
 class ExportService:
-    def __init__(self, key_path="private.pem"):
+    def __init__(self, key_path="private.pem", aes_key_storage_path="ballot/aes_key.dec"):
         self.key_path = key_path
+        self.aes_key_storage_path = aes_key_storage_path
         self.private_key = None
 
     def _load_private_key(self):
@@ -103,9 +106,54 @@ class ExportService:
         print(f"Generated encrypted AES key: {enc_key_path}")
         return enc_file_path, enc_key_path
 
+    def _load_stored_aes_key(self):
+        """Load previously decrypted ballot AES key from local storage."""
+        if not os.path.exists(self.aes_key_storage_path):
+            raise FileNotFoundError(
+                f"Stored AES key not found at {self.aes_key_storage_path}. "
+                "Import ballots first so aes_key.dec is available."
+            )
+
+        with open(self.aes_key_storage_path, "r", encoding="utf-8") as f:
+            key_data = json.load(f)
+
+        key_b64 = key_data.get("aes_key_b64")
+        if not key_b64:
+            raise ValueError(f"Invalid AES key file at {self.aes_key_storage_path}: missing aes_key_b64")
+
+        aes_key = base64.b64decode(key_b64)
+        if len(aes_key) != 32:
+            raise ValueError(f"Invalid AES key length {len(aes_key)} bytes; expected 32")
+        return aes_key
+
+    def encrypt_file_with_stored_aes(self, source_path, dest_path, aes_key):
+        """
+        Encrypt file with stored AES-256 key using AESGCM.
+        Output is a JSON envelope (no plaintext transferred to USB).
+        """
+        with open(source_path, "rb") as f:
+            plaintext = f.read()
+
+        nonce = os.urandom(12)
+        aesgcm = AESGCM(aes_key)
+        ciphertext = aesgcm.encrypt(nonce, plaintext, None)
+
+        payload = {
+            "algorithm": "AES-GCM-256",
+            "source_name": os.path.basename(source_path),
+            "nonce": base64.b64encode(nonce).decode("utf-8"),
+            "ciphertext": base64.b64encode(ciphertext).decode("utf-8")
+        }
+
+        with open(dest_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+
     def export_election_data(self, source_log_dir, usb_mount_point):
         """
-        Signs the critical log files, encrypts them, and copies them to the USB drive.
+        Signs the critical log files, then encrypts logs and signatures using the
+        stored ballot AES key before writing to USB.
+
+        No plaintext log/signature files are transferred to USB.
         Returns the path to the export directory on the USB drive.
         """
         if not usb_mount_point or not os.path.exists(usb_mount_point):
@@ -117,39 +165,44 @@ class ExportService:
         # Files to export
         votes_log = os.path.join(source_log_dir, "votes.json")
         tokens_log = os.path.join(source_log_dir, "tokens.log")
+
+        # Load stored AES key from ballot import stage.
+        aes_key = self._load_stored_aes_key()
         
         exported_files = []
         
-        # 1. Sign and Encrypt Votes Log
+        # 1. Sign and encrypt votes log + signature
         if os.path.exists(votes_log):
-            # A. Sign the *plaintext* data so the server can verify it hasn't been tampered with
+            # A. Sign plaintext locally (signature file stays local temporarily)
             sig_path = self.sign_file(votes_log)
-            
-            # B. Encrypt the file using the server's public key (Hybrid Encryption)
-            enc_file_path, enc_key_path = self.hybrid_encrypt_file(votes_log)
-            
-            # C. Copy the resulting encrypted files and signature to USB
-            dest_votes_enc = os.path.join(export_dir, "votes.json.enc")
-            dest_votes_key = os.path.join(export_dir, "votes.json.key.enc")
-            dest_sig = os.path.join(export_dir, "votes.json.sig")
-            
-            shutil.copy2(enc_file_path, dest_votes_enc)
-            shutil.copy2(enc_key_path, dest_votes_key)
-            shutil.copy2(sig_path, dest_sig)
-            
-            # Cleanup local temporary encrypted files 
-            os.remove(enc_file_path)
-            os.remove(enc_key_path)
-            
-            exported_files.extend([dest_votes_enc, dest_votes_key, dest_sig])
-            print(f"Exported: Encrypted votes.json, Encrypted Key, and Signature")
-            
-        # 2. Export Tokens Log (Optional to encrypt, but let's just copy for now depending on threat model)
+
+            # B. Encrypt votes and signature with stored AES key and export only encrypted envelopes.
+            dest_votes_enc = os.path.join(export_dir, "votes.json.enc.json")
+            dest_votes_sig_enc = os.path.join(export_dir, "votes.json.sig.enc.json")
+            self.encrypt_file_with_stored_aes(votes_log, dest_votes_enc, aes_key)
+            self.encrypt_file_with_stored_aes(sig_path, dest_votes_sig_enc, aes_key)
+
+            # C. Cleanup local temporary signature file.
+            if os.path.exists(sig_path):
+                os.remove(sig_path)
+
+            exported_files.extend([dest_votes_enc, dest_votes_sig_enc])
+            print("Exported: Encrypted votes.json and encrypted signature")
+
+        # 2. Sign and encrypt tokens log + signature
         if os.path.exists(tokens_log):
-            dest_tokens = os.path.join(export_dir, "tokens.log")
-            shutil.copy2(tokens_log, dest_tokens)
-            exported_files.append(dest_tokens)
-            print(f"Exported: tokens.log")
+            sig_path = self.sign_file(tokens_log)
+
+            dest_tokens_enc = os.path.join(export_dir, "tokens.log.enc.json")
+            dest_tokens_sig_enc = os.path.join(export_dir, "tokens.log.sig.enc.json")
+            self.encrypt_file_with_stored_aes(tokens_log, dest_tokens_enc, aes_key)
+            self.encrypt_file_with_stored_aes(sig_path, dest_tokens_sig_enc, aes_key)
+
+            if os.path.exists(sig_path):
+                os.remove(sig_path)
+
+            exported_files.extend([dest_tokens_enc, dest_tokens_sig_enc])
+            print("Exported: Encrypted tokens.log and encrypted signature")
             
         if not exported_files:
             raise Exception("No log files found to export.")
