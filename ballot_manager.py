@@ -68,32 +68,35 @@ class BallotManager:
         """
         Returns (ballot_id, absolute_path_to_json) by reading from the local elections directory
         (after import from USB) and ensuring the ID is not marked as USED in SQLite.
-        
+
         NOTE: All ballots must be previously imported from USB to local 'elections' directory.
         """
         if not election_id:
-             raise Exception("Election ID Required to fetch ballots.")
+            raise Exception("Election ID Required to fetch ballots.")
 
         if self.conn is None:
-             raise Exception("SQLite DB not connected! Cannot verify ballot usage.")
+            raise Exception("SQLite DB not connected! Cannot verify ballot usage.")
 
-                # Look only in local elections directory (imported from USB).
-                # Support both legacy token IDs (E1) and new folder IDs (election_id_1).
-                ballots_dir, resolved_election_id = self._resolve_ballots_dir(election_id)
-        
+        # Look only in local elections directory (imported from USB).
+        # Support both legacy token IDs (E1) and new folder IDs (election_id_1).
+        ballots_dir, resolved_election_id = self._resolve_ballots_dir(election_id)
+
         if not os.path.exists(ballots_dir):
             raise Exception(f"Election folder not found at: {ballots_dir}")
 
         # Get all JSON files from local elections directory
         available_files = [
-            f for f in os.listdir(ballots_dir) 
+            f for f in os.listdir(ballots_dir)
             if f.endswith('.json')
         ]
         if not available_files:
             raise Exception(f"No ballot files found in {ballots_dir}")
 
         # Fetch all USED ballot IDs for this election from SQLite
-        self.cursor.execute("SELECT ballot_id FROM ballots WHERE election_id = ? AND status = 'USED'", (resolved_election_id,))
+        self.cursor.execute(
+            "SELECT ballot_id FROM ballots WHERE election_id = ? AND status = 'USED'",
+            (resolved_election_id,)
+        )
         used_ids = {row[0] for row in self.cursor.fetchall()}
 
         # Randomize the selection of available ballots
@@ -101,31 +104,29 @@ class BallotManager:
 
         # Find the first available file that hasn't been used
         for file_name in available_files:
-            # Strip .json extension
             ballot_id = file_name.replace('.json', '')
-            
+
             if ballot_id not in used_ids:
-                # Found an unused ballot!
                 selected_file = os.path.join(ballots_dir, file_name)
-                
+
                 # Double check the file is actually readable before returning
                 try:
                     with open(selected_file, 'rb') as f:
                         file_content = f.read()
 
-                    # Verify it's valid JSON
                     json.loads(file_content.decode('utf-8'))
                     return ballot_id, selected_file
-                    
                 except Exception as e:
                     print(f"File {selected_file} is corrupt or unreadable: {e}. Skipping...")
-                    # Mark it as 'CORRUPT' so we don't try it again
-                    self.cursor.execute('''
+                    self.cursor.execute(
+                        '''
                         INSERT OR REPLACE INTO ballots (ballot_id, election_id, status)
                         VALUES (?, ?, 'CORRUPT')
-                    ''', (ballot_id, resolved_election_id))
+                        ''',
+                        (ballot_id, resolved_election_id)
+                    )
                     self.conn.commit()
-                    used_ids.add(ballot_id) # Skip in this loop
+                    used_ids.add(ballot_id)
 
         raise Exception(f"No unused ballots remaining for {resolved_election_id}!")
 
