@@ -240,6 +240,37 @@ class DataHandler:
     def get_candidate_by_id(self, cid):
         return next((c for c in self.candidates_base if c['id'] == cid), None)
 
+    def build_receipt_qr_payload(self, selections, voting_mode):
+        """
+        Build receipt QR payload using commitments mapped to selected candidates.
+        - Normal: "<choice_number>:<commitment>"
+        - Preferential pair-layout: match selected candidate-name pair to mapped commitment
+        """
+        if voting_mode == 'normal':
+            cid = selections.get(1)
+            cand = self.get_candidate_by_id(cid)
+            if not cand:
+                return ""
+            choice_num = str(cand.get('id', cid))
+            commitment = str(cand.get('commitment', ''))
+            return f"{choice_num}:{commitment}"
+
+        # Preferential mode
+        ranks = sorted(selections.keys())
+        choice_nums = []
+        for r in ranks:
+            cand = self.get_candidate_by_id(selections[r])
+            if cand:
+                choice_nums.append(str(cand.get('id', selections[r])))
+
+        pref_id, pref_commitment, pref_label = self.resolve_preferential_selection(selections)
+        if pref_commitment:
+            # Keep candidate-pair label for audit readability (e.g., NAFS,NAFS).
+            return f"{pref_label}:{pref_commitment}"
+
+        # Fallback when no exact pair commitment is found.
+        return ",".join(choice_nums)
+
     def get_short_ballot_id(self, ballot_id=None):
         """Return ballot id truncated to the part before first comma."""
         raw = str(self.ballot_id if ballot_id is None else ballot_id)

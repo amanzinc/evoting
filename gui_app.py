@@ -825,8 +825,7 @@ class VotingApp:
         if self.voting_mode == 'normal':
             cid = self.selections.get(1)
             sel_str = get_cand_display(cid)
-            # QR must contain only choice number.
-            qr_data = sel_str
+            qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
         else:
             ranks = sorted(self.selections.keys())
             vals = []
@@ -834,9 +833,7 @@ class VotingApp:
                 c = self.selections[r]
                 vals.append(get_cand_display(c))
             sel_str = ", ".join(vals)
-
-            # QR must contain only choice numbers in preference order.
-            qr_data = ",".join(vals)
+            qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
 
         # Pre-generate log JSON while context is valid
         vote_record = self.data_handler.generate_vote_json(

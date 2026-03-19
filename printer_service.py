@@ -214,8 +214,7 @@ class PrinterService:
         if mode == 'normal':
             cid = selections.get(1)
             sel_str = get_cand_display(cid)
-            # QR must contain only choice number.
-            qr_choice_data = sel_str
+            qr_choice_data = self.data_handler.build_receipt_qr_payload(selections, mode)
         else:
             ranks = sorted(selections.keys())
             vals = []
@@ -223,9 +222,7 @@ class PrinterService:
                 c = selections[r]
                 vals.append(get_cand_display(c))
             sel_str = ", ".join(vals)
-
-            # QR must contain only choice numbers in preference order.
-            qr_choice_data = ",".join(vals)
+            qr_choice_data = self.data_handler.build_receipt_qr_payload(selections, mode)
 
         p = self.printer
         TOP_BAR = self._bar("_")
