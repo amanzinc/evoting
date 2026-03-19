@@ -933,7 +933,16 @@ class VotingApp:
             ranks = sorted(self.selections.keys())
             sel_str = ", ".join(get_cand_display(self.selections[r]) for r in ranks)
 
-        voter_qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
+        selected_commitment = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
+        election_id_for_qr = str(getattr(self, 'current_election_id', '') or getattr(self.data_handler, 'election_id', ''))
+        short_ballot_id = self.data_handler.get_short_ballot_id(ballot_id)
+
+        import json
+        voter_qr_data = json.dumps([
+            election_id_for_qr,
+            short_ballot_id,
+            selected_commitment
+        ], separators=(",", ":"))
 
         self.show_printing_modal(text="Printing Challenge Receipt...")
         self.print_queue = queue.Queue()
