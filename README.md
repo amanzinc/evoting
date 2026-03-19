@@ -1,126 +1,172 @@
 # Ballot Marking Device - E-Voting Prototype
 
-This project is a Python-based prototype for a Ballot Marking Device (BMD), designed to demonstrate a secure, user-friendly, and verifiable electronic voting system compliant with VVPAT standards.
+Python-based prototype for a Raspberry Pi Ballot Marking Device (BMD) with USB ballot import, RFID voter flow, VVPAT printing, and encrypted export.
 
-## Project Goals
+## Current System Overview
 
-1.  **Transparency**: Open-source implementation of voting logic.
-2.  **Flexibility**: Dynamic candidate loading from external JSON configuration (`candidates.json`).
-3.  **Auditability**: Secure text-based logging (`votes.log`) and physical paper trails (VVPAT & Voter Receipt).
-4.  **Accessibility**: User interface designed for clarity, supporting both single-choice and preferential (ranked) voting modes.
+- Ballots arrive on USB in encrypted form under a `ballot/` tree.
+- EVM decrypts AES key using hardware-bound private key (RPi only).
+- Encrypted ballots are decrypted and stored locally in temporary `ballots/` directory.
+- Voting runs from local decrypted ballots (not directly from USB).
+- Vote logs are exported as AES-GCM encrypted files only.
 
 ## Key Features
 
-- **Dynamic Candidate Loading**: Candidates are loaded from `candidates.json`, supporting arbitrary election IDs, candidate numbers, and serial ordering.
-- **Hardware-Bound RSA Encryption**: Ballots (`.json`) are securely encrypted into chunks using a 2048-bit RSA Public Key. The EVM decrypts them dynamically during boot using a Private Key that is physically locked to the Raspberry Pi's MAC Address and CPU Serial Number via AES-256. SD card cloning is impossible.
-- **Dual Receipt System**:
-    - **VVPAT Slip**: Printed first, deposited in the box. Contains Station ID, Ballot ID, Session Time, Name/Number, and dual QR codes (with cryptographic commitments).
-    - **Voter Receipt**: Printed second, given to voter. Contains Session Time, Choice, and QR codes.
-- **Vote Logging**: Every vote is logged to `votes.json` in a structured JSON Lines format with a precise timestamp, cryptographic commitment hash, and candidate details.
-- **Dual Voting Modes**:
-    - **Normal Voting**: Standard single-choice selection.
-    - **Preferential Voting**: Ranked choice voting (select 1st, 2nd, 3rd preference).
-- **Dynamic UI**: 
-    - Automatically adjusts layout based on the number of candidates.
-    - **NOTA Support**: "None of the Above" (or candidate "NAFS") is automatically handled and displayed distinctively.
+- Hardware-bound private key unlock via machine identity (`hardware_crypto.py`).
+- Encrypted ballot import from USB (`usb_ballot_import.py`).
+- Preferential mode support including pair-layout ballots (e.g. `NAFS,David`).
+- Preference count configurable per ballot via `number_of_preferences`.
+- Challenge flow with challenge QR payload:
+    - `[election_id, ballot_id, selected_commitment]`
+- Vote logs include `voter_id` and `token_id` from RFID payload.
+- Export uses stored AES key and writes encrypted-only output files.
 
-## Hardware Support
-- **Thermal Printer**: Supports ESC/POS printers (e.g., Epson TM-T88IV) for generating receipts.
-- **Raspberry Pi**: Optimized for running on RPi with touchscreens.
+## Main Files
 
-## Project Layout
+- `main.py`: app entrypoint.
+- `gui_app.py`: voting UI, RFID/session flow, print orchestration.
+- `data_handler.py`: ballot parsing, commitment mapping, vote record generation.
+- `ballot_manager.py`: unused/used ballot tracking and ballot file selection.
+- `usb_ballot_import.py`: decrypt USB ballots and import locally.
+- `printer_service.py`: VVPAT/voter/challenge printing and QR generation.
+- `export_service.py`: AES-GCM encrypted export to USB.
+- `generate_rpi_keys.py`: generate `private.pem`, `public.pem`, and `bmd_key.json`.
+- `encrypt_usb_export.py`: standalone JSON-to-AES-GCM export encryption helper.
 
-- `main.py`: Entry point for the application.
-- `gui_app.py`: Handles the User Interface and voting flow logic.
-- `data_handler.py`: Manages file I/O for reading encrypted JSON ballots and appending to `votes.json`.
-- `ballot_manager.py`: Connects to SQLite to track used/unused ballots and dynamically loads `.json` payloads from USB.
-- `printer_service.py`: Handles interaction with the thermal printer and receipt generation.
-- `hardware_crypto.py`: Extracts the physical MAC and CPU identifiers to build the hardware passphrase.
-- `generate_rpi_keys.py`: Generates the RSA keypair and locks the private key to the hardware.
-- `encrypt_ballots_rsa.py`: Admin script for chunk-encrypting JSON ballots using `public.pem`.
-- `votes.json`: Audit log where votes are securely recorded in JSON sequence.
-
-## Setup and Usage
+## Setup
 
 ### Prerequisites
+
 - Python 3.x
-- `tkinter` (usually included)
+- tkinter
 - `python-escpos`
-- `qrcode`
-- `Pillow` (PIL)
+- `qrcode[pil]`
+- `Pillow`
+- `cryptography`
 
-### Running the Application
+### Install
 
-1.  Clone the repository.
-2.  Install dependencies:
-    ```bash
-    pip install python-escpos qrcode[pil]
-    ```
-3.  Run the application:
-    ```bash
-    python main.py
-    ```
+```bash
+pip install -r requirements.txt
+```
 
-### USB Drive Structure
-The EVM requires a USB drive to be inserted before voting can begin. The USB drive must contain the following structure:
+### Run
+
+```bash
+python main.py
+```
+
+## USB Ballot Input Structure (Required)
+
+The voting USB must contain a top-level `ballot` folder.
 
 ```text
 [USB_ROOT]/
-├── server_key.pem                 # (Required) Server's public RSA key for exporting votes
-└── elections/                     # (Required) Directory containing all election data
-    ├── E1/                        # (Example) Election ID Folder
-    │   ├── candidates.json        # The roster/candidates for this specific election
-    │   └── ballots/               # Pre-generated, encrypted individual ballot JSON files
-    │       ├── 0AC024CB.json
-    │       └── 1BFF34B3.json
-    └── E2/                        # (Example) Another Election ID Folder
-        ├── candidates.json
-        └── ballots/
-            └── ...
+└── ballot/
+        ├── aes_key.enc
+        ├── election_id_1/
+        │   ├── candidates.json
+        │   └── ballot/
+        │       ├── ballot_1.enc.json
+        │       └── ...
+        └── election_id_2/
+                ├── candidates.json
+                └── ballot/
+                        └── ...
 ```
-*Note: Upon export ending the election, the EVM will create an `exports/` folder on this USB drive containing `votes.json.enc`.*
 
-### RFID Card Format (Decrypted Payload)
-When a voter scans their RFID card, the `rfid_service` decrypts the payload using the EVM's private hardware key. The EVM expects this decrypted payload to be a valid JSON string with the following structure:
+### Import/Decryption Flow
+
+1. Detect USB with `ballot/`.
+2. Decrypt AES key from `ballot/aes_key.enc` using `private.pem`.
+3. Store decrypted AES key at `ballot/aes_key.dec`.
+4. Decrypt ballots and store temporary local files under:
+     - `ballots/election_id_1/*.json`
+     - `ballots/election_id_2/*.json`
+
+## Preferential Ballot Behavior
+
+- `election_type` matching is case-insensitive.
+- Pair-layout ballots are auto-detected and forced into preferential mode.
+- `number_of_preferences` in ballot JSON controls how many preference screens are shown.
+- For pair-layout commitment mapping, selected tuple (e.g. `NAFS,NAFS`) is matched to its corresponding commitment.
+
+## RFID Payload Formats
+
+Both object and array payloads are supported.
+
+### Object format
 
 ```json
 {
-  "token_id": "UNIQUE_SESSION_123",
-  "voter_id": "VOTER_1044A",
-  "eid_vector": "E1;E2",
-  "booth": 1,
-  "issued_at": "2026-03-05T12:00:00.000000"
+    "token_id": "SESSION_123",
+    "voter_id": "VOTER_1044A",
+    "eid_vector": "election_id_1;election_id_2",
+    "booth": 1
 }
 ```
-*   **`token_id`**: A unique string identifying the voter's session. Used to prevent double-voting. Logged in `votes.json`.
-*   **`voter_id`**: The official ID or entry number of the voter (formerly `entry_number`). Logged in `votes.json`.
-*   **`eid_vector`**: A semicolon-separated string of Election IDs (matching the folder names on the USB drive) that the voter is eligible to vote in. The EVM will iterate through these elections sequentially.
-*   **`booth`**: Integer defining the polling booth.
-*   **`issued_at`**: ISO-formatted timestamp of when the token was generated.
 
-### Configuring Candidates (`candidates.json`)
-
-Update `candidates.json` to change the election roster. The format is a dictionary of candidates.
+### Array format
 
 ```json
-{
-    "election_id": "ST-GEN-2026",
-    "hash_string": "...",
-    "candidates": {
-        "0": {
-            "serial_id": 1,
-            "candidate_name": "Aman Gupta",
-            "candidate_number": "A7K..."
-        },
-        "1": {
-            "serial_id": 2,
-            "candidate_name": "NAFS",
-            "candidate_number": "0" 
-        }
+["SESSION_123", "VOTER_1044A", "election_id_1;election_id_2", 1]
+```
+
+## QR Payload Rules (Current)
+
+- Cast receipt QR: selected commitment only.
+- Challenge receipt QR: JSON array string:
+    - `[election_id, ballot_id, selected_commitment]`
+- Ballot ID display/print/QR usage is truncated before first comma.
+
+## Export Encryption (Current)
+
+No signing is performed in export.
+
+- AES key source: `ballot/aes_key.dec`
+- Algorithm: AES-GCM-256
+- Output files on USB `exports/`:
+    - `final_votes_<bmd_id>.enc.json`
+    - `final_tokens_<bmd_id>.enc.json`
+
+### BMD ID resolution for filenames
+
+1. `EVOTING_BMD_ID` env var
+2. `/etc/evoting/bmd_id`
+3. `ballot/aes_key.dec` (`bmd_id`)
+4. fallback `UNKNOWN_BMD`
+
+## Key Generation Output
+
+Running:
+
+```bash
+python generate_rpi_keys.py
+```
+
+creates:
+
+- `private.pem`
+- `public.pem`
+- `bmd_key.json` in format:
+
+```json
+[
+    {
+        "bmd_id": 1,
+        "rsa_public_key_pem": "-----BEGIN PUBLIC KEY-----...",
+        "is_active": true,
+        "key_version": 1,
+        "created_at": "2026-03-19T00:00:00.000Z"
     }
-}
+]
 ```
-*Note: A candidate named "NAFS" is automatically treated as NOTA.*
 
-## License
-[License Information Here]
+## Standalone Export Encryption Script
+
+Use `encrypt_usb_export.py` to encrypt JSON/log files with stored AES key:
+
+```bash
+python encrypt_usb_export.py /logs/votes.json --out-dir /media/pi/USB/exports --prefix final_votes
+python encrypt_usb_export.py /logs/tokens.log --out-dir /media/pi/USB/exports --prefix final_tokens
+```
