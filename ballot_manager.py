@@ -127,52 +127,6 @@ class BallotManager:
                     used_ids.add(ballot_id) # Skip in this loop
 
         raise Exception(f"No unused ballots remaining for {election_id}!")
-                        
-                        key_path = "private.pem"
-                        if not os.path.exists(key_path):
-                            raise Exception("private.pem not found for decryption")
-                            
-                        # 1. Unlock Private Key using Hardware Identity (RPi only)
-                        try:
-                            passphrase = hardware_crypto.get_hardware_passphrase()
-                            with open(key_path, "rb") as kf:
-                                private_key = serialization.load_pem_private_key(
-                                    kf.read(),
-                                    password=passphrase
-                                )
-                        except Exception as e:
-                             raise Exception(f"Hardware Identity mismatch! Failed to unlock private.pem: {e}")
-
-                        # 2. Decrypt in Chunks (2048-bit RSA = 256 byte chunks)
-                        CHUNK_SIZE = 256
-                        decrypted_bytes = bytearray()
-                        
-                        for i in range(0, len(file_content), CHUNK_SIZE):
-                            chunk = file_content[i:i+CHUNK_SIZE]
-                            decrypted_chunk = private_key.decrypt(
-                                chunk,
-                                padding.OAEP(
-                                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                                    algorithm=hashes.SHA256(),
-                                    label=None
-                                )
-                            )
-                            decrypted_bytes.extend(decrypted_chunk)
-
-                        json.loads(decrypted_bytes.decode('utf-8'))
-
-                    return ballot_id, selected_file
-                except Exception as e:
-                    print(f"File {selected_file} is corrupt or unreadable: {e}. Skipping...")
-                    # Mark it as 'CORRUPT' so we don't try it again
-                    self.cursor.execute('''
-                        INSERT OR REPLACE INTO ballots (ballot_id, election_id, status)
-                        VALUES (?, ?, 'CORRUPT')
-                    ''', (ballot_id, election_id))
-                    self.conn.commit()
-                    used_ids.add(ballot_id) # Skip in this loop
-
-        raise Exception(f"No unused ballots remaining for {election_id} on the USB drive!")
 
     def mark_as_challenged(self, ballot_id, election_id=None):
         """
