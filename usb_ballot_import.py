@@ -30,11 +30,12 @@ import os
 import json
 import base64
 import shutil
+import struct
 from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import hardware_crypto
 
 
@@ -215,34 +216,46 @@ class USBBallotImporter:
         algorithm = ballot_data.get("algorithm")
         nonce_b64 = ballot_data.get("nonce")
         chunks = ballot_data.get("chunks", [])
+        num_chunks = ballot_data.get("num_chunks")
         
         if not chunks:
             raise ValueError(f"No encrypted chunks found in {ballot_enc_path}")
+        if not nonce_b64:
+            raise ValueError(f"Missing nonce in {ballot_enc_path}")
+        if num_chunks is not None and num_chunks != len(chunks):
+            raise ValueError(
+                f"Chunk count mismatch in {ballot_enc_path}: num_chunks={num_chunks}, actual={len(chunks)}"
+            )
         
-        # Decode nonce (initialization vector for GCM)
-        nonce = base64.b64decode(nonce_b64)
-        
-        # Concatenate all encrypted chunks
-        encrypted_data = b"".join(base64.b64decode(chunk) for chunk in chunks)
-        
-        # The last 16 bytes are the authentication tag (GCM tag)
-        ciphertext = encrypted_data[:-16]
-        auth_tag = encrypted_data[-16:]
+        # Base nonce is 12 bytes; per-chunk nonce is derived using XOR with chunk index.
+        nonce_base = base64.b64decode(nonce_b64)
+        if len(nonce_base) != 12:
+            raise ValueError(f"Invalid nonce length {len(nonce_base)} in {ballot_enc_path}; expected 12 bytes")
         
         try:
-            # Decrypt using AES-256-GCM
-            cipher = Cipher(
-                algorithms.AES(self.decrypted_aes_key),
-                modes.GCM(nonce, auth_tag)
-            )
-            decryptor = cipher.decryptor()
-            decrypted_ballot = decryptor.update(ciphertext) + decryptor.finalize()
-            
+            aesgcm = AESGCM(self.decrypted_aes_key)
+            plaintext_parts = []
+
+            # Decrypt each chunk independently using chunk-specific nonce + AAD(chunk_index).
+            for chunk_index, chunk_b64 in enumerate(chunks):
+                chunk_ciphertext = base64.b64decode(chunk_b64)
+
+                chunk_nonce = bytearray(nonce_base)
+                idx_bytes = struct.pack(">I", chunk_index)
+                for i in range(4):
+                    chunk_nonce[-(i + 1)] ^= idx_bytes[-(i + 1)]
+
+                aad = struct.pack(">I", chunk_index)
+                chunk_plaintext = aesgcm.decrypt(bytes(chunk_nonce), chunk_ciphertext, aad)
+                plaintext_parts.append(chunk_plaintext)
+
+            decrypted_ballot = b"".join(plaintext_parts)
+
             # Parse the JSON
             ballot_json = json.loads(decrypted_ballot.decode('utf-8'))
             return ballot_json
         except Exception as e:
-            raise Exception(f"Failed to decrypt ballot: {e}")
+            raise Exception(f"Failed to decrypt ballot [{type(e).__name__}]: {e}")
 
     def import_usb_ballots(self, usb_ballot_path, elections_base_dir="elections"):
         """
