@@ -77,8 +77,9 @@ class BallotManager:
         if self.conn is None:
              raise Exception("SQLite DB not connected! Cannot verify ballot usage.")
 
-        # Look only in local elections directory (imported from USB)
-        ballots_dir = os.path.join("elections", election_id, "ballots")
+           # Look only in local elections directory (imported from USB).
+           # Support both legacy token IDs (E1) and new folder IDs (election_id_1).
+           ballots_dir, resolved_election_id = self._resolve_ballots_dir(election_id)
         
         if not os.path.exists(ballots_dir):
             raise Exception(f"Election folder not found at: {ballots_dir}")
@@ -92,7 +93,7 @@ class BallotManager:
             raise Exception(f"No ballot files found in {ballots_dir}")
 
         # Fetch all USED ballot IDs for this election from SQLite
-        self.cursor.execute("SELECT ballot_id FROM ballots WHERE election_id = ? AND status = 'USED'", (election_id,))
+        self.cursor.execute("SELECT ballot_id FROM ballots WHERE election_id = ? AND status = 'USED'", (resolved_election_id,))
         used_ids = {row[0] for row in self.cursor.fetchall()}
 
         # Randomize the selection of available ballots
@@ -122,11 +123,39 @@ class BallotManager:
                     self.cursor.execute('''
                         INSERT OR REPLACE INTO ballots (ballot_id, election_id, status)
                         VALUES (?, ?, 'CORRUPT')
-                    ''', (ballot_id, election_id))
+                    ''', (ballot_id, resolved_election_id))
                     self.conn.commit()
                     used_ids.add(ballot_id) # Skip in this loop
 
-        raise Exception(f"No unused ballots remaining for {election_id}!")
+        raise Exception(f"No unused ballots remaining for {resolved_election_id}!")
+
+    def _resolve_ballots_dir(self, election_id):
+        """Resolve local ballots directory for either E1 or election_id_1 style IDs."""
+        local_root = "elections"
+        direct_dir = os.path.join(local_root, str(election_id), "ballots")
+        if os.path.isdir(direct_dir):
+            return direct_dir, str(election_id)
+
+        # Legacy token format E<number> -> election_id_<number>
+        eid = str(election_id)
+        if eid.upper().startswith("E") and eid[1:].isdigit():
+            mapped_id = f"election_id_{int(eid[1:])}"
+            mapped_dir = os.path.join(local_root, mapped_id, "ballots")
+            if os.path.isdir(mapped_dir):
+                return mapped_dir, mapped_id
+
+        # Reverse mapping if token already has election_id_<n> and local uses E<n>
+        prefix = "election_id_"
+        if eid.lower().startswith(prefix):
+            suffix = eid[len(prefix):]
+            if suffix.isdigit():
+                mapped_id = f"E{int(suffix)}"
+                mapped_dir = os.path.join(local_root, mapped_id, "ballots")
+                if os.path.isdir(mapped_dir):
+                    return mapped_dir, mapped_id
+
+        # Keep old error shape for compatibility.
+        return os.path.join(local_root, str(election_id), "ballots"), str(election_id)
 
     def mark_as_challenged(self, ballot_id, election_id=None):
         """

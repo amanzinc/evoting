@@ -323,8 +323,29 @@ class VotingApp:
     def skip_rfid_check(self):
         self.stop_scanning = True
         # Simulate Multi-Election Token
-        payload = '{"token_id": "DEV_SKIP_' + str(int(time.time())) + '", "eid_vector": "E1;E3;E6"}'
+        payload = '{"token_id": "DEV_SKIP_' + str(int(time.time())) + '", "eid_vector": "election_id_1;election_id_2"}'
         self.on_card_scanned(payload)
+
+    def _normalize_election_id(self, election_id):
+        """Map token election IDs to local election folder names."""
+        if not election_id:
+            return election_id
+
+        eid = str(election_id).strip()
+        local_root = "elections"
+
+        # Exact folder name already available.
+        if os.path.isdir(os.path.join(local_root, eid)):
+            return eid
+
+        # Legacy E<number> -> election_id_<number>
+        if eid.upper().startswith("E") and eid[1:].isdigit():
+            mapped = f"election_id_{int(eid[1:])}"
+            if os.path.isdir(os.path.join(local_root, mapped)):
+                return mapped
+
+        # Keep original as fallback to preserve existing behavior/error messaging.
+        return eid
 
     def on_card_scanned(self, token_payload):
         # 0. Check Printer Status First
@@ -371,7 +392,8 @@ class VotingApp:
         if eid_vector_str:
             # Parse "E1;E3;E6" -> ["E1", "E3", "E6"]
             # Clean up whitespace and empty strings
-            self.election_queue = [e.strip() for e in eid_vector_str.split(';') if e.strip()]
+            parsed_ids = [e.strip() for e in eid_vector_str.split(';') if e.strip()]
+            self.election_queue = [self._normalize_election_id(eid) for eid in parsed_ids]
         else:
             # Fallback if no vector provided (e.g. legacy card or dev skip)
             # We can define a default or assume single legacy mode
