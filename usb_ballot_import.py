@@ -55,6 +55,7 @@ class USBBallotImporter:
         self.local_storage_dir = local_storage_dir
         self.private_key = None
         self.decrypted_aes_key = None
+        self.bmd_id = None
         self.aes_key_storage_path = os.path.join(local_storage_dir, "aes_key.dec")
         self.demo_mode = demo_mode
         
@@ -136,6 +137,7 @@ class USBBallotImporter:
         
         encrypted_aes_key_b64 = key_data.get("encrypted_aes_key")
         algorithm = key_data.get("algorithm", "RSA-OAEP-SHA256")
+        self.bmd_id = str(key_data.get("bmd_id", "UNKNOWN_BMD"))
         
         if not encrypted_aes_key_b64:
             raise ValueError("No encrypted_aes_key found in aes_key.enc")
@@ -173,7 +175,8 @@ class USBBallotImporter:
         key_storage = {
             "aes_key_b64": base64.b64encode(self.decrypted_aes_key).decode('utf-8'),
             "key_size": len(self.decrypted_aes_key),
-            "algorithm": "AES-256-GCM"
+            "algorithm": "AES-256-GCM",
+            "bmd_id": self.bmd_id or "UNKNOWN_BMD"
         }
         
         with open(self.aes_key_storage_path, "w") as f:

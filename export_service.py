@@ -126,6 +126,51 @@ class ExportService:
             raise ValueError(f"Invalid AES key length {len(aes_key)} bytes; expected 32")
         return aes_key
 
+    def _sanitize_bmd_id(self, bmd_id):
+        """Sanitize BMD ID for safe filesystem naming."""
+        raw = str(bmd_id or "UNKNOWN_BMD").strip()
+        safe = []
+        for ch in raw:
+            if ch.isalnum() or ch in ("-", "_"):
+                safe.append(ch)
+            else:
+                safe.append("_")
+        return "".join(safe) or "UNKNOWN_BMD"
+
+    def _resolve_bmd_id(self):
+        """
+        Resolve BMD ID on RPi using this order:
+        1. EVOTING_BMD_ID env var
+        2. /etc/evoting/bmd_id file
+        3. ballot/aes_key.dec metadata (bmd_id)
+        4. UNKNOWN_BMD fallback
+        """
+        env_bmd = os.environ.get("EVOTING_BMD_ID", "").strip()
+        if env_bmd:
+            return self._sanitize_bmd_id(env_bmd)
+
+        bmd_file = "/etc/evoting/bmd_id"
+        if os.path.exists(bmd_file):
+            try:
+                with open(bmd_file, "r", encoding="utf-8") as f:
+                    file_bmd = f.read().strip()
+                if file_bmd:
+                    return self._sanitize_bmd_id(file_bmd)
+            except Exception:
+                pass
+
+        if os.path.exists(self.aes_key_storage_path):
+            try:
+                with open(self.aes_key_storage_path, "r", encoding="utf-8") as f:
+                    key_data = json.load(f)
+                key_bmd = str(key_data.get("bmd_id", "")).strip()
+                if key_bmd:
+                    return self._sanitize_bmd_id(key_bmd)
+            except Exception:
+                pass
+
+        return "UNKNOWN_BMD"
+
     def encrypt_file_with_stored_aes(self, source_path, dest_path, aes_key):
         """
         Encrypt file with stored AES-256 key using AESGCM.
@@ -161,6 +206,9 @@ class ExportService:
             
         export_dir = os.path.join(usb_mount_point, "exports")
         os.makedirs(export_dir, exist_ok=True)
+
+        bmd_id = self._resolve_bmd_id()
+        print(f"Using BMD ID for export naming: {bmd_id}")
         
         # Files to export
         votes_log = os.path.join(source_log_dir, "votes.json")
@@ -177,8 +225,8 @@ class ExportService:
             sig_path = self.sign_file(votes_log)
 
             # B. Encrypt votes and signature with stored AES key and export only encrypted envelopes.
-            dest_votes_enc = os.path.join(export_dir, "votes.json.enc.json")
-            dest_votes_sig_enc = os.path.join(export_dir, "votes.json.sig.enc.json")
+            dest_votes_enc = os.path.join(export_dir, f"final_votes_{bmd_id}.enc.json")
+            dest_votes_sig_enc = os.path.join(export_dir, f"final_votes_{bmd_id}.sig.enc.json")
             self.encrypt_file_with_stored_aes(votes_log, dest_votes_enc, aes_key)
             self.encrypt_file_with_stored_aes(sig_path, dest_votes_sig_enc, aes_key)
 
@@ -193,8 +241,8 @@ class ExportService:
         if os.path.exists(tokens_log):
             sig_path = self.sign_file(tokens_log)
 
-            dest_tokens_enc = os.path.join(export_dir, "tokens.log.enc.json")
-            dest_tokens_sig_enc = os.path.join(export_dir, "tokens.log.sig.enc.json")
+            dest_tokens_enc = os.path.join(export_dir, f"final_tokens_{bmd_id}.enc.json")
+            dest_tokens_sig_enc = os.path.join(export_dir, f"final_tokens_{bmd_id}.sig.enc.json")
             self.encrypt_file_with_stored_aes(tokens_log, dest_tokens_enc, aes_key)
             self.encrypt_file_with_stored_aes(sig_path, dest_tokens_sig_enc, aes_key)
 
