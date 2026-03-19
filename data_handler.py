@@ -12,6 +12,7 @@ class DataHandler:
         self.election_hash = ""
         self.election_type = "Normal"
         self.election_type_normalized = "normal"
+        self.number_of_preferences = None
         self.ballot_id = "" # Store the specific generic complex payload ID
         self.ballot_file_id = "" # Store the filename for SQLite logic
         self.candidates_base = []
@@ -122,6 +123,13 @@ class DataHandler:
             self.election_type = data.get("election_type", "Normal")
             self.election_type_normalized = self._normalize_election_type(self.election_type)
             self.election_name = data.get("election_name", "General Election")
+
+            raw_pref_count = data.get("number_of_preferences", None)
+            try:
+                parsed_pref_count = int(raw_pref_count) if raw_pref_count is not None else None
+                self.number_of_preferences = parsed_pref_count if parsed_pref_count and parsed_pref_count > 0 else None
+            except Exception:
+                self.number_of_preferences = None
             
             # Parse commitments array
             self.raw_commitments = data.get("commitments", "")
@@ -212,7 +220,9 @@ class DataHandler:
                     })
 
                 # Pair-based ballots need exactly two preference picks.
-                self.max_preferences = 2
+                max_allowed = max(1, len(self.candidates_base))
+                requested = self.number_of_preferences if self.number_of_preferences else 2
+                self.max_preferences = min(max_allowed, max(1, requested))
                 return self.candidates_base
 
             for i, cand in enumerate(candidates_list):
@@ -231,7 +241,11 @@ class DataHandler:
                 })
             
             self.candidates_base.sort(key=lambda x: x['id'])
-            self.max_preferences = max(1, len(self.candidates_base) - 1)
+            if self.number_of_preferences:
+                max_allowed = max(1, len(self.candidates_base))
+                self.max_preferences = min(max_allowed, max(1, self.number_of_preferences))
+            else:
+                self.max_preferences = max(1, len(self.candidates_base) - 1)
             return self.candidates_base
 
         except Exception as e:
