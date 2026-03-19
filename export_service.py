@@ -195,10 +195,9 @@ class ExportService:
 
     def export_election_data(self, source_log_dir, usb_mount_point):
         """
-        Signs the critical log files, then encrypts logs and signatures using the
-        stored ballot AES key before writing to USB.
+        Encrypt critical log files using stored AES-GCM-256 key before writing to USB.
 
-        No plaintext log/signature files are transferred to USB.
+        No plaintext files are transferred to USB.
         Returns the path to the export directory on the USB drive.
         """
         if not usb_mount_point or not os.path.exists(usb_mount_point):
@@ -219,38 +218,19 @@ class ExportService:
         
         exported_files = []
         
-        # 1. Sign and encrypt votes log + signature
+        # 1. Encrypt votes log
         if os.path.exists(votes_log):
-            # A. Sign plaintext locally (signature file stays local temporarily)
-            sig_path = self.sign_file(votes_log)
-
-            # B. Encrypt votes and signature with stored AES key and export only encrypted envelopes.
             dest_votes_enc = os.path.join(export_dir, f"final_votes_{bmd_id}.enc.json")
-            dest_votes_sig_enc = os.path.join(export_dir, f"final_votes_{bmd_id}.sig.enc.json")
             self.encrypt_file_with_stored_aes(votes_log, dest_votes_enc, aes_key)
-            self.encrypt_file_with_stored_aes(sig_path, dest_votes_sig_enc, aes_key)
+            exported_files.append(dest_votes_enc)
+            print("Exported: Encrypted votes.json")
 
-            # C. Cleanup local temporary signature file.
-            if os.path.exists(sig_path):
-                os.remove(sig_path)
-
-            exported_files.extend([dest_votes_enc, dest_votes_sig_enc])
-            print("Exported: Encrypted votes.json and encrypted signature")
-
-        # 2. Sign and encrypt tokens log + signature
+        # 2. Encrypt tokens log
         if os.path.exists(tokens_log):
-            sig_path = self.sign_file(tokens_log)
-
             dest_tokens_enc = os.path.join(export_dir, f"final_tokens_{bmd_id}.enc.json")
-            dest_tokens_sig_enc = os.path.join(export_dir, f"final_tokens_{bmd_id}.sig.enc.json")
             self.encrypt_file_with_stored_aes(tokens_log, dest_tokens_enc, aes_key)
-            self.encrypt_file_with_stored_aes(sig_path, dest_tokens_sig_enc, aes_key)
-
-            if os.path.exists(sig_path):
-                os.remove(sig_path)
-
-            exported_files.extend([dest_tokens_enc, dest_tokens_sig_enc])
-            print("Exported: Encrypted tokens.log and encrypted signature")
+            exported_files.append(dest_tokens_enc)
+            print("Exported: Encrypted tokens.log")
             
         if not exported_files:
             raise Exception("No log files found to export.")
