@@ -372,17 +372,44 @@ class VotingApp:
         
         try:
             data = json.loads(token_payload)
-            if 'token_id' in data:
-                token_id = data['token_id']
-                self.current_token_id = token_id
-            if 'eid_vector' in data:
-                eid_vector_str = data['eid_vector']
-            if 'voter_id' in data:
-                self.current_voter_id = data['voter_id']
-            elif 'entry_number' in data:
-                self.current_voter_id = data['entry_number']
-            if 'booth' in data:
-                self.current_booth = data['booth']
+            if isinstance(data, dict):
+                if 'token_id' in data:
+                    token_id = data['token_id']
+                    self.current_token_id = token_id
+
+                if 'eid_vector' in data:
+                    if isinstance(data['eid_vector'], list):
+                        eid_vector_str = ";".join(str(x) for x in data['eid_vector'])
+                    else:
+                        eid_vector_str = str(data['eid_vector'])
+
+                if 'voter_id' in data:
+                    self.current_voter_id = data['voter_id']
+                elif 'entry_number' in data:
+                    self.current_voter_id = data['entry_number']
+
+                if 'booth' in data:
+                    self.current_booth = data['booth']
+
+            elif isinstance(data, list):
+                # Array payload support: [token_id, voter_id, eid_vector, booth]
+                if len(data) > 0 and data[0] is not None:
+                    token_id = data[0]
+                    self.current_token_id = token_id
+                if len(data) > 1 and data[1] is not None:
+                    self.current_voter_id = data[1]
+                if len(data) > 2 and data[2] is not None:
+                    if isinstance(data[2], list):
+                        eid_vector_str = ";".join(str(x) for x in data[2])
+                    else:
+                        eid_vector_str = str(data[2])
+                if len(data) > 3 and data[3] is not None:
+                    self.current_booth = data[3]
+
+            # Normalize IDs to string for consistent logging.
+            token_id = str(token_id)
+            self.current_token_id = str(self.current_token_id)
+            self.current_voter_id = str(self.current_voter_id)
         except:
             pass
             
@@ -840,7 +867,8 @@ class VotingApp:
             {'selections': self.selections, 'timestamp': timestamp},
             self.voting_mode,
             getattr(self, 'current_voter_id', 'UNKNOWN'),
-            getattr(self, 'current_booth', 1)
+            getattr(self, 'current_booth', 1),
+            getattr(self, 'current_token_id', 'UNKNOWN')
         )
 
         # Voter receipt QR should contain only selected commitment.
