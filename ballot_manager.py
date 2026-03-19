@@ -77,9 +77,9 @@ class BallotManager:
         if self.conn is None:
              raise Exception("SQLite DB not connected! Cannot verify ballot usage.")
 
-           # Look only in local elections directory (imported from USB).
-           # Support both legacy token IDs (E1) and new folder IDs (election_id_1).
-           ballots_dir, resolved_election_id = self._resolve_ballots_dir(election_id)
+                # Look only in local elections directory (imported from USB).
+                # Support both legacy token IDs (E1) and new folder IDs (election_id_1).
+                ballots_dir, resolved_election_id = self._resolve_ballots_dir(election_id)
         
         if not os.path.exists(ballots_dir):
             raise Exception(f"Election folder not found at: {ballots_dir}")
