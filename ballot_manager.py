@@ -67,7 +67,9 @@ class BallotManager:
     def get_unused_ballot(self, election_id=None):
         """
         Returns (ballot_id, absolute_path_to_json) by reading from the USB drive
-        and ensuring the ID is not marked as USED in MongoDB.
+        and ensuring the ID is not marked as USED in SQLite.
+        
+        Supports both old (E1, E3, etc.) and new (election_id_1, election_id_2, etc.) naming.
         """
         if not election_id:
              raise Exception("Election ID Required to fetch ballots.")
@@ -75,14 +77,24 @@ class BallotManager:
         if self.conn is None:
              raise Exception("SQLite DB not connected! Cannot verify ballot usage.")
 
-        # Construct USB Path
-        ballots_dir = os.path.join(self.usb_mount_point, "elections", election_id, "ballots")
+        # Try both naming conventions: election_id_X and legacy X format
+        candidates_file = None
+        ballot_path_v2 = os.path.join(self.usb_mount_point, "elections", election_id, "ballots")
+        ballot_path_v1 = os.path.join(self.usb_mount_point, "elections", election_id, "ballots")
         
-        if not os.path.exists(ballots_dir):
-            raise Exception(f"USB drive or election folder not found at: {ballots_dir}")
+        # Check which format exists
+        if os.path.exists(ballot_path_v2):
+            ballots_dir = ballot_path_v2
+        elif os.path.exists(ballot_path_v1):
+            ballots_dir = ballot_path_v1
+        else:
+            raise Exception(f"USB drive or election folder not found at: {ballot_path_v2}")
 
-        # Get all JSON files from the USB drive
-        available_files = [f for f in os.listdir(ballots_dir) if f.endswith('.json')]
+        # Get all JSON files from the USB drive (support both .json and .enc.json)
+        available_files = [
+            f for f in os.listdir(ballots_dir) 
+            if f.endswith('.json') or f.endswith('.enc.json')
+        ]
         if not available_files:
             raise Exception(f"No ballot files found in {ballots_dir}")
 
@@ -95,7 +107,8 @@ class BallotManager:
 
         # Find the first available file that hasn't been used
         for file_name in available_files:
-            ballot_id = file_name.replace('.json', '')
+            # Strip both .enc.json and .json extensions
+            ballot_id = file_name.replace('.enc.json', '').replace('.json', '')
             
             if ballot_id not in used_ids:
                 # Found an unused ballot!
@@ -120,7 +133,7 @@ class BallotManager:
                         if not os.path.exists(key_path):
                             raise Exception("private.pem not found for decryption")
                             
-                        # 1. Unlock Private Key using Hardware Identity
+                        # 1. Unlock Private Key using Hardware Identity (RPi only)
                         try:
                             passphrase = hardware_crypto.get_hardware_passphrase()
                             with open(key_path, "rb") as kf:
