@@ -55,18 +55,82 @@ class VotingApp:
         
         tk.Label(frame, text="System Initialization", font=('Helvetica', 32, 'bold'), bg="#E8F5E9", fg="#2E7D32").pack(pady=(150, 20))
         tk.Label(frame, text="Please insert the Election Data USB Drive to start.", font=('Helvetica', 24), bg="#E8F5E9", fg="#333").pack(pady=20)
+        tk.Label(frame, text="(Waiting for USB with 'ballot' folder)", font=('Helvetica', 14), bg="#E8F5E9", fg="#666").pack(pady=5)
 
         self.check_usb_loop()
 
     def check_usb_loop(self):
-        # Try to find the USB drive
+        # Try to find the USB drive with 'ballot' folder
         usb_path = self.ballot_manager._find_usb_drive(None)
+        ballot_path = os.path.join(usb_path, "ballot") if usb_path else None
 
-        if usb_path and os.path.exists(os.path.join(usb_path, "elections")):
+        if ballot_path and os.path.exists(ballot_path):
+            # Found USB with encrypted ballot folder - trigger import
             self.ballot_manager.usb_mount_point = usb_path
-            self.initialize_core_services()
+            self.import_encrypted_ballots(usb_path)
         else:
             self.root.after(2000, self.check_usb_loop)
+
+    def import_encrypted_ballots(self, usb_path):
+        """Import encrypted ballots from USB and prepare for voting."""
+        self.clear_container()
+        frame = tk.Frame(self.main_container, bg="#E8F5E9")
+        frame.pack(expand=True, fill=tk.BOTH)
+        
+        tk.Label(frame, text="Importing Ballots", font=('Helvetica', 32, 'bold'), bg="#E8F5E9", fg="#2E7D32").pack(pady=(150, 20))
+        status_label = tk.Label(frame, text="Decrypting and importing ballots...", font=('Helvetica', 18), bg="#E8F5E9", fg="#333")
+        status_label.pack(pady=20)
+        
+        def run_import():
+            try:
+                from usb_ballot_import import USBBallotImporter
+                
+                ballot_path = os.path.join(usb_path, "ballot")
+                
+                # Create importer (demo_mode=False requires RPi hardware)
+                importer = USBBallotImporter(
+                    private_key_path="private.pem",
+                    local_storage_dir="ballot",
+                    demo_mode=False
+                )
+                
+                # Run import
+                status_label.config(text="Decrypting AES key...")
+                self.root.update()
+                
+                summary = importer.import_usb_ballots(
+                    usb_ballot_path=ballot_path,
+                    elections_base_dir="elections"
+                )
+                
+                if summary["status"] == "success":
+                    status_label.config(
+                        text=f"✓ Successfully imported {summary['total_ballots']} ballots\nProceeding to initialization...",
+                        fg="#2E7D32"
+                    )
+                    self.root.after(2000, self.initialize_core_services)
+                else:
+                    error_msg = "\\n".join(summary["errors"])
+                    status_label.config(
+                        text=f"✗ Import failed:\\n{error_msg}",
+                        fg="#C62828"
+                    )
+                    status_label.config(wraplength=600)
+                    # Retry after error
+                    self.root.after(5000, self.show_usb_waiting_screen)
+                    
+            except Exception as e:
+                status_label.config(
+                    text=f"✗ Error: {str(e)}",
+                    fg="#C62828",
+                    wraplength=600
+                )
+                # Retry after error
+                self.root.after(5000, self.show_usb_waiting_screen)
+        
+        # Run import in background thread to prevent UI freeze
+        import_thread = threading.Thread(target=run_import, daemon=True)
+        import_thread.start()
 
     def end_election(self):
         """Triggers the secure export process and halts the EVM."""
@@ -100,12 +164,20 @@ class VotingApp:
             from data_handler import DataHandler
             from printer_service import PrinterService
             
-            # Since candidate.json might not exist at the root, we default to the first election found
-            elections_base = os.path.join(self.ballot_manager.usb_mount_point, "elections")
+            # Use only local elections directory (imported from USB)
+            elections_base = "elections"
+            
+            if not os.path.exists(elections_base):
+                raise Exception(f"Elections directory not found at {elections_base}. Import may have failed.")
+            
+            # Get first election
             first_election = next(os.scandir(elections_base)).name if os.path.exists(elections_base) else None
-            candidate_path = os.path.join(elections_base, first_election, "candidates.json") if first_election else "candidates.json"
+            if not first_election:
+                raise Exception("No elections found in local elections directory")
+                
+            candidate_path = os.path.join(elections_base, first_election, "candidates.json")
 
-            print(f"Initializing DataHandler with base candidate map: {candidate_path}")
+            print(f"Initializing DataHandler with candidate map: {candidate_path}")
             self.data_handler = DataHandler(candidate_path, log_file=self.votes_log, token_log_file=self.tokens_log) 
             self.printer_service = PrinterService(self.data_handler)
             

@@ -32,11 +32,11 @@ class BallotManager:
 
     def _find_usb_drive(self, user_provided_path):
         """
-        Attempts to find the USB drive automatically by looking for an 'elections' folder
-        in common Raspberry Pi / Linux mount points.
+        Attempts to find the USB drive automatically by looking for the 'ballot' folder
+        (new encrypted ballot structure) in common Raspberry Pi / Linux mount points.
         """
         # 1. If the user explicitly provided a path that works, use it.
-        if user_provided_path and os.path.exists(os.path.join(user_provided_path, "elections")):
+        if user_provided_path and os.path.exists(os.path.join(user_provided_path, "ballot")):
             return user_provided_path
 
         # 2. Check common mount directories where USBs appear
@@ -56,8 +56,8 @@ class BallotManager:
             for item in os.listdir(base_dir):
                 potential_usb = os.path.join(base_dir, item)
                 if os.path.isdir(potential_usb):
-                    # Does this potential USB drive have an 'elections' folder?
-                    if os.path.isdir(os.path.join(potential_usb, "elections")):
+                    # Check for 'ballot' folder only
+                    if os.path.isdir(os.path.join(potential_usb, "ballot")):
                         return potential_usb
                         
         # If we failed to find it dynamically, fallback to the hardcoded default so the error
@@ -66,10 +66,10 @@ class BallotManager:
 
     def get_unused_ballot(self, election_id=None):
         """
-        Returns (ballot_id, absolute_path_to_json) by reading from the USB drive
-        and ensuring the ID is not marked as USED in SQLite.
+        Returns (ballot_id, absolute_path_to_json) by reading from the local elections directory
+        (after import from USB) and ensuring the ID is not marked as USED in SQLite.
         
-        Supports both old (E1, E3, etc.) and new (election_id_1, election_id_2, etc.) naming.
+        NOTE: All ballots must be previously imported from USB to local 'elections' directory.
         """
         if not election_id:
              raise Exception("Election ID Required to fetch ballots.")
@@ -77,23 +77,16 @@ class BallotManager:
         if self.conn is None:
              raise Exception("SQLite DB not connected! Cannot verify ballot usage.")
 
-        # Try both naming conventions: election_id_X and legacy X format
-        candidates_file = None
-        ballot_path_v2 = os.path.join(self.usb_mount_point, "elections", election_id, "ballots")
-        ballot_path_v1 = os.path.join(self.usb_mount_point, "elections", election_id, "ballots")
+        # Look only in local elections directory (imported from USB)
+        ballots_dir = os.path.join("elections", election_id, "ballots")
         
-        # Check which format exists
-        if os.path.exists(ballot_path_v2):
-            ballots_dir = ballot_path_v2
-        elif os.path.exists(ballot_path_v1):
-            ballots_dir = ballot_path_v1
-        else:
-            raise Exception(f"USB drive or election folder not found at: {ballot_path_v2}")
+        if not os.path.exists(ballots_dir):
+            raise Exception(f"Election folder not found at: {ballots_dir}")
 
-        # Get all JSON files from the USB drive (support both .json and .enc.json)
+        # Get all JSON files from local elections directory
         available_files = [
             f for f in os.listdir(ballots_dir) 
-            if f.endswith('.json') or f.endswith('.enc.json')
+            if f.endswith('.json')
         ]
         if not available_files:
             raise Exception(f"No ballot files found in {ballots_dir}")
@@ -107,8 +100,8 @@ class BallotManager:
 
         # Find the first available file that hasn't been used
         for file_name in available_files:
-            # Strip both .enc.json and .json extensions
-            ballot_id = file_name.replace('.enc.json', '').replace('.json', '')
+            # Strip .json extension
+            ballot_id = file_name.replace('.json', '')
             
             if ballot_id not in used_ids:
                 # Found an unused ballot!
@@ -119,15 +112,21 @@ class BallotManager:
                     with open(selected_file, 'rb') as f:
                         file_content = f.read()
 
-                    try:
-                        # Try parsing as plain JSON
-                        json.loads(file_content.decode('utf-8'))
-                    except (ValueError, UnicodeDecodeError):
-                        # If plain JSON parsing fails, try to decrypt with RSA Chunks
-                        from cryptography.hazmat.primitives.asymmetric import padding
-                        from cryptography.hazmat.primitives import hashes
-                        from cryptography.hazmat.primitives import serialization
-                        import hardware_crypto
+                    # Verify it's valid JSON
+                    json.loads(file_content.decode('utf-8'))
+                    return ballot_id, selected_file
+                    
+                except Exception as e:
+                    print(f"File {selected_file} is corrupt or unreadable: {e}. Skipping...")
+                    # Mark it as 'CORRUPT' so we don't try it again
+                    self.cursor.execute('''
+                        INSERT OR REPLACE INTO ballots (ballot_id, election_id, status)
+                        VALUES (?, ?, 'CORRUPT')
+                    ''', (ballot_id, election_id))
+                    self.conn.commit()
+                    used_ids.add(ballot_id) # Skip in this loop
+
+        raise Exception(f"No unused ballots remaining for {election_id}!")
                         
                         key_path = "private.pem"
                         if not os.path.exists(key_path):
