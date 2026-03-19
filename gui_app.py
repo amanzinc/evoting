@@ -170,8 +170,16 @@ class VotingApp:
             if not os.path.exists(elections_base):
                 raise Exception(f"Elections directory not found at {elections_base}. Import may have failed.")
             
-            # Get first election
-            first_election = next(os.scandir(elections_base)).name if os.path.exists(elections_base) else None
+            # Prefer new folder naming (election_id_*) over legacy E* folders.
+            election_dirs = [
+                entry.name for entry in os.scandir(elections_base)
+                if entry.is_dir()
+            ] if os.path.exists(elections_base) else []
+
+            preferred = sorted([eid for eid in election_dirs if eid.startswith("election_id_")])
+            fallback = sorted(election_dirs)
+            first_election = preferred[0] if preferred else (fallback[0] if fallback else None)
+
             if not first_election:
                 raise Exception("No elections found in local elections directory")
                 
