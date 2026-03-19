@@ -13,6 +13,8 @@ class DataHandler:
         self.ballot_id = "" # Store the specific generic complex payload ID
         self.ballot_file_id = "" # Store the filename for SQLite logic
         self.candidates_base = []
+        self.pref_combo_map = {}
+        self.max_preferences = 1
         
         # Initialize cryptographic hash chain
         self.last_hash = None
@@ -57,6 +59,7 @@ class DataHandler:
     def load_candidates(self):
         """Loads candidates from the specific ballot/candidate file."""
         self.candidates_base = []
+        self.pref_combo_map = {}
         
         if not os.path.exists(self.candidates_file):
             raise FileNotFoundError(f"{self.candidates_file} not found!")
@@ -135,6 +138,71 @@ class DataHandler:
             else:
                 candidates_list = candidates_data
 
+            # Detect special preferential layout where each row encodes a pair,
+            # e.g., candidate_name="NAFS,David" and entry_number="012,E004".
+            has_pair_layout = False
+            if isinstance(candidates_list, list) and candidates_list:
+                for cand in candidates_list:
+                    raw_name = str(cand.get("candidate_name", ""))
+                    raw_num = str(cand.get("entry_number", cand.get("candidate_number", "")))
+                    if "," in raw_name or "," in raw_num:
+                        has_pair_layout = True
+                        break
+
+            if has_pair_layout and "preferential" in str(self.election_type).lower():
+                unique_by_name = {}
+                ordered_names = []
+
+                for i, cand in enumerate(candidates_list):
+                    cand_commitment = self.commitments_list[i] if i < len(self.commitments_list) else ""
+                    pref_id = cand.get("pref_id", cand.get("serial_id", i))
+                    raw_name = str(cand.get("candidate_name", "Unknown"))
+                    raw_num = str(cand.get("entry_number", cand.get("candidate_number", "")))
+
+                    name_parts = [p.strip() for p in raw_name.split(",")]
+                    num_parts = [p.strip() for p in raw_num.split(",")]
+
+                    while len(num_parts) < len(name_parts):
+                        num_parts.append("")
+
+                    # Build pair -> (pref_id, commitment) lookup.
+                    if len(name_parts) >= 2:
+                        pair_key = (name_parts[0], name_parts[1])
+                        self.pref_combo_map[pair_key] = {
+                            "pref_id": str(pref_id),
+                            "commitment": cand_commitment
+                        }
+
+                    # Extract unique candidate options for UI rendering.
+                    for idx, name in enumerate(name_parts):
+                        if name and name not in unique_by_name:
+                            unique_by_name[name] = {
+                                "name": name,
+                                "candidate_number": num_parts[idx] if idx < len(num_parts) else "",
+                                "party": cand.get("candidate_party", "")
+                            }
+                            ordered_names.append(name)
+
+                # Keep NAFS as id 0 so existing UI logic remains stable.
+                normalized_names = []
+                if "NAFS" in ordered_names:
+                    normalized_names.append("NAFS")
+                normalized_names.extend([n for n in ordered_names if n != "NAFS"])
+
+                for idx, name in enumerate(normalized_names):
+                    item = unique_by_name[name]
+                    self.candidates_base.append({
+                        "id": idx,
+                        "name": item["name"],
+                        "candidate_number": item["candidate_number"],
+                        "party": item["party"],
+                        "commitment": ""
+                    })
+
+                # Pair-based ballots need exactly two preference picks.
+                self.max_preferences = 2
+                return self.candidates_base
+
             for i, cand in enumerate(candidates_list):
                 cand_commitment = self.commitments_list[i] if i < len(self.commitments_list) else ""
                 
@@ -151,6 +219,7 @@ class DataHandler:
                 })
             
             self.candidates_base.sort(key=lambda x: x['id'])
+            self.max_preferences = max(1, len(self.candidates_base) - 1)
             return self.candidates_base
 
         except Exception as e:
@@ -158,6 +227,40 @@ class DataHandler:
 
     def get_candidate_by_id(self, cid):
         return next((c for c in self.candidates_base if c['id'] == cid), None)
+
+    def resolve_preferential_selection(self, selections):
+        """
+        Resolve final preferential pref_id/commitment.
+        For pair-layout ballots, map selected pair (name1, name2) to the source row commitment.
+        """
+        ranks = sorted(selections.keys())
+
+        if self.pref_combo_map:
+            names = []
+            for rank in ranks[:2]:
+                cand = self.get_candidate_by_id(selections[rank])
+                if cand:
+                    names.append(cand["name"])
+
+            if len(names) == 2:
+                pair_key = (names[0], names[1])
+                hit = self.pref_combo_map.get(pair_key)
+                if hit:
+                    return str(hit.get("pref_id", "")), str(hit.get("commitment", "")), f"{names[0]},{names[1]}"
+
+            # Pair layout present but no exact match.
+            return "", "", ",".join(names)
+
+        # Default preferential behavior for non-pair ballots.
+        pref_id = "_".join(
+            str(self.get_candidate_by_id(selections[r])['id'])
+            for r in ranks if self.get_candidate_by_id(selections[r])
+        )
+        commitment = "_".join(
+            str(self.get_candidate_by_id(selections[r]).get('commitment', ''))
+            for r in ranks if self.get_candidate_by_id(selections[r])
+        )
+        return pref_id, commitment, pref_id
 
     def is_token_used(self, token_id):
         """Checks if the token_id has already been logged."""
@@ -214,10 +317,7 @@ class DataHandler:
             pref_id = str(cand['id']) if cand else ""
             commitment = cand['commitment'] if cand else ""
         else:
-            # For preferential, we join the candidate IDs by rank
-            ranks = sorted(selections.keys())
-            pref_id = "_".join(str(self.get_candidate_by_id(selections[r])['id']) for r in ranks if self.get_candidate_by_id(selections[r]))
-            commitment = "_".join(str(self.get_candidate_by_id(selections[r]).get('commitment', '')) for r in ranks if self.get_candidate_by_id(selections[r]))
+            pref_id, commitment, _ = self.resolve_preferential_selection(selections)
             
         # Generate secure rolling hash
         import hashlib

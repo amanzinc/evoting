@@ -561,7 +561,7 @@ class VotingApp:
         self.voting_mode = 'preferential'
         self.selections = {}
         self.current_rank = 1
-        self.max_ranks = max(1, len(self.data_handler.candidates_base) - 1)
+        self.max_ranks = max(1, getattr(self.data_handler, 'max_preferences', len(self.data_handler.candidates_base) - 1))
         self.show_selection_screen()
 
     def show_selection_screen(self):
@@ -831,13 +831,18 @@ class VotingApp:
                 vals.append(get_cand_display(c))
             sel_str = ", ".join(vals)
 
-            qr_parts = []
-            for r in ranks:
-                cand = self.data_handler.get_candidate_by_id(self.selections[r])
-                c_disp = get_cand_display(self.selections[r])
-                c_comm = cand.get('commitment', '') if cand else ""
-                qr_parts.append(f"{c_disp}:{c_comm}")
-            qr_data = "_".join(qr_parts)
+            pref_id, pref_commitment, pref_label = self.data_handler.resolve_preferential_selection(self.selections)
+            if pref_commitment:
+                # Print commitment corresponding to selected preference tuple.
+                qr_data = f"{pref_label}:{pref_commitment}"
+            else:
+                qr_parts = []
+                for r in ranks:
+                    cand = self.data_handler.get_candidate_by_id(self.selections[r])
+                    c_disp = get_cand_display(self.selections[r])
+                    c_comm = cand.get('commitment', '') if cand else ""
+                    qr_parts.append(f"{c_disp}:{c_comm}")
+                qr_data = "_".join(qr_parts)
 
         # Pre-generate log JSON while context is valid
         vote_record = self.data_handler.generate_vote_json(
