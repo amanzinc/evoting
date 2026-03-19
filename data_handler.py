@@ -14,6 +14,7 @@ class DataHandler:
         self.ballot_file_id = "" # Store the filename for SQLite logic
         self.candidates_base = []
         self.pref_combo_map = {}
+        self.pref_rank_name_sets = {}
         self.max_preferences = 1
         
         # Initialize cryptographic hash chain
@@ -60,6 +61,7 @@ class DataHandler:
         """Loads candidates from the specific ballot/candidate file."""
         self.candidates_base = []
         self.pref_combo_map = {}
+        self.pref_rank_name_sets = {}
         
         if not os.path.exists(self.candidates_file):
             raise FileNotFoundError(f"{self.candidates_file} not found!")
@@ -152,6 +154,7 @@ class DataHandler:
             if has_pair_layout and "preferential" in str(self.election_type).lower():
                 unique_by_name = {}
                 ordered_names = []
+                self.pref_rank_name_sets = {1: set(), 2: set()}
 
                 for i, cand in enumerate(candidates_list):
                     cand_commitment = self.commitments_list[i] if i < len(self.commitments_list) else ""
@@ -172,6 +175,8 @@ class DataHandler:
                             "pref_id": str(pref_id),
                             "commitment": cand_commitment
                         }
+                        self.pref_rank_name_sets[1].add(name_parts[0])
+                        self.pref_rank_name_sets[2].add(name_parts[1])
 
                     # Extract unique candidate options for UI rendering.
                     for idx, name in enumerate(name_parts):
@@ -227,6 +232,13 @@ class DataHandler:
 
     def get_candidate_by_id(self, cid):
         return next((c for c in self.candidates_base if c['id'] == cid), None)
+
+    def get_candidates_for_rank(self, rank):
+        """Return unique candidate options for a given preferential rank screen."""
+        if self.pref_rank_name_sets and rank in self.pref_rank_name_sets:
+            allowed = self.pref_rank_name_sets[rank]
+            return [c for c in self.candidates_base if c.get("name") in allowed]
+        return self.candidates_base
 
     def resolve_preferential_selection(self, selections):
         """

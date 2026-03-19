@@ -588,10 +588,12 @@ class VotingApp:
         if self.current_rank in self.selections:
              self.current_selection_var.set(self.selections[self.current_rank])
 
-        # In both modes, we render all options.
-        # For preferential, we will disable the previously selected ones instead of hiding them.
-        all_opts = self.data_handler.candidates_base
-        available_candidates = all_opts
+        # In preferential pair-layout ballots, each rank screen may have a different
+        # unique candidate set (rank-1 options vs rank-2 options).
+        if self.voting_mode == 'preferential' and hasattr(self.data_handler, 'get_candidates_for_rank'):
+            available_candidates = self.data_handler.get_candidates_for_rank(self.current_rank)
+        else:
+            available_candidates = self.data_handler.candidates_base
 
         total_options = len(available_candidates)
         rows_per_col = (total_options + 1) // 2
