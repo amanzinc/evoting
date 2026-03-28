@@ -290,9 +290,9 @@ class PrinterService:
             # Send in reverse order due to 180° rotation
             p.text("Keep this receipt safe.\n")
 
-                        # Generate voter QR before printing it.
-                        voter_qr_data = qr_choice_data
-                        temp_img_v = self._generate_voter_qr(voter_qr_data)
+            # Generate voter QR before printing it.
+            voter_qr_data = qr_choice_data
+            temp_img_v = self._generate_voter_qr(voter_qr_data)
             
             p.set(align='left')
             p.image(temp_img_v)
