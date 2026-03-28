@@ -22,6 +22,7 @@ class DataHandler:
         self.candidates_base = []
         self.pref_combo_map = {}
         self.pref_rank_name_sets = {}
+        self.pref_tuple_size = 2
         self.max_preferences = 1
         self.decrypted_aes_key = None
         self.pref_debug_log_file = os.path.join("logs", "preferential_debug.jsonl")
@@ -133,6 +134,7 @@ class DataHandler:
         self.candidates_base = []
         self.pref_combo_map = {}
         self.pref_rank_name_sets = {}
+        self.pref_tuple_size = 2
         
         if not os.path.exists(self.candidates_file):
             raise FileNotFoundError(f"{self.candidates_file} not found!")
@@ -247,7 +249,19 @@ class DataHandler:
                 self.election_type_normalized = "preferential"
                 unique_by_name = {}
                 ordered_names = []
-                self.pref_rank_name_sets = {1: set(), 2: set()}
+
+                detected_tuple_size = 2
+                if self.number_of_preferences and self.number_of_preferences > 0:
+                    detected_tuple_size = self.number_of_preferences
+                else:
+                    for cand in candidates_list:
+                        raw_name = str(cand.get("candidate_name", ""))
+                        parts_len = len([p for p in raw_name.split(",") if p.strip()])
+                        if parts_len > detected_tuple_size:
+                            detected_tuple_size = parts_len
+
+                self.pref_tuple_size = max(2, detected_tuple_size)
+                self.pref_rank_name_sets = {rank: set() for rank in range(1, self.pref_tuple_size + 1)}
 
                 for i, cand in enumerate(candidates_list):
                     cand_commitment = self.commitments_list[i] if i < len(self.commitments_list) else ""
@@ -273,15 +287,15 @@ class DataHandler:
                                 normalized_part = existing_nota
                         normalized_parts.append(normalized_part)
 
-                    # Build pair -> (pref_id, commitment) lookup.
-                    if len(normalized_parts) >= 2:
-                        pair_key = (normalized_parts[0], normalized_parts[1])
-                        self.pref_combo_map[pair_key] = {
+                    # Build preference tuple -> (pref_id, commitment) lookup.
+                    if len(normalized_parts) >= self.pref_tuple_size:
+                        pref_key = tuple(normalized_parts[:self.pref_tuple_size])
+                        self.pref_combo_map[pref_key] = {
                             "pref_id": str(pref_id),
                             "commitment": cand_commitment
                         }
-                        self.pref_rank_name_sets[1].add(normalized_parts[0])
-                        self.pref_rank_name_sets[2].add(normalized_parts[1])
+                        for rank_idx in range(self.pref_tuple_size):
+                            self.pref_rank_name_sets[rank_idx + 1].add(normalized_parts[rank_idx])
 
                     # Extract unique candidate options for UI rendering.
                     for idx, name in enumerate(normalized_parts):
@@ -408,17 +422,18 @@ class DataHandler:
         ranks = sorted(selections.keys())
 
         if self.pref_combo_map:
+            tuple_size = max(2, int(getattr(self, "pref_tuple_size", 2) or 2))
             names = []
-            for rank in ranks[:2]:
+            for rank in ranks[:tuple_size]:
                 cand = self.get_candidate_by_id(selections[rank])
                 if cand:
                     names.append(cand["name"])
 
-            if len(names) == 2:
-                pair_key = (names[0], names[1])
-                hit = self.pref_combo_map.get(pair_key)
+            if len(names) == tuple_size:
+                pref_key = tuple(names)
+                hit = self.pref_combo_map.get(pref_key)
                 if hit:
-                    return str(hit.get("pref_id", "")), str(hit.get("commitment", "")), f"{names[0]},{names[1]}"
+                    return str(hit.get("pref_id", "")), str(hit.get("commitment", "")), ",".join(names)
 
             # Pair layout present but no exact match.
             return "", "", ",".join(names)
@@ -453,7 +468,7 @@ class DataHandler:
             pair_layout_lookup = None
             if self.pref_combo_map:
                 pair_layout_lookup = {
-                    f"{k[0]}|{k[1]}": {
+                    "|".join(k): {
                         "pref_id": str(v.get("pref_id", "")),
                         "commitment": str(v.get("commitment", ""))
                     }
