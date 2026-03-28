@@ -354,8 +354,8 @@ class VotingApp:
 
     def skip_rfid_check(self):
         self.stop_scanning = True
-        # Simulate Multi-Election Token
-        payload = '{"token_id": "DEV_SKIP_' + str(int(time.time())) + '", "eid_vector": "election_id_1;election_id_2"}'
+        # Simulate single-election token for election_id_1 only
+        payload = '{"token_id": "DEV_SKIP_' + str(int(time.time())) + '", "eid_vector": "election_id_1"}'
         self.on_card_scanned(payload)
 
     def _normalize_election_id(self, election_id):
