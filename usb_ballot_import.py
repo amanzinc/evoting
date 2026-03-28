@@ -358,10 +358,14 @@ class USBBallotImporter:
             if os.path.exists(candidates_file):
                 shutil.copy2(candidates_file, os.path.join(local_election_dir, "candidates.json"))
             
-            # Import all ballots for this election
+            # Import all ballots for this election.
+            # Skip hidden/resource-fork files (e.g., macOS ._ sidecar files).
             ballot_files = sorted([
                 f for f in os.listdir(ballot_folder)
                 if f.endswith(".enc.json")
+                and not f.startswith(".")
+                and not f.startswith("._")
+                and os.path.isfile(os.path.join(ballot_folder, f))
             ])
             
             ballots_imported = 0
