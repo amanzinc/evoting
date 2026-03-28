@@ -283,6 +283,9 @@ class PrinterService:
             p.text(TOP_BAR + "\n")
             p.set(align='left', bold=False)
 
+            # Extra feed so VVPAT content is fully visible before cut.
+            p.text("\n\n")
+
             # Keep VVPAT visible briefly before cutting.
             time.sleep(5)
             p.cut(mode='FULL')
@@ -439,6 +442,9 @@ class PrinterService:
             p.text(self._center_line("CONSOLIDATED VVPAT SLIPS") + "\n")
             p.text(TOP_BAR + "\n")
             p.set(align='left', font='a', width=1, height=1, bold=True)
+
+            # Extra feed so VVPAT strip is fully visible before cut.
+            p.text("\n\n")
 
             # Keep VVPAT strip visible briefly before cutting.
             time.sleep(5)
