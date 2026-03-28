@@ -24,6 +24,8 @@ class DataHandler:
         self.pref_rank_name_sets = {}
         self.max_preferences = 1
         self.decrypted_aes_key = None
+        self.pref_debug_log_file = os.path.join("logs", "preferential_debug.jsonl")
+        self.current_ballot_plain = None
         
         # Initialize cryptographic hash chain
         self.last_hash = None
@@ -198,6 +200,7 @@ class DataHandler:
             self.election_type = data.get("election_type", "Normal")
             self.election_type_normalized = self._normalize_election_type(self.election_type)
             self.election_name = data.get("election_name", "General Election")
+            self.current_ballot_plain = data
 
             raw_pref_count = data.get("number_of_preferences", None)
             try:
@@ -431,6 +434,80 @@ class DataHandler:
         )
         return pref_id, commitment, pref_id
 
+    def _log_preferential_debug(self, selections, pref_id, commitment, pref_label, voter_id, token_id, booth_num, timestamp):
+        """Write detailed preferential selection mapping for debugging."""
+        try:
+            os.makedirs("logs", exist_ok=True)
+
+            ranked_selection = []
+            for rank in sorted(selections.keys()):
+                cid = selections.get(rank)
+                cand = self.get_candidate_by_id(cid)
+                ranked_selection.append({
+                    "rank": rank,
+                    "candidate_id": cid,
+                    "candidate_name": cand.get("name") if cand else "",
+                    "candidate_number": cand.get("candidate_number") if cand else ""
+                })
+
+            pair_layout_lookup = None
+            if self.pref_combo_map:
+                pair_layout_lookup = {
+                    f"{k[0]}|{k[1]}": {
+                        "pref_id": str(v.get("pref_id", "")),
+                        "commitment": str(v.get("commitment", ""))
+                    }
+                    for k, v in self.pref_combo_map.items()
+                }
+
+            debug_record = {
+                "timestamp": timestamp,
+                "election_id": self.election_id,
+                "ballot_id": self.ballot_id,
+                "ballot_file_id": self.ballot_file_id,
+                "voter_id": voter_id,
+                "token_id": token_id,
+                "booth_num": booth_num,
+                "selections": ranked_selection,
+                "resolved_pref_label": pref_label,
+                "resolved_pref_id": str(pref_id),
+                "resolved_commitment": str(commitment),
+                "pair_layout_lookup": pair_layout_lookup
+            }
+
+            with open(self.pref_debug_log_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(debug_record, ensure_ascii=False) + "\n")
+        except Exception as e:
+            print(f"Warning: failed to write preferential debug log: {e}")
+
+    def store_used_ballot_snapshot(self, election_id=None, ballot_file_id=None, status="USED"):
+        """Persist decrypted snapshot of the currently loaded ballot for auditing/debugging."""
+        try:
+            if not isinstance(self.current_ballot_plain, dict):
+                print("Warning: no decrypted ballot payload available to snapshot.")
+                return
+
+            eid = str(election_id or self.election_id or "unknown_election")
+            bid = str(ballot_file_id or self.ballot_file_id or "unknown_ballot")
+
+            out_dir = os.path.join("logs", "used_ballots", eid)
+            os.makedirs(out_dir, exist_ok=True)
+            out_path = os.path.join(out_dir, f"{bid}.json")
+
+            payload = {
+                "snapshot_timestamp": __import__("datetime").datetime.now().isoformat(),
+                "status": str(status),
+                "election_id": eid,
+                "ballot_file_id": bid,
+                "ballot_id": self.ballot_id,
+                "ballot": self.current_ballot_plain
+            }
+
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Warning: failed to store used ballot snapshot: {e}")
+
     def is_token_used(self, token_id):
         """Checks if the token_id has already been logged."""
         if not os.path.exists(self.token_log_file):
@@ -486,7 +563,17 @@ class DataHandler:
             pref_id = str(cand['id']) if cand else ""
             commitment = cand['commitment'] if cand else ""
         else:
-            pref_id, commitment, _ = self.resolve_preferential_selection(selections)
+            pref_id, commitment, pref_label = self.resolve_preferential_selection(selections)
+            self._log_preferential_debug(
+                selections=selections,
+                pref_id=pref_id,
+                commitment=commitment,
+                pref_label=pref_label,
+                voter_id=voter_id,
+                token_id=token_id,
+                booth_num=booth_num,
+                timestamp=timestamp
+            )
             
         # Generate secure rolling hash
         import hashlib

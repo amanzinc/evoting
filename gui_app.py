@@ -1277,6 +1277,11 @@ class VotingApp:
                     # But preventing reuse is critical.
                     # Let's Mark USed now. The risk is a wasted ballot on print fail. Acceptable.
                     self.ballot_manager.mark_as_used(self.data_handler.ballot_file_id, self.current_election_id)
+                    self.data_handler.store_used_ballot_snapshot(
+                        election_id=self.current_election_id,
+                        ballot_file_id=self.data_handler.ballot_file_id,
+                        status="USED"
+                    )
                     
                     if not self.merge_receipts:
                         messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
