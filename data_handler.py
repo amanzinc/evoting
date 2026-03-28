@@ -183,18 +183,30 @@ class DataHandler:
                     while len(num_parts) < len(name_parts):
                         num_parts.append("")
 
+                    normalized_parts = []
+                    for part in name_parts:
+                        normalized_part = part
+                        if self._is_nota_name(part):
+                            existing_nota = next(
+                                (k for k in unique_by_name.keys() if self._is_nota_name(k)),
+                                None
+                            )
+                            if existing_nota:
+                                normalized_part = existing_nota
+                        normalized_parts.append(normalized_part)
+
                     # Build pair -> (pref_id, commitment) lookup.
-                    if len(name_parts) >= 2:
-                        pair_key = (name_parts[0], name_parts[1])
+                    if len(normalized_parts) >= 2:
+                        pair_key = (normalized_parts[0], normalized_parts[1])
                         self.pref_combo_map[pair_key] = {
                             "pref_id": str(pref_id),
                             "commitment": cand_commitment
                         }
-                        self.pref_rank_name_sets[1].add(name_parts[0])
-                        self.pref_rank_name_sets[2].add(name_parts[1])
+                        self.pref_rank_name_sets[1].add(normalized_parts[0])
+                        self.pref_rank_name_sets[2].add(normalized_parts[1])
 
                     # Extract unique candidate options for UI rendering.
-                    for idx, name in enumerate(name_parts):
+                    for idx, name in enumerate(normalized_parts):
                         if name and name not in unique_by_name:
                             unique_by_name[name] = {
                                 "name": name,
@@ -203,13 +215,7 @@ class DataHandler:
                             }
                             ordered_names.append(name)
 
-                # Keep NAFS as id 0 so existing UI logic remains stable.
-                normalized_names = []
-                if "NAFS" in ordered_names:
-                    normalized_names.append("NAFS")
-                normalized_names.extend([n for n in ordered_names if n != "NAFS"])
-
-                for idx, name in enumerate(normalized_names):
+                for idx, name in enumerate(ordered_names):
                     item = unique_by_name[name]
                     self.candidates_base.append({
                         "id": idx,
@@ -231,10 +237,17 @@ class DataHandler:
                 # Support new "pref_id" & "entry_number" or fallback to old schema
                 pref_id = cand.get("pref_id", cand.get("serial_id", i))
                 entry_number = cand.get("entry_number", cand.get("candidate_number", ""))
+                candidate_name = str(cand.get("candidate_name", "Unknown")).strip()
+
+                # Do not add NOTA/NAFS twice if ballot includes multiple aliases.
+                if self._is_nota_name(candidate_name) and any(
+                    self._is_nota_name(existing.get("name", "")) for existing in self.candidates_base
+                ):
+                    continue
                 
                 self.candidates_base.append({
                     "id": int(pref_id),
-                    "name": cand.get("candidate_name", "Unknown"),
+                    "name": candidate_name,
                     "candidate_number": entry_number,
                     "party": cand.get("candidate_party", ""),
                     "commitment": cand_commitment
@@ -291,6 +304,10 @@ class DataHandler:
     def _normalize_election_type(self, value):
         """Normalize election type to simplify robust matching across case/style variants."""
         return str(value or "").strip().lower()
+
+    def _is_nota_name(self, value):
+        text = str(value or "").strip().lower()
+        return text in ("nafs", "nota", "none of the above", "none-of-the-above")
 
     def is_preferential_election(self):
         """Return True for preferential/ranked election types, case-insensitive."""

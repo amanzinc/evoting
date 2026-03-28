@@ -1,7 +1,5 @@
 import tkinter as tk
 from tkinter import messagebox
-from data_handler import DataHandler
-from printer_service import PrinterService
 from gui_app import VotingApp
 from ballot_manager import BallotManager
 import os
@@ -35,7 +33,7 @@ def main():
     
     # We will initialize DataHandler and PrinterService AFTER the USB is detected.
     # For now, we launch the GUI with placeholders.
-    app = VotingApp(root, None, None, bm, rfid_service, db_path, votes_log, tokens_log, log_dir)
+    VotingApp(root, None, None, bm, rfid_service, db_path, votes_log, tokens_log, log_dir)
     root.mainloop()
 
 if __name__ == "__main__":

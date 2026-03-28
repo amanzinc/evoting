@@ -18,6 +18,7 @@ class PrinterService:
         self.printer = None
         self.paper_width_chars = self._read_int_env("EVOTING_PAPER_WIDTH_CHARS", 32)
         self.paper_width_dots = self._read_int_env("EVOTING_PAPER_WIDTH_DOTS", 384)
+        self.reverse_print = self._read_bool_env("EVOTING_PRINT_REVERSE", True)
         self.connect_printer()
 
     def _read_int_env(self, name, default_value):
@@ -29,11 +30,27 @@ class PrinterService:
         except Exception:
             return default_value
 
+    def _read_bool_env(self, name, default_value):
+        raw_value = os.environ.get(name)
+        if raw_value is None:
+            return default_value
+        return str(raw_value).strip().lower() in ("1", "true", "yes", "on")
+
     def _bar(self, char):
         return char * self.paper_width_chars
 
     def _center_line(self, text):
         return text.center(self.paper_width_chars)
+
+    def _set_reverse_print_mode(self, enabled):
+        if not self.reverse_print or not self.printer:
+            return
+        try:
+            # ESC { n enables/disables upside-down text mode in ESC/POS.
+            self.printer._raw(b"\x1b\x7b" + (b"\x01" if enabled else b"\x00"))
+        except Exception:
+            # Some printer backends may not expose raw ESC/POS commands.
+            pass
 
     def is_printer_connected(self):
         if self.printer is None:
@@ -229,6 +246,8 @@ class PrinterService:
         BOTTOM_BAR = self._bar("_")
 
         try:
+            self._set_reverse_print_mode(True)
+
             # ==========================================
             # RECEIPT 1: VVPAT (Internal / Box)
             # ==========================================
@@ -313,6 +332,8 @@ class PrinterService:
                 pass
             self.printer = None
             raise e
+        finally:
+            self._set_reverse_print_mode(False)
 
 
     def _generate_vvpat_qr(self, choice_data, ballot_id):
@@ -339,6 +360,8 @@ class PrinterService:
             draw.text((x_b + 5, 0), "Ballot ID", font=font, fill="black")
             img.paste(qr_c, (x_c, title_height))
             img.paste(qr_b, (x_b, title_height))
+            if self.reverse_print:
+                img = img.rotate(180)
             
             temp_filename = f"temp_qr_vvpat_{uuid.uuid4().hex}.png"
             img.save(temp_filename)
@@ -359,6 +382,8 @@ class PrinterService:
             img_v = Image.new('RGB', (total_width, height), 'white')
             x_pos = (total_width - qr_size) // 2
             img_v.paste(qr_h, (x_pos, 5))
+            if self.reverse_print:
+                img_v = img_v.rotate(180)
             
             temp_filename = f"temp_qr_voter_{uuid.uuid4().hex}.png"
             img_v.save(temp_filename)
@@ -383,6 +408,8 @@ class PrinterService:
         DIVIDER = self._bar("-")
         
         try:
+            self._set_reverse_print_mode(True)
+
             # ==============================
             # PART 1: CONSOLIDATED VVPAT
             # ==============================
@@ -461,6 +488,8 @@ class PrinterService:
                 pass
             self.printer = None
             raise e
+        finally:
+            self._set_reverse_print_mode(False)
 
     def _get_font(self, size):
         font_candidates = [
@@ -487,6 +516,7 @@ class PrinterService:
         try:
             p = self.printer
             TOP_BAR = self._bar("=")
+            self._set_reverse_print_mode(True)
             
             p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
@@ -527,6 +557,8 @@ class PrinterService:
             p.cut(mode='FULL')
         except Exception as e:
             print(f"Failed to print startup ticket: {e}")
+        finally:
+            self._set_reverse_print_mode(False)
 
     def print_end_election_ticket(self, final_hash, export_path):
         """Prints a physical ticket confirming the election has ended and showing the final hash.
@@ -547,6 +579,7 @@ class PrinterService:
         try:
             p = self.printer
             TOP_BAR = self._bar("=")
+            self._set_reverse_print_mode(True)
             
             p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
@@ -594,6 +627,8 @@ class PrinterService:
                 pass
             self.printer = None
             raise Exception(f"Failed to print end election ticket: {e}")
+        finally:
+            self._set_reverse_print_mode(False)
 
     def print_challenge_receipt(self, ballot_id, sel_str, voter_qr_data):
         """Prints a CHALLENGE receipt (voter copy only, no VVPAT).
@@ -610,6 +645,7 @@ class PrinterService:
             p = self.printer
             TOP_BAR = self._bar("=")
             timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
+            self._set_reverse_print_mode(True)
 
             p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(TOP_BAR + "\n")
@@ -650,3 +686,5 @@ class PrinterService:
                 pass
             self.printer = None
             raise Exception(f"Failed to print challenge receipt: {e}")
+        finally:
+            self._set_reverse_print_mode(False)

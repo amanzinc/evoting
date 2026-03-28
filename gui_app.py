@@ -636,7 +636,7 @@ class VotingApp:
             btn_font = ('Helvetica', 16); btn_pady = 8; frame_pady = 6
 
         for idx, cand in enumerate(available_candidates):
-            is_nota = (cand['name'] == "NAFS")
+            is_nota = hasattr(self.data_handler, '_is_nota_name') and self.data_handler._is_nota_name(cand.get('name'))
             cand_text = f"{cand['id']}. {cand['name']}"
             if cand.get('candidate_number'):
                 cand_text += f"\n{cand['candidate_number']}"
@@ -663,8 +663,8 @@ class VotingApp:
                         selected_rank = rank
                         break
                 
-                # Disable the button if selected previously AND it is not NAFS/NOTA
-                if selected_rank is not None and cand['name'] != "NAFS":
+                # Disable the button if selected previously AND it is not NOTA/NAFS.
+                if selected_rank is not None and not is_nota:
                     state_val = tk.DISABLED
                     bg_color = "#e0e0e0"
                     fg_color = "#888888"
