@@ -133,8 +133,8 @@ class VotingApp:
         import_thread.start()
 
     def end_election(self):
-        """Triggers the secure export process and halts the EVM."""
-        if messagebox.askyesno("Confirm End Election", "Are you sure you want to officially end the election?\nThis will export data to USB and shut down the terminal.", icon='warning'):
+        """Triggers secure export process without automatic shutdown."""
+        if messagebox.askyesno("Confirm End Election", "Are you sure you want to officially end the election?\nThis will export data to USB.", icon='warning'):
             try:
                 # Find the USB drive explicitly in case it was unplugged
                 usb_path = self.ballot_manager._find_usb_drive(None)
@@ -153,9 +153,7 @@ class VotingApp:
                 else:
                     raise Exception("Core services unavailable for end-of-election receipt printing.")
                 
-                messagebox.showinfo("Export Successful", f"Election successfully ended.\nEncrypted logs safely exported to:\n{export_path}\n\nYou can now safely power off the machine.")
-                self.root.destroy()
-                os.system("sudo shutdown now")
+                messagebox.showinfo("Export Successful", f"Election successfully ended.\nEncrypted logs safely exported to:\n{export_path}\n\nAutomatic shutdown is temporarily disabled.")
             except Exception as e:
                 messagebox.showerror("Export Error", f"A critical error occurred during export:\n{str(e)}")
 

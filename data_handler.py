@@ -1,6 +1,10 @@
 import json
 import csv
 import os
+import base64
+import struct
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 class DataHandler:
     def __init__(self, candidates_file, log_file="votes.json", token_log_file="tokens.log"):
@@ -19,6 +23,7 @@ class DataHandler:
         self.pref_combo_map = {}
         self.pref_rank_name_sets = {}
         self.max_preferences = 1
+        self.decrypted_aes_key = None
         
         # Initialize cryptographic hash chain
         self.last_hash = None
@@ -57,8 +62,69 @@ class DataHandler:
     def set_ballot_file(self, new_file):
         """Switches to a new ballot file and reloads candidates."""
         self.candidates_file = new_file
-        self.ballot_file_id = os.path.basename(new_file).replace('.json', '')
+        ballot_name = os.path.basename(new_file)
+        if ballot_name.endswith('.enc.json'):
+            self.ballot_file_id = ballot_name[:-len('.enc.json')]
+        elif ballot_name.endswith('.json'):
+            self.ballot_file_id = ballot_name[:-len('.json')]
+        else:
+            self.ballot_file_id = ballot_name
         self.load_candidates()
+
+    def _load_stored_aes_key(self):
+        """Load stored AES key generated during USB import."""
+        if self.decrypted_aes_key is not None:
+            return self.decrypted_aes_key
+
+        key_path = os.path.join("ballot", "aes_key.dec")
+        if not os.path.exists(key_path):
+            raise FileNotFoundError(f"Stored AES key not found at {key_path}")
+
+        with open(key_path, "r", encoding="utf-8") as f:
+            key_data = json.load(f)
+
+        aes_key_b64 = key_data.get("aes_key_b64")
+        if not aes_key_b64:
+            raise ValueError("aes_key_b64 missing in stored AES key file")
+
+        self.decrypted_aes_key = base64.b64decode(aes_key_b64)
+        return self.decrypted_aes_key
+
+    def _decrypt_aes_wrapped_ballot(self, envelope):
+        """Decrypt AES-GCM chunked ballot envelope into ballot JSON dict."""
+        nonce_b64 = envelope.get("nonce")
+        chunks = envelope.get("chunks", [])
+        num_chunks = envelope.get("num_chunks")
+
+        if not nonce_b64 or not chunks:
+            raise ValueError("Invalid encrypted ballot envelope: missing nonce/chunks")
+        if num_chunks is not None and int(num_chunks) != len(chunks):
+            raise ValueError(
+                f"Chunk count mismatch: num_chunks={num_chunks}, actual={len(chunks)}"
+            )
+
+        nonce_base = base64.b64decode(nonce_b64)
+        if len(nonce_base) != 12:
+            raise ValueError(f"Invalid nonce length {len(nonce_base)}; expected 12 bytes")
+
+        aes_key = self._load_stored_aes_key()
+        aesgcm = AESGCM(aes_key)
+
+        plaintext_parts = []
+        for chunk_index, chunk_b64 in enumerate(chunks):
+            chunk_ciphertext = base64.b64decode(chunk_b64)
+
+            chunk_nonce = bytearray(nonce_base)
+            idx_bytes = struct.pack(">I", chunk_index)
+            for i in range(4):
+                chunk_nonce[-(i + 1)] ^= idx_bytes[-(i + 1)]
+
+            aad = struct.pack(">I", chunk_index)
+            chunk_plaintext = aesgcm.decrypt(bytes(chunk_nonce), chunk_ciphertext, aad)
+            plaintext_parts.append(chunk_plaintext)
+
+        decrypted_ballot = b"".join(plaintext_parts)
+        return json.loads(decrypted_ballot.decode("utf-8"))
 
     def load_candidates(self):
         """Loads candidates from the specific ballot/candidate file."""
@@ -74,8 +140,11 @@ class DataHandler:
                 file_content = f.read()
 
             try:
-                # Try parsing as plain JSON first
+                # Try parsing as plain JSON first.
                 data = json.loads(file_content.decode('utf-8'))
+                # If this is encrypted envelope JSON, decrypt on-demand.
+                if isinstance(data, dict) and data.get("algorithm") == "AES-256-GCM":
+                    data = self._decrypt_aes_wrapped_ballot(data)
             except (ValueError, UnicodeDecodeError):
                 # If plain JSON parsing fails, try to decrypt with RSA Chunks
                 from cryptography.hazmat.primitives.asymmetric import padding

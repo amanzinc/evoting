@@ -66,10 +66,9 @@ class BallotManager:
 
     def get_unused_ballot(self, election_id=None):
         """
-        Returns (ballot_id, absolute_path_to_json) by reading from the local elections directory
-        (after import from USB) and ensuring the ID is not marked as USED in SQLite.
-
-        NOTE: All ballots must be previously imported from USB to local 'elections' directory.
+        Returns (ballot_id, absolute_path_to_encrypted_json) by reading directly
+        from USB encrypted ballot files and ensuring the ID is not marked as USED
+        in SQLite.
         """
         if not election_id:
             raise Exception("Election ID Required to fetch ballots.")
@@ -77,17 +76,17 @@ class BallotManager:
         if self.conn is None:
             raise Exception("SQLite DB not connected! Cannot verify ballot usage.")
 
-        # Look only in local elections directory (imported from USB).
+        # Look directly in USB encrypted ballots directory.
         # Support both legacy token IDs (E1) and new folder IDs (election_id_1).
         ballots_dir, resolved_election_id = self._resolve_ballots_dir(election_id)
 
         if not os.path.exists(ballots_dir):
             raise Exception(f"Election folder not found at: {ballots_dir}")
 
-        # Get all JSON files from local elections directory
+        # Get all encrypted ballot files from USB election directory.
         available_files = [
             f for f in os.listdir(ballots_dir)
-            if f.endswith('.json')
+            if f.endswith('.enc.json') and not f.startswith('.') and not f.startswith('._')
         ]
         if not available_files:
             raise Exception(f"No ballot files found in {ballots_dir}")
@@ -104,12 +103,12 @@ class BallotManager:
 
         # Find the first available file that hasn't been used
         for file_name in available_files:
-            ballot_id = file_name.replace('.json', '')
+            ballot_id = file_name.replace('.enc.json', '')
 
             if ballot_id not in used_ids:
                 selected_file = os.path.join(ballots_dir, file_name)
 
-                # Double check the file is actually readable before returning
+                # Double check the encrypted file is actually readable before returning.
                 try:
                     with open(selected_file, 'rb') as f:
                         file_content = f.read()
@@ -131,31 +130,22 @@ class BallotManager:
         raise Exception(f"No unused ballots remaining for {resolved_election_id}!")
 
     def _resolve_ballots_dir(self, election_id):
-        """Resolve local ballots directory for either E1 or election_id_1 style IDs."""
-        temp_root = "ballots"
-        elections_root = "elections"
+        """Resolve USB encrypted ballots directory for either E1 or election_id_1 style IDs."""
+        usb_root = self._find_usb_drive(self.usb_mount_point)
+        ballot_root = os.path.join(usb_root, "ballot")
 
-        # Primary location: temporary decrypted ballots folder.
-        direct_dir = os.path.join(temp_root, str(election_id))
+        # Primary location: ballot/election_id_x/ballot
+        direct_dir = os.path.join(ballot_root, str(election_id), "ballot")
         if os.path.isdir(direct_dir):
             return direct_dir, str(election_id)
-
-        # Backward compatibility fallback: elections/<id>/ballots
-        legacy_dir = os.path.join(elections_root, str(election_id), "ballots")
-        if os.path.isdir(legacy_dir):
-            return legacy_dir, str(election_id)
 
         # Legacy token format E<number> -> election_id_<number>
         eid = str(election_id)
         if eid.upper().startswith("E") and eid[1:].isdigit():
             mapped_id = f"election_id_{int(eid[1:])}"
-            mapped_temp_dir = os.path.join(temp_root, mapped_id)
-            if os.path.isdir(mapped_temp_dir):
-                return mapped_temp_dir, mapped_id
-
-            mapped_legacy_dir = os.path.join(elections_root, mapped_id, "ballots")
-            if os.path.isdir(mapped_legacy_dir):
-                return mapped_legacy_dir, mapped_id
+            mapped_dir = os.path.join(ballot_root, mapped_id, "ballot")
+            if os.path.isdir(mapped_dir):
+                return mapped_dir, mapped_id
 
         # Reverse mapping if token already has election_id_<n> and local uses E<n>
         prefix = "election_id_"
@@ -163,16 +153,12 @@ class BallotManager:
             suffix = eid[len(prefix):]
             if suffix.isdigit():
                 mapped_id = f"E{int(suffix)}"
-                mapped_temp_dir = os.path.join(temp_root, mapped_id)
-                if os.path.isdir(mapped_temp_dir):
-                    return mapped_temp_dir, mapped_id
-
-                mapped_legacy_dir = os.path.join(elections_root, mapped_id, "ballots")
-                if os.path.isdir(mapped_legacy_dir):
-                    return mapped_legacy_dir, mapped_id
+                mapped_dir = os.path.join(ballot_root, mapped_id, "ballot")
+                if os.path.isdir(mapped_dir):
+                    return mapped_dir, mapped_id
 
         # Keep old error shape for compatibility.
-        return os.path.join(temp_root, str(election_id)), str(election_id)
+        return os.path.join(ballot_root, str(election_id), "ballot"), str(election_id)
 
     def mark_as_challenged(self, ballot_id, election_id=None):
         """
