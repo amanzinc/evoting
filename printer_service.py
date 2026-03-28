@@ -1,6 +1,7 @@
 import os
 import uuid
 import datetime
+import time
 import qrcode
 from PIL import Image, ImageDraw, ImageFont
 
@@ -281,7 +282,9 @@ class PrinterService:
             p.text(self._center_line("** VVPAT SLIP **") + "\n")
             p.text(TOP_BAR + "\n")
             p.set(align='left', bold=False)
-            
+
+            # Keep VVPAT visible briefly before cutting.
+            time.sleep(5)
             p.cut(mode='FULL')
 
             # ==========================================
@@ -436,7 +439,9 @@ class PrinterService:
             p.text(self._center_line("CONSOLIDATED VVPAT SLIPS") + "\n")
             p.text(TOP_BAR + "\n")
             p.set(align='left', font='a', width=1, height=1, bold=True)
-            
+
+            # Keep VVPAT strip visible briefly before cutting.
+            time.sleep(5)
             p.cut(mode='FULL')
             
             # ==============================
