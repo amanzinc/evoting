@@ -322,9 +322,9 @@ class PrinterService:
             if is_final:
                 p.text("\n") # Minimal feed before second cut
                 p.cut(mode='FULL')
-                p.text("\n\n\n\n\n") # Larger post-cut feed so the paper drops cleanly
+                p.text("\n") # Minimal post-cut feed
             else:
-                p.text("\n\n\n\n_ _ _ _ NEXT ELECTION _ _ _ _\n\n\n")
+                p.text("\n_ _ _ _ NEXT ELECTION _ _ _ _\n")
             
             return True
             
@@ -414,7 +414,7 @@ class PrinterService:
             # PART 1: CONSOLIDATED VVPAT
             # ==============================
             # Send in reverse order due to 180° rotation
-            p.text("\n\n\n\n\n\n") # Feed for VVPAT box
+            p.text("\n\n") # Minimal feed for VVPAT box
             
             # Print receipts in reverse order
             for i, r in enumerate(reversed(receipts_list)):
@@ -451,7 +451,7 @@ class PrinterService:
             # PART 2: CONSOLIDATED VOTER
             # ==============================
             # Send in reverse order due to 180° rotation
-            p.text("Keep Safe\n\n\n\n\n\n") # Feed past cutter blade
+            p.text("Keep Safe\n\n") # Minimal feed past cutter blade
             
             # Print receipts in reverse order
             for i, r in enumerate(reversed(receipts_list)):
