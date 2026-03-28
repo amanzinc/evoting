@@ -142,8 +142,14 @@ class DataHandler:
             try:
                 # Try parsing as plain JSON first.
                 data = json.loads(file_content.decode('utf-8'))
-                # If this is encrypted envelope JSON, decrypt on-demand.
-                if isinstance(data, dict) and data.get("algorithm") == "AES-256-GCM":
+                # If this is an encrypted envelope JSON, decrypt on-demand.
+                # Supports variants like "AES-256-GCM" and "RSA-OAEP+AES-GCM-256".
+                if (
+                    isinstance(data, dict)
+                    and data.get("nonce")
+                    and isinstance(data.get("chunks"), list)
+                    and len(data.get("chunks")) > 0
+                ):
                     data = self._decrypt_aes_wrapped_ballot(data)
             except (ValueError, UnicodeDecodeError):
                 # If plain JSON parsing fails, try to decrypt with RSA Chunks
