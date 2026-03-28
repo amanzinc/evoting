@@ -288,34 +288,28 @@ class PrinterService:
             # RECEIPT 2: VOTER RECEIPT
             # ==========================================
             # Send in reverse order due to 180° rotation
-            p.text("\n")
             p.text("Keep this receipt safe.\n")
+
+              # Generate voter QR before printing it.
+              voter_qr_data = qr_choice_data
+              temp_img_v = self._generate_voter_qr(voter_qr_data)
             
             p.set(align='left')
             p.image(temp_img_v)
-            p.text("\n")
             if os.path.exists(temp_img_v):
                  os.remove(temp_img_v)
 
             p.set(align='left', bold=True)
             p.text(f"Choice : {sel_str}\n")
             p.set(align='left', bold=False)
-            p.text("\n")
             
             p.set(align='left')
             p.text(f"Session: {timestamp}\n")
-            p.text("\n")
             
             p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text(self._center_line("** VOTER RECEIPT **") + "\n")
             p.text(TOP_BAR + "\n")
             p.set(align='left', bold=False)
-
-            # QR Generation
-            # Voter receipt QR should contain only selected commitment.
-            voter_qr_data = qr_choice_data
-            
-            temp_img_v = self._generate_voter_qr(voter_qr_data)
 
             p.text(BOTTOM_BAR + "\n")
             
@@ -414,7 +408,7 @@ class PrinterService:
             # PART 1: CONSOLIDATED VVPAT
             # ==============================
             # Send in reverse order due to 180° rotation
-            p.text("\n\n") # Minimal feed for VVPAT box
+            p.text("\n") # Minimal feed for VVPAT box
             
             # Print receipts in reverse order
             for i, r in enumerate(reversed(receipts_list)):
@@ -451,7 +445,7 @@ class PrinterService:
             # PART 2: CONSOLIDATED VOTER
             # ==============================
             # Send in reverse order due to 180° rotation
-            p.text("Keep Safe\n\n") # Minimal feed past cutter blade
+            p.text("Keep Safe\n") # Minimal feed past cutter blade
             
             # Print receipts in reverse order
             for i, r in enumerate(reversed(receipts_list)):
@@ -520,10 +514,9 @@ class PrinterService:
             self._set_reverse_print_mode(True)
             
             # Send in reverse order due to 180° rotation
-            p.text("Keep this slip for auditing.\n\n\n\n\n\n")
+            p.text("Keep this slip for auditing.\n")
             p.text("ELECTION READY\n")
             p.text(TOP_BAR + "\n")
-            p.text("\n")
             p.set(align='left')
             
             # Print QR code of genesis hash
@@ -539,7 +532,7 @@ class PrinterService:
             
             # Print the hash in chunks so it fits nicely
             if genesis_hash:
-                p.text(f"{genesis_hash[32:]}\n\n")
+                p.text(f"{genesis_hash[32:]}\n")
                 p.text(f"{genesis_hash[:32]}\n")
 
             p.set(align='left', bold=False)
@@ -550,7 +543,7 @@ class PrinterService:
             p.text(f"Device MAC : {mac_addr}\n")
             p.set(align='left', bold=False)
             
-            p.text(TOP_BAR + "\n\n")
+            p.text(TOP_BAR + "\n")
             p.text(self._center_line(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")) + "\n")
             p.text(self._center_line("GENESIS BLOCK CREATED") + "\n")
             p.text(self._center_line("EVM STARTUP PROTOCOL") + "\n")
@@ -585,10 +578,9 @@ class PrinterService:
             self._set_reverse_print_mode(True)
             
             # Send in reverse order due to 180° rotation
-            p.text("Submit this slip with USB.\n\n\n\n\n\n")
+            p.text("Submit this slip with USB.\n")
             p.text("SAFE TO POWER OFF\n")
             p.text(TOP_BAR + "\n")
-            p.text("\n")
             p.set(align='left')
             
             # Print QR code of final hash
@@ -604,7 +596,7 @@ class PrinterService:
             
             # Print the hash in chunks
             if final_hash:
-                p.text(f"{final_hash[32:]}\n\n")
+                p.text(f"{final_hash[32:]}\n")
                 p.text(f"{final_hash[:32]}\n")
 
             p.set(align='left', bold=False)
@@ -612,10 +604,10 @@ class PrinterService:
             p.set(align='left', bold=True)
             
             p.text(f"Export Dir : {export_path}\n")
-            p.text(f"Device MAC : {mac_addr}\n\n")
+            p.text(f"Device MAC : {mac_addr}\n")
             p.set(align='left', bold=False)
             
-            p.text(TOP_BAR + "\n\n")
+            p.text(TOP_BAR + "\n")
             p.text(self._center_line(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")) + "\n")
             p.text(self._center_line("FINAL BLOCK SEALED") + "\n")
             p.text(self._center_line("ELECTION TERMINATED") + "\n")
@@ -653,31 +645,27 @@ class PrinterService:
             self._set_reverse_print_mode(True)
 
             # Send in reverse order due to 180° rotation
-            p.text("vote was NOT counted.\n\n\n\n\n\n")
+            p.text("vote was NOT counted.\n")
             p.text("Keep this slip to verify your\n")
             p.text("This ballot was CHALLENGED.\n")
             p.text(TOP_BAR + "\n")
             
             # QR of voter commitments
             temp_img = self._generate_voter_qr(voter_qr_data)
-            p.text("\n")
             p.set(align='left')
             p.image(temp_img)
-            p.text("\n")
             if os.path.exists(temp_img):
                 os.remove(temp_img)
 
             p.set(align='left', bold=False)
-            p.text("\n")
             p.set(align='left', bold=True)
             p.text(f"Choice    : {sel_str}\n")
             p.set(align='left', bold=False)
-            p.text("\n")
             short_b_id = self.data_handler.get_short_ballot_id(ballot_id)
             p.set(align='left')
             p.text(f"Ballot ID : {short_b_id}\n")
 
-            p.text(TOP_BAR + "\n\n")
+            p.text(TOP_BAR + "\n")
             p.text(self._center_line(timestamp) + "\n")
             p.set(align='left', bold=False)
             p.text(self._center_line("  (NOT A CAST VOTE)  ") + "\n")
