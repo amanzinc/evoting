@@ -41,6 +41,7 @@ class VotingApp:
         self.selections = {}
         self.merge_receipts = True # Temporary flag for merged printing
         self.receipt_buffer = [] # Store print data for batching 
+        self.print_enabled = True
 
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
@@ -147,10 +148,10 @@ class VotingApp:
                 export_path = exporter.export_election_data(self.log_dir, usb_path)
                 
                 # Fetch final hash and force printing of final receipt before shutdown.
-                if hasattr(self, 'data_handler') and hasattr(self, 'printer_service'):
+                if self.print_enabled and hasattr(self, 'data_handler') and hasattr(self, 'printer_service'):
                     final_hash = self.data_handler.last_hash or "UNKNOWN_HASH"
                     self.printer_service.print_end_election_ticket(final_hash, export_path)
-                else:
+                elif self.print_enabled:
                     raise Exception("Core services unavailable for end-of-election receipt printing.")
                 
                 messagebox.showinfo("Export Successful", f"Election successfully ended.\nEncrypted logs safely exported to:\n{export_path}\n\nAutomatic shutdown is temporarily disabled.")
@@ -194,7 +195,9 @@ class VotingApp:
 
             try:
                 # In DataHandler, we will set a flag if genesis was generated
-                if hasattr(self.data_handler, 'is_new_genesis') and self.data_handler.is_new_genesis:
+                if not self.print_enabled:
+                    print("Printing disabled: skipping startup ticket/cut.")
+                elif hasattr(self.data_handler, 'is_new_genesis') and self.data_handler.is_new_genesis:
                     self.printer_service.print_startup_ticket(self.data_handler.last_hash, self.log_dir)
                     print("Genesis startup ticket printed.")
                 else:
@@ -226,6 +229,16 @@ class VotingApp:
     def clear_container(self):
         for widget in self.main_container.winfo_children():
             widget.destroy()
+
+    def toggle_printing(self):
+        """Toggle printing to avoid paper usage during testing."""
+        self.print_enabled = not self.print_enabled
+        if hasattr(self, 'print_toggle_btn') and self.print_toggle_btn.winfo_exists():
+            self.print_toggle_btn.config(
+                text=f"Printing: {'ON' if self.print_enabled else 'OFF'}",
+                bg="#2E7D32" if self.print_enabled else "#C62828"
+            )
+        print(f"Printing toggled to: {'ON' if self.print_enabled else 'OFF'}")
 
     def show_rfid_screen(self):
         self.clear_container()
@@ -276,6 +289,19 @@ class VotingApp:
         
         # Dev Reset Log Button (Top Left, discreet)
         tk.Button(frame, text="[DEV] Reset Log", font=('Helvetica', 10), command=self.reset_token_log, bg="#ffcccb", fg="black").place(relx=0.05, rely=0.05, anchor=tk.NW)
+
+        # Print toggle for testing (no paper mode).
+        self.print_toggle_btn = tk.Button(
+            frame,
+            text=f"Printing: {'ON' if self.print_enabled else 'OFF'}",
+            font=('Helvetica', 12, 'bold'),
+            command=self.toggle_printing,
+            bg="#2E7D32" if self.print_enabled else "#C62828",
+            fg="white",
+            padx=10,
+            pady=5
+        )
+        self.print_toggle_btn.place(relx=0.5, rely=0.05, anchor=tk.N)
         
         # Admin Button to End Election (Bottom Right)
         tk.Button(frame, text="End Election & Export", font=('Helvetica', 12, 'bold'), 
@@ -472,7 +498,7 @@ class VotingApp:
     def finish_voter_session(self, aborted=False):
         """Called when all eligible elections are completed."""
         # 1. BATCH PRINTING IF ENABLED
-        if not aborted and self.merge_receipts and hasattr(self, 'receipt_buffer') and self.receipt_buffer:
+        if not aborted and self.merge_receipts and hasattr(self, 'receipt_buffer') and self.receipt_buffer and self.print_enabled:
             self.show_printing_modal(text="Printing Consolidated Receipt...")
             
             self.batch_print_queue = queue.Queue()
@@ -491,6 +517,13 @@ class VotingApp:
             self.batch_print_start_time = datetime.datetime.now()
             self.check_batch_print_status(aborted)
             return
+
+        # If printing is disabled, persist buffered votes without printing.
+        if not aborted and self.merge_receipts and hasattr(self, 'receipt_buffer') and self.receipt_buffer and not self.print_enabled:
+            all_records = [entry.get('vote_record') for entry in self.receipt_buffer if entry.get('vote_record')]
+            for r in all_records:
+                self.data_handler.save_json(r)
+            self.receipt_buffer = []
 
         self._finalize_session(aborted)
 
@@ -901,6 +934,11 @@ class VotingApp:
 
         else:
             # NORMAL PRINTING
+            if not self.print_enabled:
+                self.data_handler.save_json(vote_record)
+                self.finish_voter_session(False)
+                return
+
             self.show_printing_modal()
             self.print_queue = queue.Queue()
 
@@ -970,8 +1008,14 @@ class VotingApp:
             selected_commitment
         ], separators=(",", ":"))
 
-        self.show_printing_modal(text="Printing Challenge Receipt...")
+        self.show_printing_modal(text="Printing Challenge Receipt..." if self.print_enabled else "Processing Challenge...")
         self.print_queue = queue.Queue()
+
+        if not self.print_enabled:
+            self.print_queue.put(True)
+            self.print_start_time = datetime.datetime.now()
+            self._check_challenge_print_status()
+            return
 
         def _worker():
             try:
@@ -1004,9 +1048,14 @@ class VotingApp:
                     print(f"Error marking ballot as challenged: {e}")
                 messagebox.showinfo(
                     "Ballot Challenged",
-                    "Your challenge receipt has been printed.\n"
-                    "This ballot has been invalidated and will NOT be counted.\n\n"
-                    "You may use your receipt to verify the commitments independently."
+                    (
+                        "Your challenge receipt has been printed.\n"
+                        "This ballot has been invalidated and will NOT be counted.\n\n"
+                        "You may use your receipt to verify the commitments independently."
+                        if self.print_enabled else
+                        "Printing is OFF, so no challenge receipt was printed.\n"
+                        "This ballot has been invalidated and will NOT be counted."
+                    )
                 )
                 while True:
                     satisfied = messagebox.askyesno(
