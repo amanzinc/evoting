@@ -391,7 +391,8 @@ class DataHandler:
     def get_short_ballot_id(self, ballot_id=None):
         """Return ballot id truncated to the part before first comma."""
         raw = str(self.ballot_id if ballot_id is None else ballot_id)
-        return raw.split(",", 1)[0].strip()
+        short_id = raw.split(",", 1)[0].strip()
+        return short_id.lstrip("[").rstrip("]").strip()
 
     def _normalize_election_type(self, value):
         """Normalize election type to simplify robust matching across case/style variants."""
