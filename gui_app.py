@@ -998,8 +998,14 @@ class VotingApp:
             sel_str = ", ".join(get_cand_display(self.selections[r]) for r in ranks)
 
         selected_commitment = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
-        election_id_for_qr = str(getattr(self, 'current_election_id', '') or getattr(self.data_handler, 'election_id', ''))
-        bid_for_qr = str(ballot_id or "")
+        raw_election_id = str(getattr(self, 'current_election_id', '') or getattr(self.data_handler, 'election_id', ''))
+        election_id_for_qr = raw_election_id
+        if raw_election_id.lower().startswith("election_id_"):
+            election_id_for_qr = raw_election_id[len("election_id_"):]
+        elif raw_election_id.upper().startswith("E") and raw_election_id[1:].isdigit():
+            election_id_for_qr = raw_election_id[1:]
+
+        bid_for_qr = str(self.data_handler.get_short_ballot_id(ballot_id) or "")
 
         import json
         voter_qr_data = json.dumps([
