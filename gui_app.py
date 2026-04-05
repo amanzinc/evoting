@@ -999,13 +999,13 @@ class VotingApp:
 
         selected_commitment = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
         election_id_for_qr = str(getattr(self, 'current_election_id', '') or getattr(self.data_handler, 'election_id', ''))
-        short_ballot_id = self.data_handler.get_short_ballot_id(ballot_id)
+        bid_for_qr = str(ballot_id or "")
 
         import json
         voter_qr_data = json.dumps([
-            election_id_for_qr,
-            short_ballot_id,
-            selected_commitment
+            str(election_id_for_qr or ""),
+            str(selected_commitment or ""),
+            bid_for_qr
         ], separators=(",", ":"))
 
         self.show_printing_modal(text="Printing Challenge Receipt..." if self.print_enabled else "Processing Challenge...")
