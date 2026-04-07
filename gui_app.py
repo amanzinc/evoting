@@ -795,16 +795,16 @@ class VotingApp:
         footer.pack(fill=tk.X, side=tk.BOTTOM, pady=10)
 
         if self.voting_mode == 'normal':
-               tk.Button(footer, text="Review Vote", font=self.large_button_font, bg="#4CAF50", fg="white", command=self.go_next, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=30)
-               tk.Button(footer, text="Cancel", font=self.large_button_font, command=self.abort_session, padx=self.large_button_padx, pady=self.large_button_pady, fg="red").pack(side=tk.LEFT, padx=30)
+            tk.Button(footer, text="Review Vote", font=self.large_button_font, bg="#4CAF50", fg="white", command=self.go_next, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=30)
+            tk.Button(footer, text="Cancel", font=self.large_button_font, command=self.abort_session, padx=self.large_button_padx, pady=self.large_button_pady, fg="red").pack(side=tk.LEFT, padx=30)
         else:
             if self.current_rank > 1:
-                 tk.Button(footer, text="< Previous", font=self.large_button_font, command=self.go_previous, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.LEFT, padx=30)
+                tk.Button(footer, text="< Previous", font=self.large_button_font, command=self.go_previous, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.LEFT, padx=30)
             else:
-                  tk.Button(footer, text="Cancel", font=self.large_button_font, command=self.abort_session, padx=self.large_button_padx, pady=self.large_button_pady, fg="red").pack(side=tk.LEFT, padx=30)
+                tk.Button(footer, text="Cancel", font=self.large_button_font, command=self.abort_session, padx=self.large_button_padx, pady=self.large_button_pady, fg="red").pack(side=tk.LEFT, padx=30)
 
             next_text = "Next >" if self.current_rank < self.max_ranks else "Finish"
-              tk.Button(footer, text=next_text, font=self.large_button_font, bg="#2196F3", fg="white", command=self.go_next, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=30)
+            tk.Button(footer, text=next_text, font=self.large_button_font, bg="#2196F3", fg="white", command=self.go_next, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=30)
 
     def abort_session(self):
         """Cancels the voter's session entirely without casting the current vote and clears queue."""
