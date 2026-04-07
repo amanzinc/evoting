@@ -46,9 +46,6 @@ class VotingApp:
         self.pending_batch_receipts = None
         self.print_status_after_id = None
         self.batch_print_status_after_id = None
-        self.large_button_font = ('Helvetica', 24, 'bold')
-        self.large_button_padx = 48
-        self.large_button_pady = 16
         self.session_complete_after_id = None
 
         self.main_container = tk.Frame(self.root, bg="#ffffff")
@@ -302,46 +299,28 @@ class VotingApp:
         self.rfid_status_label.place(relx=0.5, rely=0.9, anchor=tk.CENTER)
         
         # Dev Skip Button (Top Right, discreet)
-        tk.Button(
-            frame,
-            text="[DEV] Skip",
-            font=self.large_button_font,
-            command=self.skip_rfid_check,
-            bg="#444",
-            fg="white",
-            padx=self.large_button_padx,
-            pady=self.large_button_pady
-        ).place(relx=0.95, rely=0.05, anchor=tk.NE)
+        tk.Button(frame, text="[DEV] Skip", font=('Helvetica', 10), command=self.skip_rfid_check, bg="#444", fg="white").place(relx=0.95, rely=0.05, anchor=tk.NE)
         
         # Dev Reset Log Button (Top Left, discreet)
-        tk.Button(
-            frame,
-            text="[DEV] Reset Log",
-            font=self.large_button_font,
-            command=self.reset_token_log,
-            bg="#ffcccb",
-            fg="black",
-            padx=self.large_button_padx,
-            pady=self.large_button_pady
-        ).place(relx=0.05, rely=0.05, anchor=tk.NW)
+        tk.Button(frame, text="[DEV] Reset Log", font=('Helvetica', 10), command=self.reset_token_log, bg="#ffcccb", fg="black").place(relx=0.05, rely=0.05, anchor=tk.NW)
 
         # Print toggle for testing (no paper mode).
         self.print_toggle_btn = tk.Button(
             frame,
             text=f"Printing: {'ON' if self.print_enabled else 'OFF'}",
-            font=self.large_button_font,
+            font=('Helvetica', 12, 'bold'),
             command=self.toggle_printing,
             bg="#2E7D32" if self.print_enabled else "#C62828",
             fg="white",
-            padx=self.large_button_padx,
-            pady=self.large_button_pady
+            padx=10,
+            pady=5
         )
         self.print_toggle_btn.place(relx=0.5, rely=0.05, anchor=tk.N)
         
         # Admin Button to End Election (Bottom Right)
-        tk.Button(frame, text="End Election & Export", font=self.large_button_font,
-              command=self.end_election, bg="#ff4c4c", fg="white",
-              padx=self.large_button_padx, pady=self.large_button_pady).place(relx=0.95, rely=0.95, anchor=tk.SE)
+          tk.Button(frame, text="End Election & Export", font=('Helvetica', 12, 'bold'), 
+                command=self.end_election, bg="#ff4c4c", fg="white", 
+                padx=10, pady=5).place(relx=0.95, rely=0.95, anchor=tk.SE)
         
         # Start Scanning Thread
         self.stop_scanning = False
@@ -744,9 +723,12 @@ class VotingApp:
         total_options = len(available_candidates)
         rows_per_col = (total_options + 1) // 2
         
-        btn_font = self.large_button_font
-        btn_pady = self.large_button_pady
-        frame_pady = 8
+        if total_options > 8:
+            btn_font = ('Helvetica', 12); btn_pady = 2; frame_pady = 2
+        elif total_options > 6:
+            btn_font = ('Helvetica', 14); btn_pady = 4; frame_pady = 4
+        else:
+            btn_font = ('Helvetica', 16); btn_pady = 8; frame_pady = 6
 
         for idx, cand in enumerate(available_candidates):
             is_nota = hasattr(self.data_handler, '_is_nota_name') and self.data_handler._is_nota_name(cand.get('name'))
@@ -787,7 +769,7 @@ class VotingApp:
                 frame, text=cand_text, variable=self.current_selection_var, value=cand['id'],
                 indicatoron=0, font=btn_font, bg=bg_color, fg=fg_color,
                 selectcolor='#e8f5e9', activebackground='#f5f5f5',
-                padx=self.large_button_padx, pady=btn_pady, bd=2, relief=tk.RAISED,
+                padx=10, pady=btn_pady, bd=2, relief=tk.RAISED,
                 justify=tk.CENTER, state=state_val
             ).pack(fill=tk.BOTH, expand=True)
 
@@ -795,16 +777,16 @@ class VotingApp:
         footer.pack(fill=tk.X, side=tk.BOTTOM, pady=10)
 
         if self.voting_mode == 'normal':
-            tk.Button(footer, text="Review Vote", font=self.large_button_font, bg="#4CAF50", fg="white", command=self.go_next, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=30)
-            tk.Button(footer, text="Cancel", font=self.large_button_font, command=self.abort_session, padx=self.large_button_padx, pady=self.large_button_pady, fg="red").pack(side=tk.LEFT, padx=30)
+             tk.Button(footer, text="Review Vote", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.go_next, padx=15, pady=8).pack(side=tk.RIGHT, padx=30)
+             tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.abort_session, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
         else:
             if self.current_rank > 1:
-                tk.Button(footer, text="< Previous", font=self.large_button_font, command=self.go_previous, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.LEFT, padx=30)
+                tk.Button(footer, text="< Previous", font=('Helvetica', 16), command=self.go_previous, padx=15, pady=8).pack(side=tk.LEFT, padx=30)
             else:
-                tk.Button(footer, text="Cancel", font=self.large_button_font, command=self.abort_session, padx=self.large_button_padx, pady=self.large_button_pady, fg="red").pack(side=tk.LEFT, padx=30)
+                 tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.abort_session, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
 
             next_text = "Next >" if self.current_rank < self.max_ranks else "Finish"
-            tk.Button(footer, text=next_text, font=self.large_button_font, bg="#2196F3", fg="white", command=self.go_next, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=30)
+            tk.Button(footer, text=next_text, font=('Helvetica', 16, 'bold'), bg="#2196F3", fg="white", command=self.go_next, padx=15, pady=8).pack(side=tk.RIGHT, padx=30)
 
     def abort_session(self):
         """Cancels the voter's session entirely without casting the current vote and clears queue."""
@@ -935,13 +917,13 @@ class VotingApp:
         footer.pack(fill=tk.X, side=tk.BOTTOM)
         
         edit_cmd = self.show_selection_screen if self.voting_mode == 'normal' else self.restart_editing
-        tk.Button(footer, text="Edit", font=self.large_button_font, command=edit_cmd, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.LEFT, padx=30)
-        tk.Button(footer, text="CAST VOTE", font=self.large_button_font, bg="#4CAF50", fg="white", command=self.cast_vote, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=30)
+        tk.Button(footer, text="Edit", font=('Helvetica', 16), command=edit_cmd, padx=20, pady=10).pack(side=tk.LEFT, padx=30)
+        tk.Button(footer, text="CAST VOTE", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.cast_vote, padx=20, pady=10).pack(side=tk.RIGHT, padx=30)
         current_challenges = self.challenge_counts_by_election.get(self.current_election_id, 0)
         if current_challenges < self.max_challenges_per_election:
-            tk.Button(footer, text="CHALLENGE", font=self.large_button_font, bg="#FF9800", fg="white", command=self.challenge_vote, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=10)
+            tk.Button(footer, text="CHALLENGE", font=('Helvetica', 16, 'bold'), bg="#FF9800", fg="white", command=self.challenge_vote, padx=20, pady=10).pack(side=tk.RIGHT, padx=10)
         else:
-            tk.Button(footer, text="CHALLENGE USED", font=self.large_button_font, bg="#BDBDBD", fg="#444", state=tk.DISABLED, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=10)
+            tk.Button(footer, text="CHALLENGE USED", font=('Helvetica', 16, 'bold'), bg="#BDBDBD", fg="#444", state=tk.DISABLED, padx=20, pady=10).pack(side=tk.RIGHT, padx=10)
 
     def restart_editing(self):
         self.current_rank = 1
@@ -1102,13 +1084,78 @@ class VotingApp:
         tk.Button(
             button_row,
             text="OK",
-            font=self.large_button_font,
+            font=('Helvetica', 24, 'bold'),
             bg="#2E7D32",
             fg="white",
-            padx=self.large_button_padx,
-            pady=self.large_button_pady,
+            padx=48,
+            pady=16,
             command=confirm_and_continue
         ).pack()
+
+    def _show_large_yes_no_dialog(self, title, message, yes_text="Yes", no_text="No"):
+        result = {"value": False}
+        dlg = tk.Toplevel(self.root)
+        dlg.title(title)
+        w, h = 980, 520
+        x = (self.root.winfo_screenwidth() // 2) - (w // 2)
+        y = (self.root.winfo_screenheight() // 2) - (h // 2)
+        dlg.geometry(f"{w}x{h}+{x}+{y}")
+        dlg.transient(self.root)
+        dlg.grab_set()
+
+        frame = tk.Frame(dlg, bg="#FFFDE7", bd=4, relief=tk.RAISED)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        tk.Label(
+            frame,
+            text=title,
+            font=('Helvetica', 30, 'bold'),
+            bg="#FFFDE7",
+            fg="#4E342E"
+        ).pack(pady=(30, 16))
+
+        tk.Label(
+            frame,
+            text=message,
+            font=('Helvetica', 22),
+            bg="#FFFDE7",
+            fg="#3E2723",
+            wraplength=900,
+            justify=tk.CENTER
+        ).pack(pady=(0, 26))
+
+        btn_row = tk.Frame(frame, bg="#FFFDE7")
+        btn_row.pack(pady=20)
+
+        def choose(value):
+            result["value"] = value
+            dlg.destroy()
+
+        tk.Button(
+            btn_row,
+            text=yes_text,
+            font=('Helvetica', 24, 'bold'),
+            bg="#2E7D32",
+            fg="white",
+            padx=44,
+            pady=16,
+            command=lambda: choose(True)
+        ).pack(side=tk.LEFT, padx=18)
+
+        tk.Button(
+            btn_row,
+            text=no_text,
+            font=('Helvetica', 24, 'bold'),
+            bg="#C62828",
+            fg="white",
+            padx=44,
+            pady=16,
+            command=lambda: choose(False)
+        ).pack(side=tk.LEFT, padx=18)
+
+        dlg.protocol("WM_DELETE_WINDOW", lambda: choose(False))
+        dlg.wait_window()
+        return result["value"]
 
     def close_vvpat_confirmation_modal(self):
         if hasattr(self, 'vvpat_confirmation_overlay') and self.vvpat_confirmation_overlay:
@@ -1186,14 +1233,15 @@ class VotingApp:
             )
             return
 
-        if not messagebox.askyesno(
+        if not self._show_large_yes_no_dialog(
             "Challenge Ballot",
             "Challenging this ballot will:\n\n"
-            "\u2022 Print a receipt with your Ballot ID and selection\n"
-            "\u2022 NOT count your vote\n"
-            "\u2022 Invalidate this ballot (it cannot be used again)\n\n"
+            "- Print a receipt with your Ballot ID and selection\n"
+            "- NOT count your vote\n"
+            "- Invalidate this ballot (it cannot be used again)\n\n"
             "Do you want to challenge?",
-            icon='question'
+            yes_text="Yes",
+            no_text="No"
         ):
             return
 
@@ -1280,17 +1328,21 @@ class VotingApp:
                     )
                 )
                 while True:
-                    satisfied = messagebox.askyesno(
+                    satisfied = self._show_large_yes_no_dialog(
                         "Challenge Verification",
                         "Are you satisfied after the challenge verification?\n\n"
                         "Yes: You will vote again in this same election using a new ballot.\n"
-                        "No: Session will be paused/aborted for Presiding Officer review."
+                        "No: Session will be paused/aborted for Presiding Officer review.",
+                        yes_text="Yes",
+                        no_text="No"
                     )
                     chosen_label = "SATISFIED" if satisfied else "NOT SATISFIED"
-                    confirmed = messagebox.askyesno(
+                    confirmed = self._show_large_yes_no_dialog(
                         "Confirm Selection",
                         f"You selected: {chosen_label}.\n\n"
-                        "Press Yes to confirm this choice, or No to choose again."
+                        "Press Yes to confirm this choice, or No to choose again.",
+                        yes_text="Yes",
+                        no_text="No"
                     )
                     if confirmed:
                         break
@@ -1365,11 +1417,11 @@ class VotingApp:
         tk.Button(
             frame,
             text="Polling Officer Menu",
-            font=self.large_button_font,
+            font=('Helvetica', 14, 'bold'),
             bg="#1565C0",
             fg="white",
-            padx=self.large_button_padx,
-            pady=self.large_button_pady,
+            padx=18,
+            pady=8,
             command=self.show_polling_officer_action_menu
         ).pack(pady=10)
 
