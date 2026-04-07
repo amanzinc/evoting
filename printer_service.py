@@ -490,6 +490,7 @@ class PrinterService:
                 p.set(align='left', font='a', width=1, height=1, bold=True)
 
                 p.cut(mode='FULL')
+                return True
             
         except Exception as e:
             print(f"Batch Print Error: {e}")
