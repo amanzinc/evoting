@@ -30,13 +30,33 @@ class BallotManager:
              print(f"Failed to initialize SQLite Database: {e}")
              self.conn = None
 
+    def _find_ballot_folder(self, usb_root):
+        """Return the ballot folder path on USB, preferring ballot_<bmd_id> over legacy ballot."""
+        if not usb_root or not os.path.isdir(usb_root):
+            return None
+
+        # Prefer new naming convention first.
+        ballot_variants = [
+            d for d in os.listdir(usb_root)
+            if d.startswith("ballot_") and os.path.isdir(os.path.join(usb_root, d))
+        ]
+        if ballot_variants:
+            return os.path.join(usb_root, sorted(ballot_variants)[0])
+
+        # Backward compatibility.
+        legacy_path = os.path.join(usb_root, "ballot")
+        if os.path.isdir(legacy_path):
+            return legacy_path
+
+        return None
+
     def _find_usb_drive(self, user_provided_path):
         """
-        Attempts to find the USB drive automatically by looking for the 'ballot' folder
-        (new encrypted ballot structure) in common Raspberry Pi / Linux mount points.
+        Attempts to find the USB drive automatically by looking for ballot data folders
+        (ballot_<bmd_id> or legacy ballot) in common Raspberry Pi / Linux mount points.
         """
         # 1. If the user explicitly provided a path that works, use it.
-        if user_provided_path and os.path.exists(os.path.join(user_provided_path, "ballot")):
+        if user_provided_path and self._find_ballot_folder(user_provided_path):
             return user_provided_path
 
         # 2. Check common mount directories where USBs appear
@@ -56,8 +76,8 @@ class BallotManager:
             for item in os.listdir(base_dir):
                 potential_usb = os.path.join(base_dir, item)
                 if os.path.isdir(potential_usb):
-                    # Check for 'ballot' folder only
-                    if os.path.isdir(os.path.join(potential_usb, "ballot")):
+                    # Check for ballot_<bmd_id> (new) or ballot (legacy).
+                    if self._find_ballot_folder(potential_usb):
                         return potential_usb
                         
         # If we failed to find it dynamically, fallback to the hardcoded default so the error
@@ -132,7 +152,11 @@ class BallotManager:
     def _resolve_ballots_dir(self, election_id):
         """Resolve USB encrypted ballots directory for either E1 or election_id_1 style IDs."""
         usb_root = self._find_usb_drive(self.usb_mount_point)
-        ballot_root = os.path.join(usb_root, "ballot")
+        ballot_root = self._find_ballot_folder(usb_root)
+
+        if not ballot_root:
+            # Keep old error shape for compatibility.
+            return os.path.join(usb_root, "ballot", str(election_id), "ballot"), str(election_id)
 
         # Primary location: ballot/election_id_x/ballot
         direct_dir = os.path.join(ballot_root, str(election_id), "ballot")

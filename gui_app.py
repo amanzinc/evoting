@@ -46,6 +46,10 @@ class VotingApp:
         self.pending_batch_receipts = None
         self.print_status_after_id = None
         self.batch_print_status_after_id = None
+        self.large_button_font = ('Helvetica', 24, 'bold')
+        self.large_button_padx = 48
+        self.large_button_pady = 16
+        self.session_complete_after_id = None
 
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
@@ -60,14 +64,14 @@ class VotingApp:
         
         tk.Label(frame, text="System Initialization", font=('Helvetica', 32, 'bold'), bg="#E8F5E9", fg="#2E7D32").pack(pady=(150, 20))
         tk.Label(frame, text="Please insert the Election Data USB Drive to start.", font=('Helvetica', 24), bg="#E8F5E9", fg="#333").pack(pady=20)
-        tk.Label(frame, text="(Waiting for USB with 'ballot' folder)", font=('Helvetica', 14), bg="#E8F5E9", fg="#666").pack(pady=5)
+        tk.Label(frame, text="(Waiting for USB with 'ballot_<bmd_id>' folder)", font=('Helvetica', 14), bg="#E8F5E9", fg="#666").pack(pady=5)
 
         self.check_usb_loop()
 
     def check_usb_loop(self):
-        # Try to find the USB drive with 'ballot' folder
+        # Try to find the USB drive with ballot_<bmd_id> (or legacy ballot) folder
         usb_path = self.ballot_manager._find_usb_drive(None)
-        ballot_path = os.path.join(usb_path, "ballot") if usb_path else None
+        ballot_path = self.ballot_manager._find_ballot_folder(usb_path) if usb_path else None
 
         if ballot_path and os.path.exists(ballot_path):
             # Found USB with encrypted ballot folder - trigger import
@@ -90,7 +94,9 @@ class VotingApp:
             try:
                 from usb_ballot_import import USBBallotImporter
                 
-                ballot_path = os.path.join(usb_path, "ballot")
+                ballot_path = self.ballot_manager._find_ballot_folder(usb_path)
+                if not ballot_path:
+                    raise Exception("No ballot_<bmd_id> or ballot folder found on USB drive.")
                 
                 # Create importer (demo_mode=False requires RPi hardware)
                 importer = USBBallotImporter(
@@ -245,6 +251,13 @@ class VotingApp:
         print(f"Printing toggled to: {'ON' if self.print_enabled else 'OFF'}")
 
     def show_rfid_screen(self):
+        if self.session_complete_after_id:
+            try:
+                self.root.after_cancel(self.session_complete_after_id)
+            except Exception:
+                pass
+            self.session_complete_after_id = None
+
         self.clear_container()
         self.active_token = None
         self.challenge_counts_by_election = {}
@@ -289,28 +302,46 @@ class VotingApp:
         self.rfid_status_label.place(relx=0.5, rely=0.9, anchor=tk.CENTER)
         
         # Dev Skip Button (Top Right, discreet)
-        tk.Button(frame, text="[DEV] Skip", font=('Helvetica', 10), command=self.skip_rfid_check, bg="#444", fg="white").place(relx=0.95, rely=0.05, anchor=tk.NE)
+        tk.Button(
+            frame,
+            text="[DEV] Skip",
+            font=self.large_button_font,
+            command=self.skip_rfid_check,
+            bg="#444",
+            fg="white",
+            padx=self.large_button_padx,
+            pady=self.large_button_pady
+        ).place(relx=0.95, rely=0.05, anchor=tk.NE)
         
         # Dev Reset Log Button (Top Left, discreet)
-        tk.Button(frame, text="[DEV] Reset Log", font=('Helvetica', 10), command=self.reset_token_log, bg="#ffcccb", fg="black").place(relx=0.05, rely=0.05, anchor=tk.NW)
+        tk.Button(
+            frame,
+            text="[DEV] Reset Log",
+            font=self.large_button_font,
+            command=self.reset_token_log,
+            bg="#ffcccb",
+            fg="black",
+            padx=self.large_button_padx,
+            pady=self.large_button_pady
+        ).place(relx=0.05, rely=0.05, anchor=tk.NW)
 
         # Print toggle for testing (no paper mode).
         self.print_toggle_btn = tk.Button(
             frame,
             text=f"Printing: {'ON' if self.print_enabled else 'OFF'}",
-            font=('Helvetica', 12, 'bold'),
+            font=self.large_button_font,
             command=self.toggle_printing,
             bg="#2E7D32" if self.print_enabled else "#C62828",
             fg="white",
-            padx=10,
-            pady=5
+            padx=self.large_button_padx,
+            pady=self.large_button_pady
         )
         self.print_toggle_btn.place(relx=0.5, rely=0.05, anchor=tk.N)
         
         # Admin Button to End Election (Bottom Right)
-        tk.Button(frame, text="End Election & Export", font=('Helvetica', 12, 'bold'), 
-                  command=self.end_election, bg="#ff4c4c", fg="white", 
-                  padx=10, pady=5).place(relx=0.95, rely=0.95, anchor=tk.SE)
+        tk.Button(frame, text="End Election & Export", font=self.large_button_font,
+              command=self.end_election, bg="#ff4c4c", fg="white",
+              padx=self.large_button_padx, pady=self.large_button_pady).place(relx=0.95, rely=0.95, anchor=tk.SE)
         
         # Start Scanning Thread
         self.stop_scanning = False
@@ -592,12 +623,49 @@ class VotingApp:
             self.data_handler.log_token(self.active_token)
             
         if not aborted:
-            messagebox.showinfo("Session Complete", "Thank you for voting in all elections!")
+            self.active_token = None
+            self.current_election_id = None
+            self._show_session_complete_screen()
+            return
         else:
             messagebox.showinfo("Session Aborted", "Your session has been cancelled.")
             
         self.active_token = None
         self.current_election_id = None
+        self.show_rfid_screen()
+
+    def _show_session_complete_screen(self):
+        self.clear_container()
+        frame = tk.Frame(self.main_container, bg="#E8F5E9")
+        frame.pack(expand=True, fill=tk.BOTH)
+
+        tk.Label(
+            frame,
+            text="Thank You For Voting",
+            font=('Helvetica', 38, 'bold'),
+            bg="#E8F5E9",
+            fg="#1B5E20"
+        ).pack(pady=(180, 24))
+
+        tk.Label(
+            frame,
+            text="Returning to home screen in 5 seconds...",
+            font=('Helvetica', 24),
+            bg="#E8F5E9",
+            fg="#2E7D32"
+        ).pack(pady=10)
+
+        if self.session_complete_after_id:
+            try:
+                self.root.after_cancel(self.session_complete_after_id)
+            except Exception:
+                pass
+            self.session_complete_after_id = None
+
+        self.session_complete_after_id = self.root.after(5000, self._return_home_after_complete)
+
+    def _return_home_after_complete(self):
+        self.session_complete_after_id = None
         self.show_rfid_screen()
 
     def show_rfid_error(self, message):
@@ -676,12 +744,9 @@ class VotingApp:
         total_options = len(available_candidates)
         rows_per_col = (total_options + 1) // 2
         
-        if total_options > 8:
-            btn_font = ('Helvetica', 12); btn_pady = 2; frame_pady = 2
-        elif total_options > 6:
-            btn_font = ('Helvetica', 14); btn_pady = 4; frame_pady = 4
-        else:
-            btn_font = ('Helvetica', 16); btn_pady = 8; frame_pady = 6
+        btn_font = self.large_button_font
+        btn_pady = self.large_button_pady
+        frame_pady = 8
 
         for idx, cand in enumerate(available_candidates):
             is_nota = hasattr(self.data_handler, '_is_nota_name') and self.data_handler._is_nota_name(cand.get('name'))
@@ -722,7 +787,7 @@ class VotingApp:
                 frame, text=cand_text, variable=self.current_selection_var, value=cand['id'],
                 indicatoron=0, font=btn_font, bg=bg_color, fg=fg_color,
                 selectcolor='#e8f5e9', activebackground='#f5f5f5',
-                padx=10, pady=btn_pady, bd=2, relief=tk.RAISED,
+                padx=self.large_button_padx, pady=btn_pady, bd=2, relief=tk.RAISED,
                 justify=tk.CENTER, state=state_val
             ).pack(fill=tk.BOTH, expand=True)
 
@@ -730,16 +795,16 @@ class VotingApp:
         footer.pack(fill=tk.X, side=tk.BOTTOM, pady=10)
 
         if self.voting_mode == 'normal':
-             tk.Button(footer, text="Review Vote", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.go_next, padx=15, pady=8).pack(side=tk.RIGHT, padx=30)
-             tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.abort_session, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
+               tk.Button(footer, text="Review Vote", font=self.large_button_font, bg="#4CAF50", fg="white", command=self.go_next, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=30)
+               tk.Button(footer, text="Cancel", font=self.large_button_font, command=self.abort_session, padx=self.large_button_padx, pady=self.large_button_pady, fg="red").pack(side=tk.LEFT, padx=30)
         else:
             if self.current_rank > 1:
-                tk.Button(footer, text="< Previous", font=('Helvetica', 16), command=self.go_previous, padx=15, pady=8).pack(side=tk.LEFT, padx=30)
+                 tk.Button(footer, text="< Previous", font=self.large_button_font, command=self.go_previous, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.LEFT, padx=30)
             else:
-                 tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.abort_session, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
+                  tk.Button(footer, text="Cancel", font=self.large_button_font, command=self.abort_session, padx=self.large_button_padx, pady=self.large_button_pady, fg="red").pack(side=tk.LEFT, padx=30)
 
             next_text = "Next >" if self.current_rank < self.max_ranks else "Finish"
-            tk.Button(footer, text=next_text, font=('Helvetica', 16, 'bold'), bg="#2196F3", fg="white", command=self.go_next, padx=15, pady=8).pack(side=tk.RIGHT, padx=30)
+              tk.Button(footer, text=next_text, font=self.large_button_font, bg="#2196F3", fg="white", command=self.go_next, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=30)
 
     def abort_session(self):
         """Cancels the voter's session entirely without casting the current vote and clears queue."""
@@ -870,13 +935,13 @@ class VotingApp:
         footer.pack(fill=tk.X, side=tk.BOTTOM)
         
         edit_cmd = self.show_selection_screen if self.voting_mode == 'normal' else self.restart_editing
-        tk.Button(footer, text="Edit", font=('Helvetica', 16), command=edit_cmd, padx=20, pady=10).pack(side=tk.LEFT, padx=30)
-        tk.Button(footer, text="CAST VOTE", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.cast_vote, padx=20, pady=10).pack(side=tk.RIGHT, padx=30)
+        tk.Button(footer, text="Edit", font=self.large_button_font, command=edit_cmd, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.LEFT, padx=30)
+        tk.Button(footer, text="CAST VOTE", font=self.large_button_font, bg="#4CAF50", fg="white", command=self.cast_vote, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=30)
         current_challenges = self.challenge_counts_by_election.get(self.current_election_id, 0)
         if current_challenges < self.max_challenges_per_election:
-            tk.Button(footer, text="CHALLENGE", font=('Helvetica', 16, 'bold'), bg="#FF9800", fg="white", command=self.challenge_vote, padx=20, pady=10).pack(side=tk.RIGHT, padx=10)
+            tk.Button(footer, text="CHALLENGE", font=self.large_button_font, bg="#FF9800", fg="white", command=self.challenge_vote, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=10)
         else:
-            tk.Button(footer, text="CHALLENGE USED", font=('Helvetica', 16, 'bold'), bg="#BDBDBD", fg="#444", state=tk.DISABLED, padx=20, pady=10).pack(side=tk.RIGHT, padx=10)
+            tk.Button(footer, text="CHALLENGE USED", font=self.large_button_font, bg="#BDBDBD", fg="#444", state=tk.DISABLED, padx=self.large_button_padx, pady=self.large_button_pady).pack(side=tk.RIGHT, padx=10)
 
     def restart_editing(self):
         self.current_rank = 1
@@ -1037,11 +1102,11 @@ class VotingApp:
         tk.Button(
             button_row,
             text="OK",
-            font=('Helvetica', 24, 'bold'),
+            font=self.large_button_font,
             bg="#2E7D32",
             fg="white",
-            padx=48,
-            pady=16,
+            padx=self.large_button_padx,
+            pady=self.large_button_pady,
             command=confirm_and_continue
         ).pack()
 
@@ -1300,11 +1365,11 @@ class VotingApp:
         tk.Button(
             frame,
             text="Polling Officer Menu",
-            font=('Helvetica', 14, 'bold'),
+            font=self.large_button_font,
             bg="#1565C0",
             fg="white",
-            padx=18,
-            pady=8,
+            padx=self.large_button_padx,
+            pady=self.large_button_pady,
             command=self.show_polling_officer_action_menu
         ).pack(pady=10)
 
