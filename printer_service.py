@@ -43,6 +43,114 @@ class PrinterService:
     def _center_line(self, text):
         return text.center(self.paper_width_chars)
 
+    def _get_candidate_display_text(self, cid):
+        cand = self.data_handler.get_candidate_by_id(cid)
+        if not cand:
+            return str(cid)
+
+        candidate_name = str(
+            cand.get("name")
+            or cand.get("candidate_name")
+            or cand.get("candidate_number")
+            or cid
+        ).strip()
+        candidate_number = str(cand.get("candidate_number") or cand.get("id") or cid).strip()
+
+        if candidate_name and candidate_number and candidate_name != candidate_number:
+            return f"{candidate_name} ({candidate_number})"
+        return candidate_name or candidate_number or str(cid)
+
+    def _build_vote_print_context(self, mode, selections):
+        ballot_id = self.data_handler.get_short_ballot_id()
+        station_id = "PS-105-DELHI"
+        timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
+
+        if mode == 'normal':
+            cid = selections.get(1)
+            sel_str = self._get_candidate_display_text(cid)
+        else:
+            ranks = sorted(selections.keys())
+            sel_str = ", ".join(self._get_candidate_display_text(selections[r]) for r in ranks)
+
+        qr_choice_data = self.data_handler.build_receipt_qr_payload(selections, mode)
+        short_b_id = self.data_handler.get_short_ballot_id(ballot_id)
+        return {
+            "ballot_id": ballot_id,
+            "station_id": station_id,
+            "timestamp": timestamp,
+            "sel_str": sel_str,
+            "qr_choice_data": qr_choice_data,
+            "short_b_id": short_b_id,
+        }
+
+    def _print_vote_vvpat_section(self, p, context):
+        top_bar = self._bar("_")
+        bottom_bar = self._bar("_")
+
+        p.text("\n")
+        p.text(bottom_bar + "\n")
+
+        temp_img = self._generate_vvpat_qr(context["qr_choice_data"], context["short_b_id"])
+
+        p.text("\n")
+        p.set(align='left')
+        p.image(temp_img)
+        p.text("\n")
+        if os.path.exists(temp_img):
+            os.remove(temp_img)
+
+        p.set(align='left', bold=True)
+        p.text(f"Choice : {context['sel_str']}\n")
+        p.set(align='left', bold=False)
+        p.text("\n")
+
+        p.set(align='left')
+        p.text(f"Session: {context['timestamp']}\n")
+        p.text(f"Station: {context['station_id']}\n")
+
+        p.text("\n")
+
+        p.set(align='left', font='a', width=1, height=1, bold=True)
+        p.text(self._center_line("** VVPAT SLIP **") + "\n")
+        p.text(top_bar + "\n")
+        p.set(align='left', bold=False)
+
+        p.text("\n\n")
+
+    def _print_vote_voter_section(self, p, context, is_final=True):
+        top_bar = self._bar("_")
+        bottom_bar = self._bar("_")
+
+        p.text("Keep this receipt safe.\n")
+
+        temp_img_v = self._generate_voter_qr(context["qr_choice_data"])
+
+        p.set(align='left')
+        p.image(temp_img_v)
+        if os.path.exists(temp_img_v):
+            os.remove(temp_img_v)
+
+        p.set(align='left', bold=True)
+        p.text(f"Choice : {context['sel_str']}\n")
+        p.set(align='left', bold=False)
+
+        p.set(align='left')
+        p.text(f"Session: {context['timestamp']}\n")
+
+        p.set(align='left', font='a', width=1, height=1, bold=True)
+        p.text(self._center_line("** VOTER RECEIPT **") + "\n")
+        p.text(top_bar + "\n")
+        p.set(align='left', bold=False)
+
+        p.text(bottom_bar + "\n")
+
+        if is_final:
+            p.text("\n")
+            p.cut(mode='FULL')
+            p.text("\n")
+        else:
+            p.text("\n_ _ _ _ NEXT ELECTION _ _ _ _\n")
+
     def _set_reverse_print_mode(self, enabled):
         if not self.reverse_print or not self.printer:
             return
@@ -202,7 +310,7 @@ class PrinterService:
         else:
              print("escpos library not available.")
 
-    def print_vote(self, mode, selections, is_final=True):
+    def print_vote(self, mode, selections, is_final=True, stage="both"):
         """
         Synchronous print function. 
         Returns True if successful, raises Exception if failed.
@@ -216,115 +324,22 @@ class PrinterService:
             # Fallback/Error if still no printer
             raise Exception("Printer not connected")
 
-        # Mock Data Setup
-        ballot_id = self.data_handler.get_short_ballot_id()
-        station_id = "PS-105-DELHI"
-        timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
-
-        # Helper to find candidate display string
-        def get_cand_display(cid):
-            cand = self.data_handler.get_candidate_by_id(cid)
-            if cand:
-                return cand.get('candidate_number', str(cid))
-            return str(cid)
-
-        # Prepare strings
-        if mode == 'normal':
-            cid = selections.get(1)
-            sel_str = get_cand_display(cid)
-            qr_choice_data = self.data_handler.build_receipt_qr_payload(selections, mode)
-        else:
-            ranks = sorted(selections.keys())
-            vals = []
-            for r in ranks:
-                c = selections[r]
-                vals.append(get_cand_display(c))
-            sel_str = ", ".join(vals)
-            qr_choice_data = self.data_handler.build_receipt_qr_payload(selections, mode)
+        context = self._build_vote_print_context(mode, selections)
 
         p = self.printer
-        TOP_BAR = self._bar("_")
-        BOTTOM_BAR = self._bar("_")
 
         try:
             self._set_reverse_print_mode(True)
 
-            # ==========================================
-            # RECEIPT 1: VVPAT (Internal / Box)
-            # ==========================================
-            # Send in reverse order due to 180° rotation
-            p.text("\n") # Minimal feed before first cut to avoid large blank gap
-            p.text(BOTTOM_BAR + "\n")
-            
-            # QR Generation - choice and ballot ID QRs (no text labels)
-            short_b_id = self.data_handler.get_short_ballot_id(ballot_id)
-            temp_img = self._generate_vvpat_qr(qr_choice_data, short_b_id)
-            
-            p.text("\n") 
-            p.set(align='left')
-            p.image(temp_img)
-            p.text("\n")
-            if os.path.exists(temp_img):
-                os.remove(temp_img)
-            
-            p.set(align='left', bold=True)
-            p.text(f"Choice : {sel_str}\n")
-            p.set(align='left', bold=False)
-            p.text("\n")
-
-            p.set(align='left')
-            p.text(f"Session: {timestamp}\n") 
-            p.text(f"Station: {station_id}\n") 
-            
-            p.text("\n") 
-
-            p.set(align='left', font='a', width=1, height=1, bold=True)
-            p.text(self._center_line("** VVPAT SLIP **") + "\n")
-            p.text(TOP_BAR + "\n")
-            p.set(align='left', bold=False)
-
-            # Extra feed so VVPAT content is fully visible before cut.
-            p.text("\n\n")
-
-            # Keep VVPAT visible briefly before cutting.
-            time.sleep(5)
-            p.cut(mode='FULL')
-
-            # ==========================================
-            # RECEIPT 2: VOTER RECEIPT
-            # ==========================================
-            # Send in reverse order due to 180° rotation
-            p.text("Keep this receipt safe.\n")
-
-            # Generate voter QR before printing it.
-            voter_qr_data = qr_choice_data
-            temp_img_v = self._generate_voter_qr(voter_qr_data)
-            
-            p.set(align='left')
-            p.image(temp_img_v)
-            if os.path.exists(temp_img_v):
-                 os.remove(temp_img_v)
-
-            p.set(align='left', bold=True)
-            p.text(f"Choice : {sel_str}\n")
-            p.set(align='left', bold=False)
-            
-            p.set(align='left')
-            p.text(f"Session: {timestamp}\n")
-            
-            p.set(align='left', font='a', width=1, height=1, bold=True)
-            p.text(self._center_line("** VOTER RECEIPT **") + "\n")
-            p.text(TOP_BAR + "\n")
-            p.set(align='left', bold=False)
-
-            p.text(BOTTOM_BAR + "\n")
-            
-            if is_final:
-                p.text("\n") # Minimal feed before second cut
+            if stage in ("both", "vvpat"):
+                self._print_vote_vvpat_section(p, context)
+                time.sleep(5)
                 p.cut(mode='FULL')
-                p.text("\n") # Minimal post-cut feed
-            else:
-                p.text("\n_ _ _ _ NEXT ELECTION _ _ _ _\n")
+                if stage == "vvpat":
+                    return {"stage": "vvpat_complete", "context": context}
+
+            if stage in ("both", "receipt"):
+                self._print_vote_voter_section(p, context, is_final=is_final)
             
             return True
 
@@ -390,7 +405,7 @@ class PrinterService:
             print(f"Voter QR Error: {e}")
             raise e
 
-    def print_session_receipts(self, receipts_list):
+    def print_session_receipts(self, receipts_list, stage="both"):
         """
         Prints two consolidated strips:
         1. VVPAT SLIPS (All votes) -> CUT (Falls in box)
@@ -408,80 +423,70 @@ class PrinterService:
         try:
             self._set_reverse_print_mode(True)
 
-            # ==============================
-            # PART 1: CONSOLIDATED VVPAT
-            # ==============================
-            # Send in reverse order due to 180° rotation
-            p.text("\n") # Minimal feed for VVPAT box
-            
-            # Print receipts in reverse order
-            for i, r in enumerate(reversed(receipts_list)):
-                idx = len(receipts_list) - i
-                p.text(DIVIDER + "\n")
-                
-                # VVPAT Internal QR
-                qr_data = r['qr_choice_data']
-                
-                short_b_id = self.data_handler.get_short_ballot_id(r['ballot_id'])
-                
-                temp_qr = self._generate_vvpat_qr(qr_data, short_b_id)
-                
-                p.set(align='left')
-                p.image(temp_qr)
-                if os.path.exists(temp_qr): os.remove(temp_qr)
-                
-                p.set(align='left', bold=False)
-                p.set(align='left', bold=True)
-                p.text(f"Choice: {r['choice_str']}\n")
-                p.set(align='left', bold=False)
-                p.text(f"#{idx}: {r.get('election_id', '???')}\n")
-            
-            p.text(TOP_BAR + "\n\n")
-            p.text(self._center_line(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")) + "\n")
-            p.text(self._center_line("(Internal Audit Trail)") + "\n")
-            p.text(self._center_line("CONSOLIDATED VVPAT SLIPS") + "\n")
-            p.text(TOP_BAR + "\n")
-            p.set(align='left', font='a', width=1, height=1, bold=True)
+            if stage in ("both", "vvpat"):
+                p.text("\n")
 
-            # Extra feed so VVPAT strip is fully visible before cut.
-            p.text("\n\n")
+                for i, r in enumerate(reversed(receipts_list)):
+                    idx = len(receipts_list) - i
+                    p.text(DIVIDER + "\n")
 
-            # Keep VVPAT strip visible briefly before cutting.
-            time.sleep(5)
-            p.cut(mode='FULL')
-            
-            # ==============================
-            # PART 2: CONSOLIDATED VOTER
-            # ==============================
-            # Send in reverse order due to 180° rotation
-            p.text("Keep Safe\n") # Minimal feed past cutter blade
-            
-            # Print receipts in reverse order
-            for i, r in enumerate(reversed(receipts_list)):
-                idx = len(receipts_list) - i
-                p.text(DIVIDER + "\n")
-                
-                # Voter Hash QR
-                qr_data_v = r.get('voter_qr_data', r.get('election_hash', 'N/A'))
-                temp_qr_v = self._generate_voter_qr(qr_data_v)
-                
-                p.set(align='left')
-                p.image(temp_qr_v)
-                if os.path.exists(temp_qr_v): os.remove(temp_qr_v)
-                
-                p.set(align='left', bold=False)
-                p.text(f"Choice: {r['choice_str']}\n")
-                p.set(align='left', bold=True)
-                p.text(f"#{idx}: {r.get('election_id', '???')}\n")
-            
-            p.text(TOP_BAR + "\n\n")
-            p.text(self._center_line(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")) + "\n")
-            p.text(self._center_line("(For Voter)") + "\n")
-            p.text(self._center_line("CONSOLIDATED VOTER RECEIPT") + "\n")
-            p.text(TOP_BAR + "\n")
-            p.set(align='left', font='a', width=1, height=1, bold=True)
-            
-            p.cut(mode='FULL')
+                    qr_data = r['qr_choice_data']
+                    short_b_id = self.data_handler.get_short_ballot_id(r['ballot_id'])
+                    temp_qr = self._generate_vvpat_qr(qr_data, short_b_id)
+
+                    p.set(align='left')
+                    p.image(temp_qr)
+                    if os.path.exists(temp_qr):
+                        os.remove(temp_qr)
+
+                    p.set(align='left', bold=False)
+                    p.set(align='left', bold=True)
+                    p.text(f"Choice: {r['choice_str']}\n")
+                    p.set(align='left', bold=False)
+                    p.text(f"#{idx}: {r.get('election_id', '???')}\n")
+
+                p.text(TOP_BAR + "\n\n")
+                p.text(self._center_line(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")) + "\n")
+                p.text(self._center_line("(Internal Audit Trail)") + "\n")
+                p.text(self._center_line("CONSOLIDATED VVPAT SLIPS") + "\n")
+                p.text(TOP_BAR + "\n")
+                p.set(align='left', font='a', width=1, height=1, bold=True)
+
+                p.text("\n\n")
+                time.sleep(5)
+                p.cut(mode='FULL')
+
+                if stage == "vvpat":
+                    return {"stage": "vvpat_complete"}
+
+            if stage in ("both", "receipt"):
+                p.text("Keep Safe\n")
+
+                for i, r in enumerate(reversed(receipts_list)):
+                    idx = len(receipts_list) - i
+                    p.text(DIVIDER + "\n")
+
+                    qr_data_v = r.get('voter_qr_data', r.get('election_hash', 'N/A'))
+                    temp_qr_v = self._generate_voter_qr(qr_data_v)
+
+                    p.set(align='left')
+                    p.image(temp_qr_v)
+                    if os.path.exists(temp_qr_v):
+                        os.remove(temp_qr_v)
+
+                    p.set(align='left', bold=False)
+                    p.text(f"Choice: {r['choice_str']}\n")
+                    p.set(align='left', bold=True)
+                    p.text(f"#{idx}: {r.get('election_id', '???')}\n")
+
+                p.text(TOP_BAR + "\n\n")
+                p.text(self._center_line(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")) + "\n")
+                p.text(self._center_line("(For Voter)") + "\n")
+                p.text(self._center_line("CONSOLIDATED VOTER RECEIPT") + "\n")
+                p.text(TOP_BAR + "\n")
+                p.set(align='left', font='a', width=1, height=1, bold=True)
+
+                p.cut(mode='FULL')
             
         except Exception as e:
             print(f"Batch Print Error: {e}")

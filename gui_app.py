@@ -42,6 +42,8 @@ class VotingApp:
         self.merge_receipts = True # Temporary flag for merged printing
         self.receipt_buffer = [] # Store print data for batching 
         self.print_enabled = True
+        self.pending_print_job = None
+        self.pending_batch_receipts = None
 
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
@@ -499,14 +501,15 @@ class VotingApp:
         """Called when all eligible elections are completed."""
         # 1. BATCH PRINTING IF ENABLED
         if not aborted and self.merge_receipts and hasattr(self, 'receipt_buffer') and self.receipt_buffer and self.print_enabled:
-            self.show_printing_modal(text="Printing Consolidated Receipt...")
+            self.pending_batch_receipts = list(self.receipt_buffer)
+            self.show_printing_modal(text="Printing Consolidated VVPAT...")
             
             self.batch_print_queue = queue.Queue()
             
             def batch_printer_worker(receipts):
                 try:
-                    self.printer_service.print_session_receipts(receipts)
-                    self.batch_print_queue.put(True)
+                    result = self.printer_service.print_session_receipts(receipts, stage="vvpat")
+                    self.batch_print_queue.put(result)
                 except Exception as e:
                     self.batch_print_queue.put(e)
 
@@ -524,17 +527,26 @@ class VotingApp:
             for r in all_records:
                 self.data_handler.save_json(r)
             self.receipt_buffer = []
+            self.pending_batch_receipts = None
 
         self._finalize_session(aborted)
 
     def check_batch_print_status(self, aborted=False):
         try:
             result = self.batch_print_queue.get_nowait()
+            if isinstance(result, dict) and result.get('stage') == 'vvpat_complete':
+                self.close_printing_modal()
+                self._show_vvpat_confirmation_modal(
+                    "This is VVPAT. Please put it in the VVPAT box.\n\nPress OK to print the voter receipt.",
+                    self._start_receipt_stage_for_batch,
+                )
+                return
             self.close_printing_modal()
             if result is True:
                 # 2. Log Votes (Only if Print Succeeded)
                 all_records = []
-                for entry in self.receipt_buffer:
+                source_buffer = self.pending_batch_receipts if self.pending_batch_receipts is not None else self.receipt_buffer
+                for entry in source_buffer:
                     if 'vote_record' in entry:
                          all_records.append(entry['vote_record'])
                 
@@ -542,6 +554,7 @@ class VotingApp:
                     for r in all_records:
                         self.data_handler.save_json(r)
                 self.receipt_buffer = []
+                self.pending_batch_receipts = None
                 self._finalize_session(aborted)
             else:
                 print(f"Batch print error: {result}")
@@ -550,6 +563,7 @@ class VotingApp:
                     self.finish_voter_session(aborted)
                 else:
                     self.receipt_buffer = []
+                    self.pending_batch_receipts = None
                     # Pass True so we don't log votes if the receipt failed to print!
                     self._finalize_session(True)
             return
@@ -875,8 +889,11 @@ class VotingApp:
         def get_cand_display(cid):
             cand = self.data_handler.get_candidate_by_id(cid)
             if cand:
-                # User wants ONLY Serial ID on receipt (No Name)
-                return str(cand['id'])
+                candidate_name = str(cand.get('name') or cand.get('candidate_name') or cand.get('candidate_number') or cand.get('id') or cid).strip()
+                candidate_number = str(cand.get('candidate_number') or cand.get('id') or cid).strip()
+                if candidate_name and candidate_number and candidate_name != candidate_number:
+                    return f"{candidate_name} ({candidate_number})"
+                return candidate_name or candidate_number
             return str(cid)
 
         # Prepare strings
@@ -918,6 +935,12 @@ class VotingApp:
             'vote_record': vote_record,
             'internal_ballot_id': ballot_id
         }
+        self.pending_print_job = {
+            'kind': 'vote',
+            'mode': self.voting_mode,
+            'selections': dict(self.selections),
+            'receipt_entry': receipt_entry,
+        }
 
         # MERGE LOGIC
         if self.merge_receipts:
@@ -944,8 +967,8 @@ class VotingApp:
 
             def printer_worker(mode, sel):
                 try:
-                    self.printer_service.print_vote(mode, sel, is_final=True)
-                    self.print_queue.put(True)
+                    result = self.printer_service.print_vote(mode, sel, is_final=True, stage="vvpat")
+                    self.print_queue.put(result)
                 except Exception as e:
                     self.print_queue.put(e)
 
@@ -955,6 +978,105 @@ class VotingApp:
 
             self.print_start_time = datetime.datetime.now()
             self.check_print_status()
+
+    def _show_vvpat_confirmation_modal(self, message, on_ok):
+        self.close_printing_modal()
+        self.close_vvpat_confirmation_modal()
+        self.vvpat_confirmation_overlay = tk.Toplevel(self.root)
+        self.vvpat_confirmation_overlay.title("VVPAT Confirmation")
+        w, h = 920, 420
+        x = (self.root.winfo_screenwidth() // 2) - (w // 2)
+        y = (self.root.winfo_screenheight() // 2) - (h // 2)
+        self.vvpat_confirmation_overlay.geometry(f"{w}x{h}+{x}+{y}")
+        self.vvpat_confirmation_overlay.transient(self.root)
+        self.vvpat_confirmation_overlay.grab_set()
+        self.vvpat_confirmation_overlay.overrideredirect(True)
+
+        frame = tk.Frame(self.vvpat_confirmation_overlay, bg="#FFF8E1", bd=4, relief=tk.RAISED)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        tk.Label(
+            frame,
+            text="VVPAT Printed",
+            font=('Helvetica', 28, 'bold'),
+            bg="#FFF8E1",
+            fg="#6D4C41"
+        ).pack(pady=(30, 10))
+        tk.Label(
+            frame,
+            text=message,
+            font=('Helvetica', 22),
+            bg="#FFF8E1",
+            fg="#4E342E",
+            wraplength=840,
+            justify=tk.CENTER
+        ).pack(pady=(10, 18))
+
+        button_row = tk.Frame(frame, bg="#FFF8E1")
+        button_row.pack(pady=(10, 30))
+
+        def confirm_and_continue():
+            self.close_vvpat_confirmation_modal()
+            on_ok()
+
+        tk.Button(
+            button_row,
+            text="OK",
+            font=('Helvetica', 24, 'bold'),
+            bg="#2E7D32",
+            fg="white",
+            padx=48,
+            pady=16,
+            command=confirm_and_continue
+        ).pack()
+
+    def close_vvpat_confirmation_modal(self):
+        if hasattr(self, 'vvpat_confirmation_overlay') and self.vvpat_confirmation_overlay:
+            self.vvpat_confirmation_overlay.destroy()
+            self.vvpat_confirmation_overlay = None
+
+    def _start_receipt_stage_for_vote(self):
+        if not self.pending_print_job:
+            return
+
+        self.show_printing_modal(text="Printing Voter Receipt...")
+        self.print_queue = queue.Queue()
+
+        def printer_worker(mode, sel):
+            try:
+                result = self.printer_service.print_vote(mode, sel, is_final=True, stage="receipt")
+                self.print_queue.put(result)
+            except Exception as e:
+                self.print_queue.put(e)
+
+        job = self.pending_print_job
+        self.print_thread = threading.Thread(target=printer_worker, args=(job['mode'], job['selections']))
+        self.print_thread.daemon = True
+        self.print_thread.start()
+
+        self.print_start_time = datetime.datetime.now()
+        self.check_print_status()
+
+    def _start_receipt_stage_for_batch(self):
+        if not self.pending_batch_receipts:
+            return
+
+        self.show_printing_modal(text="Printing Consolidated Receipt...")
+        self.batch_print_queue = queue.Queue()
+
+        def batch_printer_worker(receipts):
+            try:
+                result = self.printer_service.print_session_receipts(receipts, stage="receipt")
+                self.batch_print_queue.put(result)
+            except Exception as e:
+                self.batch_print_queue.put(e)
+
+        self.batch_print_thread = threading.Thread(target=batch_printer_worker, args=(self.pending_batch_receipts,))
+        self.batch_print_thread.daemon = True
+        self.batch_print_thread.start()
+
+        self.batch_print_start_time = datetime.datetime.now()
+        self.check_batch_print_status(False)
 
     def challenge_vote(self):
         """Voter challenges the ballot: print a challenge receipt (no VVPAT, no vote recorded).
@@ -988,7 +1110,13 @@ class VotingApp:
 
         def get_cand_display(cid):
             cand = self.data_handler.get_candidate_by_id(cid)
-            return str(cand['id']) if cand else str(cid)
+            if cand:
+                candidate_name = str(cand.get('name') or cand.get('candidate_name') or cand.get('candidate_number') or cand.get('id') or cid).strip()
+                candidate_number = str(cand.get('candidate_number') or cand.get('id') or cid).strip()
+                if candidate_name and candidate_number and candidate_name != candidate_number:
+                    return f"{candidate_name} ({candidate_number})"
+                return candidate_name or candidate_number
+            return str(cid)
 
         if self.voting_mode == 'normal':
             cid = self.selections.get(1)
@@ -1240,7 +1368,7 @@ class VotingApp:
     def show_printing_modal(self, text="Printing VVPAT Receipt..."):
         self.printing_overlay = tk.Toplevel(self.root)
         self.printing_overlay.title("Processing")
-        w, h = 400, 200
+        w, h = 560, 260
         x = (self.root.winfo_screenwidth() // 2) - (w // 2)
         y = (self.root.winfo_screenheight() // 2) - (h // 2)
         self.printing_overlay.geometry(f"{w}x{h}+{x}+{y}")
@@ -1249,8 +1377,8 @@ class VotingApp:
         self.printing_overlay.overrideredirect(True)
         f = tk.Frame(self.printing_overlay, bg="#E3F2FD", bd=2, relief=tk.RAISED)
         f.pack(fill=tk.BOTH, expand=True)
-        tk.Label(f, text=text, font=('Helvetica', 16, 'bold'), bg="#E3F2FD").pack(pady=30)
-        tk.Label(f, text="Please Wait", font=('Helvetica', 14), bg="#E3F2FD").pack(pady=10)
+        tk.Label(f, text=text, font=('Helvetica', 22, 'bold'), bg="#E3F2FD", wraplength=500, justify=tk.CENTER).pack(pady=36)
+        tk.Label(f, text="Please Wait", font=('Helvetica', 18), bg="#E3F2FD").pack(pady=10)
 
     def close_printing_modal(self):
         if hasattr(self, 'printing_overlay') and self.printing_overlay:
@@ -1260,6 +1388,13 @@ class VotingApp:
     def check_print_status(self):
         try:
             result = self.print_queue.get_nowait()
+            if isinstance(result, dict) and result.get('stage') == 'vvpat_complete':
+                self.close_printing_modal()
+                self._show_vvpat_confirmation_modal(
+                    "This is VVPAT. Please put it in the VVPAT box.\n\nPress OK to print the voter receipt.",
+                    self._start_receipt_stage_for_vote,
+                )
+                return
             self.close_printing_modal()
             if result is True:
                 # Save vote
@@ -1291,6 +1426,8 @@ class VotingApp:
                     
                     if not self.merge_receipts:
                         messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
+
+                    self.pending_print_job = None
                     
                     # Proceed to Next Election in Queue (or Finish)
                     self.start_next_election()
