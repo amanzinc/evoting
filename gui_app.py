@@ -44,6 +44,8 @@ class VotingApp:
         self.print_enabled = True
         self.pending_print_job = None
         self.pending_batch_receipts = None
+        self.print_status_after_id = None
+        self.batch_print_status_after_id = None
 
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
@@ -555,6 +557,7 @@ class VotingApp:
                         self.data_handler.save_json(r)
                 self.receipt_buffer = []
                 self.pending_batch_receipts = None
+                self._cancel_pending_print_polling()
                 self._finalize_session(aborted)
             else:
                 print(f"Batch print error: {result}")
@@ -581,7 +584,7 @@ class VotingApp:
                 self._finalize_session(True)
             return
 
-        self.root.after(500, self.check_batch_print_status, aborted)
+        self.batch_print_status_after_id = self.root.after(500, self.check_batch_print_status, aborted)
 
     def _finalize_session(self, aborted=False):
         # 2. LOG SESSION TOKEN
@@ -889,6 +892,12 @@ class VotingApp:
         def get_cand_display(cid):
             cand = self.data_handler.get_candidate_by_id(cid)
             if cand:
+                return str(cand.get('id') or cid)
+            return str(cid)
+
+        def get_vvpat_display(cid):
+            cand = self.data_handler.get_candidate_by_id(cid)
+            if cand:
                 candidate_name = str(cand.get('name') or cand.get('candidate_name') or cand.get('candidate_number') or cand.get('id') or cid).strip()
                 candidate_number = str(cand.get('candidate_number') or cand.get('id') or cid).strip()
                 if candidate_name and candidate_number and candidate_name != candidate_number:
@@ -900,14 +909,18 @@ class VotingApp:
         if self.voting_mode == 'normal':
             cid = self.selections.get(1)
             sel_str = get_cand_display(cid)
+            vvpat_sel_str = get_vvpat_display(cid)
             qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
         else:
             ranks = sorted(self.selections.keys())
             vals = []
+            vvpat_vals = []
             for r in ranks:
                 c = self.selections[r]
                 vals.append(get_cand_display(c))
+                vvpat_vals.append(get_vvpat_display(c))
             sel_str = ", ".join(vals)
+            vvpat_sel_str = ", ".join(vvpat_vals)
             qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
 
         # Pre-generate log JSON while context is valid
@@ -928,6 +941,7 @@ class VotingApp:
             'ballot_id': ballot_id,
             'timestamp': timestamp,
             'choice_str': sel_str,
+            'vvpat_choice_str': vvpat_sel_str,
             'qr_choice_data': qr_data,
             'voter_qr_data': voter_qr_data,
             'election_hash': self.data_handler.election_hash,
@@ -981,6 +995,7 @@ class VotingApp:
 
     def _show_vvpat_confirmation_modal(self, message, on_ok):
         self.close_printing_modal()
+        self._cancel_pending_print_polling()
         self.close_vvpat_confirmation_modal()
         self.vvpat_confirmation_overlay = tk.Toplevel(self.root)
         self.vvpat_confirmation_overlay.title("VVPAT Confirmation")
@@ -1035,10 +1050,21 @@ class VotingApp:
             self.vvpat_confirmation_overlay.destroy()
             self.vvpat_confirmation_overlay = None
 
+    def _cancel_pending_print_polling(self):
+        for attr in ("print_status_after_id", "batch_print_status_after_id"):
+            after_id = getattr(self, attr, None)
+            if after_id:
+                try:
+                    self.root.after_cancel(after_id)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+
     def _start_receipt_stage_for_vote(self):
         if not self.pending_print_job:
             return
 
+        self._cancel_pending_print_polling()
         self.show_printing_modal(text="Printing Voter Receipt...")
         self.print_queue = queue.Queue()
 
@@ -1061,6 +1087,7 @@ class VotingApp:
         if not self.pending_batch_receipts:
             return
 
+        self._cancel_pending_print_polling()
         self.show_printing_modal(text="Printing Consolidated Receipt...")
         self.batch_print_queue = queue.Queue()
 
@@ -1111,11 +1138,7 @@ class VotingApp:
         def get_cand_display(cid):
             cand = self.data_handler.get_candidate_by_id(cid)
             if cand:
-                candidate_name = str(cand.get('name') or cand.get('candidate_name') or cand.get('candidate_number') or cand.get('id') or cid).strip()
-                candidate_number = str(cand.get('candidate_number') or cand.get('id') or cid).strip()
-                if candidate_name and candidate_number and candidate_name != candidate_number:
-                    return f"{candidate_name} ({candidate_number})"
-                return candidate_name or candidate_number
+                return str(cand.get('id') or cid)
             return str(cid)
 
         if self.voting_mode == 'normal':
@@ -1428,6 +1451,7 @@ class VotingApp:
                         messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
 
                     self.pending_print_job = None
+                    self._cancel_pending_print_polling()
                     
                     # Proceed to Next Election in Queue (or Finish)
                     self.start_next_election()
@@ -1451,7 +1475,7 @@ class VotingApp:
                 self.cast_vote()
             return
 
-        self.root.after(500, self.check_print_status)
+        self.print_status_after_id = self.root.after(500, self.check_print_status)
 
     def exit_app(self, event=None):
         self.root.quit()

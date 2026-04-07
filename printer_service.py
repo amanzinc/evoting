@@ -67,10 +67,12 @@ class PrinterService:
 
         if mode == 'normal':
             cid = selections.get(1)
-            sel_str = self._get_candidate_display_text(cid)
+            vvpat_sel_str = self._get_candidate_display_text(cid)
+            receipt_sel_str = str(cid) if cid is not None else ""
         else:
             ranks = sorted(selections.keys())
-            sel_str = ", ".join(self._get_candidate_display_text(selections[r]) for r in ranks)
+            vvpat_sel_str = ", ".join(self._get_candidate_display_text(selections[r]) for r in ranks)
+            receipt_sel_str = ", ".join(str(selections[r]) for r in ranks)
 
         qr_choice_data = self.data_handler.build_receipt_qr_payload(selections, mode)
         short_b_id = self.data_handler.get_short_ballot_id(ballot_id)
@@ -78,7 +80,8 @@ class PrinterService:
             "ballot_id": ballot_id,
             "station_id": station_id,
             "timestamp": timestamp,
-            "sel_str": sel_str,
+            "vvpat_sel_str": vvpat_sel_str,
+            "receipt_sel_str": receipt_sel_str,
             "qr_choice_data": qr_choice_data,
             "short_b_id": short_b_id,
         }
@@ -100,7 +103,7 @@ class PrinterService:
             os.remove(temp_img)
 
         p.set(align='left', bold=True)
-        p.text(f"Choice : {context['sel_str']}\n")
+        p.text(f"Choice : {context['vvpat_sel_str']}\n")
         p.set(align='left', bold=False)
         p.text("\n")
 
@@ -131,7 +134,7 @@ class PrinterService:
             os.remove(temp_img_v)
 
         p.set(align='left', bold=True)
-        p.text(f"Choice : {context['sel_str']}\n")
+        p.text(f"Choice : {context['receipt_sel_str']}\n")
         p.set(align='left', bold=False)
 
         p.set(align='left')
@@ -441,7 +444,7 @@ class PrinterService:
 
                     p.set(align='left', bold=False)
                     p.set(align='left', bold=True)
-                    p.text(f"Choice: {r['choice_str']}\n")
+                    p.text(f"Choice: {r.get('vvpat_choice_str', r['choice_str'])}\n")
                     p.set(align='left', bold=False)
                     p.text(f"#{idx}: {r.get('election_id', '???')}\n")
 
