@@ -318,9 +318,9 @@ class VotingApp:
         self.print_toggle_btn.place(relx=0.5, rely=0.05, anchor=tk.N)
         
         # Admin Button to End Election (Bottom Right)
-          tk.Button(frame, text="End Election & Export", font=('Helvetica', 12, 'bold'), 
-                command=self.end_election, bg="#ff4c4c", fg="white", 
-                padx=10, pady=5).place(relx=0.95, rely=0.95, anchor=tk.SE)
+                tk.Button(frame, text="End Election & Export", font=('Helvetica', 12, 'bold'), 
+                                    command=self.end_election, bg="#ff4c4c", fg="white", 
+                                    padx=10, pady=5).place(relx=0.95, rely=0.95, anchor=tk.SE)
         
         # Start Scanning Thread
         self.stop_scanning = False
