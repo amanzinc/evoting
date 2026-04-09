@@ -2,6 +2,8 @@ import os
 import uuid
 import datetime
 import time
+import shutil
+import subprocess
 import qrcode
 from PIL import Image, ImageDraw, ImageFont
 
@@ -43,6 +45,62 @@ class PrinterService:
     def _center_line(self, text):
         return text.center(self.paper_width_chars)
 
+    def _run_command_text(self, command):
+        try:
+            result = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+            output = (result.stdout or result.stderr or "").strip()
+            return output
+        except Exception:
+            return "UNKNOWN"
+
+    def _yes_no_unknown(self, value):
+        text = str(value or "").strip().lower()
+        if not text:
+            return "UNKNOWN"
+        if text in ("active", "enabled", "yes", "on", "up"):
+            return "ON"
+        if text in ("inactive", "disabled", "no", "off", "down", "failed"):
+            return "OFF"
+        return text.upper()
+
+    def _get_wifi_status(self):
+        if shutil.which("nmcli"):
+            output = self._run_command_text(["nmcli", "-t", "-f", "WIFI", "general"])
+            if output:
+                return self._yes_no_unknown(output)
+        return self._yes_no_unknown(self._run_command_text(["bash", "-lc", "ip link show wlan0 2>/dev/null | grep -q 'state UP' && echo ON || echo OFF"]))
+
+    def _get_ssh_status(self):
+        if shutil.which("systemctl"):
+            for service_name in ("ssh", "sshd"):
+                output = self._run_command_text(["systemctl", "is-active", service_name])
+                if output and output != "unknown":
+                    return self._yes_no_unknown(output)
+        return "UNKNOWN"
+
+    def _get_bluetooth_status(self):
+        if shutil.which("systemctl"):
+            output = self._run_command_text(["systemctl", "is-active", "bluetooth"])
+            if output and output != "unknown":
+                return self._yes_no_unknown(output)
+        return "UNKNOWN"
+
+    def _count_votes_cast(self, log_dir):
+        votes_file = os.path.join(log_dir or "", "votes.json")
+        if not os.path.exists(votes_file):
+            return 0
+        try:
+            with open(votes_file, "r", encoding="utf-8") as f:
+                return sum(1 for line in f if line.strip())
+        except Exception:
+            return 0
+
     def _get_candidate_display_text(self, cid):
         cand = self.data_handler.get_candidate_by_id(cid)
         if not cand:
@@ -68,11 +126,9 @@ class PrinterService:
         if mode == 'normal':
             cid = selections.get(1)
             vvpat_sel_str = self._get_candidate_display_text(cid)
-            receipt_sel_str = str(cid) if cid is not None else ""
         else:
             ranks = sorted(selections.keys())
             vvpat_sel_str = ", ".join(self._get_candidate_display_text(selections[r]) for r in ranks)
-            receipt_sel_str = ", ".join(str(selections[r]) for r in ranks)
 
         qr_choice_data = self.data_handler.build_receipt_qr_payload(selections, mode)
         short_b_id = self.data_handler.get_short_ballot_id(ballot_id)
@@ -81,7 +137,6 @@ class PrinterService:
             "station_id": station_id,
             "timestamp": timestamp,
             "vvpat_sel_str": vvpat_sel_str,
-            "receipt_sel_str": receipt_sel_str,
             "qr_choice_data": qr_choice_data,
             "short_b_id": short_b_id,
         }
@@ -108,7 +163,6 @@ class PrinterService:
         p.text("\n")
 
         p.set(align='left')
-        p.text(f"Session: {context['timestamp']}\n")
         p.text(f"Station: {context['station_id']}\n")
 
         p.text("\n")
@@ -119,40 +173,6 @@ class PrinterService:
         p.set(align='left', bold=False)
 
         p.text("\n\n")
-
-    def _print_vote_voter_section(self, p, context, is_final=True):
-        top_bar = self._bar("_")
-        bottom_bar = self._bar("_")
-
-        p.text("Keep this receipt safe.\n")
-
-        temp_img_v = self._generate_voter_qr(context["qr_choice_data"])
-
-        p.set(align='left')
-        p.image(temp_img_v)
-        if os.path.exists(temp_img_v):
-            os.remove(temp_img_v)
-
-        p.set(align='left', bold=True)
-        p.text(f"Choice : {context['receipt_sel_str']}\n")
-        p.set(align='left', bold=False)
-
-        p.set(align='left')
-        p.text(f"Session: {context['timestamp']}\n")
-
-        p.set(align='left', font='a', width=1, height=1, bold=True)
-        p.text(self._center_line("** VOTER RECEIPT **") + "\n")
-        p.text(top_bar + "\n")
-        p.set(align='left', bold=False)
-
-        p.text(bottom_bar + "\n")
-
-        if is_final:
-            p.text("\n")
-            p.cut(mode='FULL')
-            p.text("\n")
-        else:
-            p.text("\n_ _ _ _ NEXT ELECTION _ _ _ _\n")
 
     def _set_reverse_print_mode(self, enabled):
         if not self.reverse_print or not self.printer:
@@ -334,16 +354,12 @@ class PrinterService:
         try:
             self._set_reverse_print_mode(True)
 
-            if stage in ("both", "vvpat"):
+            if stage in ("both", "vvpat", "receipt"):
                 self._print_vote_vvpat_section(p, context)
                 time.sleep(5)
                 p.cut(mode='FULL')
-                if stage == "vvpat":
-                    return {"stage": "vvpat_complete", "context": context}
+                return {"stage": "vvpat_complete", "context": context}
 
-            if stage in ("both", "receipt"):
-                self._print_vote_voter_section(p, context, is_final=is_final)
-            
             return True
 
         except Exception as e:
@@ -409,11 +425,7 @@ class PrinterService:
             raise e
 
     def print_session_receipts(self, receipts_list, stage="both"):
-        """
-        Prints two consolidated strips:
-        1. VVPAT SLIPS (All votes) -> CUT (Falls in box)
-        2. VOTER RECEIPTS (All votes) -> CUT (For user)
-        """
+        """Prints a consolidated VVPAT strip and cuts it for the box."""
         if not self.printer:
             self.connect_printer()
         if not self.printer:
@@ -426,7 +438,7 @@ class PrinterService:
         try:
             self._set_reverse_print_mode(True)
 
-            if stage in ("both", "vvpat"):
+            if stage in ("both", "vvpat", "receipt"):
                 p.text("\n")
 
                 for i, r in enumerate(reversed(receipts_list)):
@@ -449,7 +461,6 @@ class PrinterService:
                     p.text(f"#{idx}: {r.get('election_id', '???')}\n")
 
                 p.text(TOP_BAR + "\n\n")
-                p.text(self._center_line(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")) + "\n")
                 p.text(self._center_line("(Internal Audit Trail)") + "\n")
                 p.text(self._center_line("CONSOLIDATED VVPAT SLIPS") + "\n")
                 p.text(TOP_BAR + "\n")
@@ -459,38 +470,7 @@ class PrinterService:
                 time.sleep(5)
                 p.cut(mode='FULL')
 
-                if stage == "vvpat":
-                    return {"stage": "vvpat_complete"}
-
-            if stage in ("both", "receipt"):
-                p.text("Keep Safe\n")
-
-                for i, r in enumerate(reversed(receipts_list)):
-                    idx = len(receipts_list) - i
-                    p.text(DIVIDER + "\n")
-
-                    qr_data_v = r.get('voter_qr_data', r.get('election_hash', 'N/A'))
-                    temp_qr_v = self._generate_voter_qr(qr_data_v)
-
-                    p.set(align='left')
-                    p.image(temp_qr_v)
-                    if os.path.exists(temp_qr_v):
-                        os.remove(temp_qr_v)
-
-                    p.set(align='left', bold=False)
-                    p.text(f"Choice: {r['choice_str']}\n")
-                    p.set(align='left', bold=True)
-                    p.text(f"#{idx}: {r.get('election_id', '???')}\n")
-
-                p.text(TOP_BAR + "\n\n")
-                p.text(self._center_line(datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")) + "\n")
-                p.text(self._center_line("(For Voter)") + "\n")
-                p.text(self._center_line("CONSOLIDATED VOTER RECEIPT") + "\n")
-                p.text(TOP_BAR + "\n")
-                p.set(align='left', font='a', width=1, height=1, bold=True)
-
-                p.cut(mode='FULL')
-                return True
+                return {"stage": "vvpat_complete"}
             
         except Exception as e:
             print(f"Batch Print Error: {e}")
@@ -559,6 +539,10 @@ class PrinterService:
             
             p.text(f"Log Volume : {log_dir}\n")
             p.text(f"Device MAC : {mac_addr}\n")
+            p.text(f"Votes Cast : {self._count_votes_cast(log_dir)}\n")
+            p.text(f"Wifi Status : {self._get_wifi_status()}\n")
+            p.text(f"SSH Status : {self._get_ssh_status()}\n")
+            p.text(f"Bluetooth Status : {self._get_bluetooth_status()}\n")
             p.set(align='left', bold=False)
             
             p.text(TOP_BAR + "\n")
