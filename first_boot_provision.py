@@ -526,9 +526,17 @@ class ProvisionApp:
             hw_label = "FALLBACK (not secure)"
 
         # ── QR generation — same pattern as _generate_voter_qr() in printer_service.py
-        # QR encodes BMD ID + full public key PEM so the election admin can
-        # scan and import the key directly without manual transcription.
-        qr_data = f"BMD:{bmd_id}\n{public_key_pem.strip()}"
+        # QR encodes the same JSON as bmd_key.json so the election admin can
+        # scan and directly import the key into the encryption system.
+        import json as _json
+        qr_data = _json.dumps(
+            [{
+                "bmd_id":             bmd_id,
+                "rsa_public_key_pem": public_key_pem.strip() + "\n",
+                "is_active":          True,
+            }],
+            separators=(',', ':')
+        )
 
         qr_img = qrcode.make(qr_data)
         qr_size = 350           # larger to fit the denser PEM QR
