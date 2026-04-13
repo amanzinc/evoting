@@ -214,14 +214,14 @@ class ProvisionApp:
         body = tk.Frame(self._frame, bg=P["bg"])
         body.pack(expand=True, fill=tk.BOTH, padx=60, pady=16)
 
-        # Display strip
-        disp = tk.Frame(body, bg=P["panel"], pady=18, padx=28)
-        disp.pack(fill=tk.X, pady=(0, 24))
-        tk.Label(disp, text="BMD ID:", font=("Helvetica", 16),
+        # Display strip — compact, fixed-height so numpad gets the rest
+        disp = tk.Frame(body, bg=P["panel"], pady=10, padx=22)
+        disp.pack(fill=tk.X, pady=(0, 10))
+        tk.Label(disp, text="BMD ID:", font=("Helvetica", 13),
                  bg=P["panel"], fg=P["muted"]).pack(anchor="w")
         self._bmd_disp = tk.StringVar(value="_")
         tk.Label(disp, textvariable=self._bmd_disp,
-                 font=("Helvetica", 52, "bold"),
+                 font=("Helvetica", 38, "bold"),
                  bg=P["panel"], fg=P["text"]).pack(anchor="w")
 
         self.bmd_id_str = ""
@@ -247,12 +247,12 @@ class ProvisionApp:
                     cmd = lambda k=key: self._bmd_append(k)
                 tk.Button(
                     pad, text=key,
-                    font=("Helvetica", 26, "bold"),
+                    font=("Helvetica", 18, "bold"),
                     bg=bg, fg=P["text"],
-                    width=4, pady=18,
+                    width=5, pady=10,
                     relief=tk.FLAT, cursor="hand2",
                     command=cmd,
-                ).grid(row=r, column=c, padx=5, pady=5)
+                ).grid(row=r, column=c, padx=4, pady=4)
 
         foot = self._footer()
         self._flat_btn(foot, "← Back", self.show_welcome, P["btn"],
@@ -585,21 +585,51 @@ class ProvisionApp:
                          wraplength=700, justify=tk.LEFT).pack(anchor="w")
 
         if not critical_failed:
-            tk.Label(
-                body,
-                text=(
-                    "Remove any provisioning USB drives if present.\n"
-                    "The voting application will start automatically."
-                ),
-                font=("Helvetica", 15),
-                bg=P["bg"], fg=P["muted"],
-                justify=tk.CENTER,
-            ).pack(pady=20)
-            self._countdown_var = tk.StringVar(value="Starting in 5…")
+            # ── Device summary card ───────────────────────────────────────────
+            # Read back what was just written so the operator can verify.
+            project_dir = os.path.dirname(os.path.abspath(__file__))
+            pub_fingerprint = "(unavailable)"
+            try:
+                from cryptography.hazmat.primitives.serialization import load_pem_public_key
+                from cryptography.hazmat.primitives import hashes
+                pub_path = os.path.join(project_dir, "public.pem")
+                with open(pub_path, "rb") as f:
+                    pub_key = load_pem_public_key(f.read())
+                # SHA-256 fingerprint of the DER-encoded public key
+                from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+                der = pub_key.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+                import hashlib
+                digest = hashlib.sha256(der).hexdigest()
+                pub_fingerprint = ":" .join(digest[i:i+4] for i in range(0, 32, 4))
+            except Exception:
+                pass
+
+            hw_ok, hw_msg = self._check_hw_binding()
+            summary_box = tk.Frame(body, bg=P["panel"], pady=16, padx=24)
+            summary_box.pack(fill=tk.X, pady=(8, 4))
+            for lbl, val, col in [
+                ("BMD ID",      str(bmd_id),        P["text"]),
+                ("HW Binding",  hw_msg,             P["ok_fg"] if hw_ok else P["warn_fg"]),
+                ("Key SHA-256", pub_fingerprint,     P["muted"]),
+                ("LOGS Path",   self.log_dir or "?", P["muted"]),
+            ]:
+                row = tk.Frame(summary_box, bg=P["panel"])
+                row.pack(fill=tk.X, pady=3)
+                tk.Label(row, text=f"{lbl}:",
+                         font=("Helvetica", 13, "bold"),
+                         bg=P["panel"], fg=P["muted"],
+                         width=14, anchor="w").pack(side=tk.LEFT)
+                tk.Label(row, text=val,
+                         font=("Helvetica", 13),
+                         bg=P["panel"], fg=col,
+                         anchor="w", wraplength=600).pack(side=tk.LEFT)
+
+            self._countdown_var = tk.StringVar(value="Starting in 10…")
             tk.Label(body, textvariable=self._countdown_var,
-                     font=("Helvetica", 22, "bold"),
-                     bg=P["bg"], fg=P["ok_fg"]).pack()
-            self._tick(5)
+                     font=("Helvetica", 18, "bold"),
+                     bg=P["bg"], fg=P["ok_fg"]).pack(pady=(12, 0))
+            self._tick(10)
+            self._last_bmd_id = bmd_id   # save for reprint
 
         foot = self._footer()
         if critical_failed:
@@ -608,6 +638,10 @@ class ProvisionApp:
             self._flat_btn(
                 foot, "▶  Start Voting App Now",
                 self._launch_voting_app, P["accent"],
+            )
+            self._flat_btn(
+                foot, "🖨  Reprint Ticket",
+                self._reprint_ticket, "#1565c0", side=tk.LEFT,
             )
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -621,6 +655,21 @@ class ProvisionApp:
         if self._countdown_var:
             self._countdown_var.set(f"Starting in {n}…")
         self.root.after(1000, lambda: self._tick(n - 1))
+
+    def _reprint_ticket(self):
+        """Reprint the provisioning ticket from the Done screen."""
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        try:
+            pub_key_path = os.path.join(project_dir, "public.pem")
+            with open(pub_key_path, "r", encoding="utf-8") as f:
+                public_key_pem = f.read()
+            import hardware_crypto
+            machine_id = hardware_crypto.get_machine_id()
+            bmd_id = getattr(self, "_last_bmd_id", 0)
+            self._print_ticket(bmd_id, public_key_pem, machine_id)
+            messagebox.showinfo("Reprint", "Ticket reprinted successfully.")
+        except Exception as exc:
+            messagebox.showerror("Reprint Failed", str(exc))
 
     def _launch_voting_app(self):
         """Restart main.py — the .provisioned flag now exists, so the voting app loads."""
