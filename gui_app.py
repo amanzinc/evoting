@@ -26,6 +26,9 @@ class VotingApp:
         
         self.root.title("Ballot Marking Device")
         self.root.attributes('-fullscreen', True)
+        self.root.resizable(False, False)
+        # Disable the OS window-close button — only the admin menu can exit.
+        self.root.protocol("WM_DELETE_WINDOW", lambda: None)
         # NOTE: Escape no longer exits — use the Admin Menu (type 'Aman') instead.
 
         # ── Hidden admin menu trigger ────────────────────────────────────────────
@@ -1654,7 +1657,7 @@ class VotingApp:
         grid.pack(expand=True, fill=tk.BOTH, padx=60)
         grid.grid_columnconfigure(0, weight=1)
         grid.grid_columnconfigure(1, weight=1)
-        for r in range(5):
+        for r in range(6):
             grid.grid_rowconfigure(r, weight=1)
 
         def _btn(text, cmd, bg, fg='white', row=0, col=0, colspan=1):
@@ -1686,14 +1689,18 @@ class VotingApp:
         _btn("🔄  [DEV] Return to USB Screen",
              self._admin_dev_restart_usb, '#37474f', row=2, col=1)
 
-        # Row 3 — Exit (full width, high contrast danger)
-        _btn("⛔  EXIT APPLICATION",
-             self._admin_exit_app, '#c62828', row=3, col=0, colspan=2)
+        # Row 3 — Reset device (full width, high-contrast orange)
+        _btn("🔁  Reset & Re-Provision Device",
+             self._admin_reset_device, '#e65100', row=3, col=0, colspan=2)
 
-        # Row 4 — Close (full width, muted)
+        # Row 4 — Exit (full width, danger red)
+        _btn("⛔  EXIT APPLICATION",
+             self._admin_exit_app, '#c62828', row=4, col=0, colspan=2)
+
+        # Row 5 — Close (full width, muted)
         _btn("✕  Close Admin Menu",
              self._close_admin_menu, '#21262d', fg='#cdd9e5',
-             row=4, col=0, colspan=2)
+             row=5, col=0, colspan=2)
 
     # ── Admin action handlers ─────────────────────────────────────────────────
 
@@ -1778,4 +1785,57 @@ class VotingApp:
             f"Log Dir       : {getattr(self, 'log_dir', 'N/A')}\n"
         )
         messagebox.showinfo("System Status", msg, parent=self._admin_overlay)
+
+    def _admin_reset_device(self):
+        """Wipe all provisioning data and restart into the provisioning wizard."""
+        if not messagebox.askyesno(
+            "Reset Device",
+            "⚠️  WARNING: This will permanently delete:\n\n"
+            "  • private.pem  (signing key)\n"
+            "  • public.pem   (public key)\n"
+            "  • bmd_config.json\n"
+            "  • .provisioned flag\n\n"
+            "The device will restart into the provisioning wizard.\n"
+            "A new BMD ID and key pair must be assigned.\n\n"
+            "Continue?",
+            parent=self._admin_overlay,
+            icon='warning',
+        ):
+            return
+
+        # Second confirmation — this is irreversible
+        if not messagebox.askyesno(
+            "Final Confirmation",
+            "This action CANNOT be undone.\n\n"
+            "All existing keys will be destroyed.\n"
+            "Any ballots encrypted with the current public key\n"
+            "will NO LONGER be decryptable on this device.\n\n"
+            "Are you absolutely sure?",
+            parent=self._admin_overlay,
+            icon='warning',
+        ):
+            return
+
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        to_delete = [
+            os.path.join(project_dir, "private.pem"),
+            os.path.join(project_dir, "public.pem"),
+            os.path.join(project_dir, "bmd_config.json"),
+        ]
+        log_dir = getattr(self, 'log_dir', None)
+        if log_dir:
+            to_delete.append(os.path.join(log_dir, ".provisioned"))
+
+        for path in to_delete:
+            try:
+                os.chmod(path, 0o644)   # ensure writable in case it was locked
+                os.remove(path)
+            except Exception:
+                pass
+
+        self._close_admin_menu()
+        # Restart the process — main.py will see no .provisioned and launch wizard
+        import sys
+        self.root.destroy()
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 

@@ -56,6 +56,10 @@ class ProvisionApp:
 
         self.root.title("BMD First-Boot Provisioning")
         self.root.attributes("-fullscreen", True)
+        self.root.resizable(False, False)
+        # Force to stay on top
+        self.root.lift()
+        self.root.focus_force()
         self.root.configure(bg=P["bg"])
 
         self._frame = tk.Frame(self.root, bg=P["bg"])
@@ -491,17 +495,24 @@ class ProvisionApp:
         return None
 
     def _print_ticket(self, bmd_id: int, public_key_pem: str, machine_id: str):
-        """Print the provisioning receipt to the thermal printer."""
-        import qrcode  # type: ignore
-        from PIL import Image  # noqa: F401 — ensure Pillow available
+        """Print the provisioning receipt.
+
+        QR encodes the SHA-256 fingerprint (64 hex chars) rather than the full
+        PEM: this keeps the QR small enough to scan reliably on narrow paper.
+        The RGB-canvas wrapping is mandatory — qrcode.make() returns a 1-bit
+        image that many ESC/POS drivers cannot render correctly.
+        """
+        import qrcode          # type: ignore
+        from PIL import Image
+        import hashlib
 
         printer = self._get_printer()
         if not printer:
             raise RuntimeError("No thermal printer found")
 
-        timestamp = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-        width = 32
-        bar   = "=" * width
+        timestamp   = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+        paper_width = 384      # dots (80 mm printer); use 302 for 58 mm
+        bar = "=" * 32
 
         if "OTP_" in machine_id:
             hw_label = "OTP (clone-resistant)"
@@ -512,40 +523,65 @@ class ProvisionApp:
         else:
             hw_label = "FALLBACK (not secure)"
 
-        # Generate QR code of the public key PEM
-        qr_img = qrcode.make(public_key_pem.strip())
-        qr_img = qr_img.resize((384, 384))
-        tmp_qr = f"/tmp/bmd_provision_qr_{bmd_id}.png"
-        qr_img.save(tmp_qr)
+        # Fingerprint QR: compact, always scannable on narrow thermal strip
+        fingerprint = hashlib.sha256(public_key_pem.strip().encode()).hexdigest()
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=6, border=2,
+        )
+        qr.add_data(fingerprint)
+        qr.make(fit=True)
+        qr_raw     = qr.make_image(fill_color="black", back_color="white")
+        qr_size    = min(paper_width - 20, 300)
+        qr_resized = qr_raw.resize((qr_size, qr_size))
+        # RGB canvas — required for correct ESC/POS rendering
+        canvas = Image.new("RGB", (paper_width, qr_size), "white")
+        canvas.paste(qr_resized, ((paper_width - qr_size) // 2, 0))
+        tmp_qr = f"/tmp/bmd_qr_{bmd_id}.png"
+        canvas.save(tmp_qr)
 
         try:
             printer.set(align="center", bold=True)
             printer.text(f"{bar}\n")
             printer.text("BALLOT MARKING DEVICE\n")
             printer.text("PROVISIONING RECEIPT\n")
-            printer.text(f"{bar}\n")
+            printer.text(f"{bar}\n\n")
+
             printer.set(align="left", bold=False)
             printer.text(f"Date/Time  : {timestamp}\n")
             printer.text(f"BMD ID     : {bmd_id}\n")
-            printer.text(f"HW Binding : {hw_label}\n")
-            printer.text(f"{bar}\n")
-            printer.set(align="center")
-            printer.text("PUBLIC KEY (scan QR or copy text below)\n\n")
+            printer.text(f"HW Binding : {hw_label}\n\n")
+
+            printer.set(align="center", bold=True)
+            printer.text("PUBLIC KEY FINGERPRINT (SHA-256)\n")
+            printer.text("Scan QR or compare text below:\n\n")
             printer.image(tmp_qr)
             printer.text("\n")
+
+            printer.set(align="left", bold=False)
+            fp = fingerprint
+            printer.text(f"{fp[:32]}\n{fp[32:]}\n\n")
+
+            printer.set(align="center", bold=True)
+            printer.text(f"{bar}\nFULL PUBLIC KEY:\n{bar}\n")
             printer.set(align="left", bold=False)
             for line in public_key_pem.strip().splitlines():
                 printer.text(f"{line}\n")
-            printer.text(f"\n{bar}\n")
+
             printer.set(align="center", bold=True)
-            printer.text("SEND THIS TO ELECTION ADMIN\n")
-            printer.text("TO ENCRYPT BALLOT FILES\n")
+            printer.text(f"\n{bar}\n")
+            printer.text("SEND TO ELECTION ADMIN\n")
             printer.text(f"{bar}\n")
-            printer.text("\n\n\n")
+
+            # Feed paper so all content clears the auto-cutter blade
+            printer.text("\n\n\n\n\n\n")
             printer.cut(mode="FULL")
+
         finally:
             if os.path.exists(tmp_qr):
                 os.remove(tmp_qr)
+
 
     # ──────────────────────────────────────────────────────────────────────────
     # Screen 5 — Done
