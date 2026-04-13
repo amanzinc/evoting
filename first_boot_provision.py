@@ -525,30 +525,20 @@ class ProvisionApp:
         else:
             hw_label = "FALLBACK (not secure)"
 
-        # Fingerprint QR: compact, always scannable on narrow thermal strip
+        # ── QR generation — direct copy of _generate_voter_qr() in printer_service.py
+        # That exact method works for VVPAT and startup slips without modification.
         fingerprint = hashlib.sha256(public_key_pem.strip().encode()).hexdigest()
-        qr = qrcode.QRCode(
-            version=None,
-            error_correction=qrcode.constants.ERROR_CORRECT_M,
-            box_size=8,   # natural pixel size; no resize needed
-            border=3,
-        )
-        qr.add_data(fingerprint)
-        qr.make(fit=True)
 
-        # make_image() returns a PIL image; convert to explicit RGB mode.
-        # We do NOT resize — resizing a QR causes alignment artifacts in
-        # the ESC/POS raster encoder and is the root cause of split images.
-        qr_pil  = qr.make_image(fill_color="black", back_color="white")
-        qr_rgb  = qr_pil.convert("RGB")
+        qr_img = qrcode.make(fingerprint)
+        qr_size = 250
+        qr_img = qr_img.resize((qr_size, qr_size))
 
-        # Centre the QR on a paper-width RGB canvas.
-        qr_w, qr_h = qr_rgb.size
-        canvas = Image.new("RGB", (paper_width, qr_h), "white")
-        x_off  = max(0, (paper_width - qr_w) // 2)
-        canvas.paste(qr_rgb, (x_off, 0))
+        total_width = paper_width          # 384 dots for 80 mm
+        img_canvas = Image.new('RGB', (total_width, qr_size + 10), 'white')
+        x_pos = (total_width - qr_size) // 2
+        img_canvas.paste(qr_img, (x_pos, 5))
         tmp_qr = f"/tmp/bmd_qr_{bmd_id}.png"
-        canvas.save(tmp_qr)
+        img_canvas.save(tmp_qr)
 
         try:
             printer.set(align="center", bold=True)
@@ -565,8 +555,9 @@ class ProvisionApp:
             printer.set(align="center", bold=True)
             printer.text("PUBLIC KEY FINGERPRINT (SHA-256)\n")
             printer.text("Scan QR or compare text below:\n\n")
-            # bitImageColumn sends the image in one pass — prevents split QR
-            printer.image(tmp_qr, impl="bitImageColumn")
+            # Identical call to startup slip / VVPAT — proven to work
+            printer.set(align='left')
+            printer.image(tmp_qr)
             printer.text("\n")
 
             printer.set(align="left", bold=False)
