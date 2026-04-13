@@ -359,7 +359,7 @@ class PrinterService:
                 p.cut(mode='FULL')
                 # Extra feed after the cut
                 p.text("\n\n\n\n\n\n")
-                time.sleep(2)
+                time.sleep(5)
                 return {"stage": "vvpat_complete", "context": context}
 
             return True
@@ -469,7 +469,7 @@ class PrinterService:
             p.cut(mode='FULL')
             # Extra feed after the cut
             p.text("\n\n\n\n\n\n")
-            time.sleep(2)
+            time.sleep(5)
 
             return {"stage": "vvpat_complete"}
 
