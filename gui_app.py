@@ -1462,10 +1462,7 @@ class VotingApp:
             result = self.print_queue.get_nowait()
             if isinstance(result, dict) and result.get('stage') == 'vvpat_complete':
                 self.close_printing_modal()
-                self._show_vvpat_confirmation_modal(
-                    "This is VVPAT. Please put it in the VVPAT box.\n\nPress OK to continue.",
-                    self._start_receipt_stage_for_vote,
-                )
+                self._start_receipt_stage_for_vote()
                 return
             self.close_printing_modal()
             if result is True:
