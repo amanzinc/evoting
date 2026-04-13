@@ -48,8 +48,8 @@ class VotingApp:
         self.max_ranks = 3
         self.current_rank = 1
         self.selections = {}
-        self.merge_receipts = True # Temporary flag for merged printing
-        self.receipt_buffer = [] # Store print data for batching 
+        self.merge_receipts = False  # Each election gets its own VVPAT immediately
+        self.receipt_buffer = []      # Kept for compatibility; not used in non-merge mode
         self.print_enabled = True
         self.pending_print_job = None
         self.pending_batch_receipts = None
@@ -507,91 +507,12 @@ class VotingApp:
             self.show_rfid_screen()
 
     def finish_voter_session(self, aborted=False):
-        """Called when all eligible elections are completed."""
-        # 1. BATCH PRINTING IF ENABLED
-        if not aborted and self.merge_receipts and hasattr(self, 'receipt_buffer') and self.receipt_buffer and self.print_enabled:
-            self.pending_batch_receipts = list(self.receipt_buffer)
-            self.show_printing_modal(text="Printing Consolidated VVPAT...")
-            
-            self.batch_print_queue = queue.Queue()
-            
-            def batch_printer_worker(receipts):
-                try:
-                    result = self.printer_service.print_session_receipts(receipts, stage="vvpat")
-                    self.batch_print_queue.put(result)
-                except Exception as e:
-                    self.batch_print_queue.put(e)
+        """Called when all eligible elections are completed.
 
-            self.batch_print_thread = threading.Thread(target=batch_printer_worker, args=(self.receipt_buffer,))
-            self.batch_print_thread.daemon = True
-            self.batch_print_thread.start()
-            
-            self.batch_print_start_time = datetime.datetime.now()
-            self.check_batch_print_status(aborted)
-            return
-
-        # If printing is disabled, persist buffered votes without printing.
-        if not aborted and self.merge_receipts and hasattr(self, 'receipt_buffer') and self.receipt_buffer and not self.print_enabled:
-            all_records = [entry.get('vote_record') for entry in self.receipt_buffer if entry.get('vote_record')]
-            for r in all_records:
-                self.data_handler.save_json(r)
-            self.receipt_buffer = []
-            self.pending_batch_receipts = None
-
+        With merge_receipts=False each election already printed its own VVPAT
+        immediately after voting, so there is nothing to batch here.
+        """
         self._finalize_session(aborted)
-
-    def check_batch_print_status(self, aborted=False):
-        try:
-            result = self.batch_print_queue.get_nowait()
-            if isinstance(result, dict) and result.get('stage') == 'vvpat_complete':
-                self.close_printing_modal()
-                self._show_vvpat_confirmation_modal(
-                    "This is VVPAT. Please put it in the VVPAT box.\n\nPress OK to continue.",
-                    self._start_receipt_stage_for_batch,
-                )
-                return
-            self.close_printing_modal()
-            if result is True:
-                # 2. Log Votes (Only if Print Succeeded)
-                all_records = []
-                source_buffer = self.pending_batch_receipts if self.pending_batch_receipts is not None else self.receipt_buffer
-                for entry in source_buffer:
-                    if 'vote_record' in entry:
-                         all_records.append(entry['vote_record'])
-                
-                if all_records:
-                    for r in all_records:
-                        self.data_handler.save_json(r)
-                self.receipt_buffer = []
-                self.pending_batch_receipts = None
-                self._cancel_pending_print_polling()
-                self._finalize_session(aborted)
-            else:
-                print(f"Batch print error: {result}")
-                retry = messagebox.askretrycancel("Printer Error", f"Failed to print session receipt: {result}\n\nRetry?")
-                if retry:
-                    self.finish_voter_session(aborted)
-                else:
-                    self.receipt_buffer = []
-                    self.pending_batch_receipts = None
-                    # Pass True so we don't log votes if the receipt failed to print!
-                    self._finalize_session(True)
-            return
-        except queue.Empty:
-            pass
-
-        elapsed = (datetime.datetime.now() - self.batch_print_start_time).total_seconds()
-        if elapsed > 60:
-            self.close_printing_modal()
-            retry = messagebox.askretrycancel("Printer Timeout", "Printer is taking too long.\n\nRetry?")
-            if retry:
-                self.finish_voter_session(aborted)
-            else:
-                self.receipt_buffer = []
-                self._finalize_session(True)
-            return
-
-        self.batch_print_status_after_id = self.root.after(500, self.check_batch_print_status, aborted)
 
     def _finalize_session(self, aborted=False):
         # 2. LOG SESSION TOKEN

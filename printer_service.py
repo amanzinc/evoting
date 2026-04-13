@@ -356,7 +356,9 @@ class PrinterService:
 
             if stage in ("both", "vvpat", "receipt"):
                 self._print_vote_vvpat_section(p, context)
-                time.sleep(5)
+                # Extra feed so the VVPAT slip clears the print head and falls out
+                p.text("\n\n\n\n\n\n")
+                time.sleep(2)
                 p.cut(mode='FULL')
                 return {"stage": "vvpat_complete", "context": context}
 
@@ -424,60 +426,59 @@ class PrinterService:
             print(f"Voter QR Error: {e}")
             raise e
 
-    def print_session_receipts(self, receipts_list, stage="both"):
-        """Prints a consolidated VVPAT strip and cuts it for the box."""
+    def print_single_vvpat(self, receipt_entry):
+        """Print one VVPAT slip for a single election immediately after voting.
+
+        Replaces the old consolidated (batch) approach.  Each election gets its
+        own slip cut immediately so the paper falls from the printer.
+        """
         if not self.printer:
             self.connect_printer()
         if not self.printer:
-            return # Fail silently or log
-            
+            raise Exception("Printer not connected")
+
         p = self.printer
-        TOP_BAR = self._bar("=")
         DIVIDER = self._bar("-")
-        
+        TOP_BAR = self._bar("=")
+
         try:
             self._set_reverse_print_mode(True)
 
-            if stage in ("both", "vvpat", "receipt"):
-                p.text("\n")
+            p.text("\n")
+            p.text(DIVIDER + "\n")
 
-                for i, r in enumerate(reversed(receipts_list)):
-                    idx = len(receipts_list) - i
-                    p.text(DIVIDER + "\n")
+            qr_data     = receipt_entry['qr_choice_data']
+            short_b_id  = self.data_handler.get_short_ballot_id(receipt_entry['ballot_id'])
+            temp_qr     = self._generate_vvpat_qr(qr_data, short_b_id)
 
-                    qr_data = r['qr_choice_data']
-                    short_b_id = self.data_handler.get_short_ballot_id(r['ballot_id'])
-                    temp_qr = self._generate_vvpat_qr(qr_data, short_b_id)
+            p.set(align='left')
+            p.image(temp_qr)
+            if os.path.exists(temp_qr):
+                os.remove(temp_qr)
 
-                    p.set(align='left')
-                    p.image(temp_qr)
-                    if os.path.exists(temp_qr):
-                        os.remove(temp_qr)
+            p.set(align='left', bold=True)
+            p.text(f"Choice: {receipt_entry.get('vvpat_choice_str', receipt_entry.get('choice_str', '?'))}\n")
+            p.set(align='left', bold=False)
+            p.text(f"Election: {receipt_entry.get('election_id', '?')}\n")
 
-                    p.set(align='left', bold=False)
-                    p.set(align='left', bold=True)
-                    p.text(f"Choice: {r.get('vvpat_choice_str', r['choice_str'])}\n")
-                    p.set(align='left', bold=False)
-                    p.text(f"#{idx}: {r.get('election_id', '???')}\n")
+            p.text(TOP_BAR + "\n\n")
+            p.text(self._center_line("(Internal Audit Trail)") + "\n")
+            p.text(self._center_line("VVPAT SLIP") + "\n")
+            p.text(TOP_BAR + "\n")
 
-                p.text(TOP_BAR + "\n\n")
-                p.text(self._center_line("(Internal Audit Trail)") + "\n")
-                p.text(self._center_line("CONSOLIDATED VVPAT SLIPS") + "\n")
-                p.text(TOP_BAR + "\n")
-                p.set(align='left', font='a', width=1, height=1, bold=True)
+            # Extra feed so the slip clears the print head and falls out cleanly
+            p.text("\n\n\n\n\n\n")
+            time.sleep(2)
+            p.cut(mode='FULL')
 
-                p.text("\n\n")
-                time.sleep(5)
-                p.cut(mode='FULL')
+            return {"stage": "vvpat_complete"}
 
-                return {"stage": "vvpat_complete"}
-            
         except Exception as e:
-            print(f"Batch Print Error: {e}")
+            print(f"VVPAT Print Error: {e}")
             try:
                 if self.printer:
                     self.printer.close()
-            except:
+            except Exception:
                 pass
             self.printer = None
             raise e
