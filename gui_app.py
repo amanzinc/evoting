@@ -896,9 +896,9 @@ class VotingApp:
             for r in ranks:
                 c = self.selections[r]
                 vals.append(get_cand_display(c))
-                vvpat_vals.append(get_vvpat_display(c))
+                vvpat_vals.append(f"Rank {r}: {get_vvpat_display(c)}")
             sel_str = ", ".join(vals)
-            vvpat_sel_str = ", ".join(vvpat_vals)
+            vvpat_sel_str = "\n        ".join(vvpat_vals)
             qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
 
         # Pre-generate log JSON while context is valid
