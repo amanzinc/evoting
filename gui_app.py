@@ -533,11 +533,10 @@ class VotingApp:
             self._show_session_complete_screen()
             return
         else:
-            messagebox.showinfo("Session Aborted", "Your session has been cancelled.")
-            
-        self.active_token = None
-        self.current_election_id = None
-        self.show_rfid_screen()
+            self.active_token = None
+            self.current_election_id = None
+            self.show_rfid_error("Your session has been cancelled.")
+            return
 
     def _show_session_complete_screen(self):
         self.clear_container()
@@ -1861,7 +1860,7 @@ class VotingApp:
                 self.root.after(0, lambda: _append("Running: git fetch…"))
                 fetch = subprocess.run(
                     ['git', '-C', project_dir, 'fetch'],
-                    capture_output=True, text=True, timeout=60
+                    capture_output=True, text=True, timeout=15
                 )
                 if fetch.returncode != 0:
                     err = fetch.stderr.strip() or fetch.stdout.strip()
@@ -1880,7 +1879,7 @@ class VotingApp:
                 self.root.after(0, lambda: _append(f"Running: git pull origin {branch}…"))
                 pull = subprocess.run(
                     ['git', '-C', project_dir, 'pull', 'origin', branch],
-                    capture_output=True, text=True, timeout=120
+                    capture_output=True, text=True, timeout=30
                 )
                 combined = (pull.stdout + pull.stderr).strip()
                 self.root.after(0, lambda: _append(combined))
@@ -1920,7 +1919,7 @@ class VotingApp:
             except subprocess.TimeoutExpired:
                 self.root.after(0, lambda: status_var.set("❌  Timed out."))
                 self.root.after(0, lambda: _append(
-                    "❌  Operation timed out after 120 seconds.\n"
+                    "❌  Operation timed out.\n"
                     "Check your internet connection and try again."
                 ))
             except Exception as exc:
