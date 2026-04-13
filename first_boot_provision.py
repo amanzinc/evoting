@@ -525,12 +525,13 @@ class ProvisionApp:
         else:
             hw_label = "FALLBACK (not secure)"
 
-        # ── QR generation — direct copy of _generate_voter_qr() in printer_service.py
-        # That exact method works for VVPAT and startup slips without modification.
-        fingerprint = hashlib.sha256(public_key_pem.strip().encode()).hexdigest()
+        # ── QR generation — same pattern as _generate_voter_qr() in printer_service.py
+        # QR encodes BMD ID + full public key PEM so the election admin can
+        # scan and import the key directly without manual transcription.
+        qr_data = f"BMD:{bmd_id}\n{public_key_pem.strip()}"
 
-        qr_img = qrcode.make(fingerprint)
-        qr_size = 250
+        qr_img = qrcode.make(qr_data)
+        qr_size = 350           # larger to fit the denser PEM QR
         qr_img = qr_img.resize((qr_size, qr_size))
 
         total_width = paper_width          # 384 dots for 80 mm
@@ -553,16 +554,18 @@ class ProvisionApp:
             printer.text(f"HW Binding : {hw_label}\n\n")
 
             printer.set(align="center", bold=True)
-            printer.text("PUBLIC KEY FINGERPRINT (SHA-256)\n")
-            printer.text("Scan QR or compare text below:\n\n")
-            # Identical call to startup slip / VVPAT — proven to work
+            printer.text("PUBLIC KEY QR CODE\n")
+            printer.text("(Contains BMD ID + Full Public Key)\n\n")
+            # Identical call pattern to startup slip / VVPAT
             printer.set(align='left')
             printer.image(tmp_qr)
             printer.text("\n")
 
+            # Also print fingerprint as human-readable text for verification
             printer.set(align="left", bold=False)
-            fp = fingerprint
-            printer.text(f"{fp[:32]}\n{fp[32:]}\n\n")
+            fingerprint = hashlib.sha256(public_key_pem.strip().encode()).hexdigest()
+            printer.text(f"SHA-256: {fingerprint[:32]}\n")
+            printer.text(f"         {fingerprint[32:]}\n\n")
 
             printer.set(align="center", bold=True)
             printer.text(f"{bar}\nFULL PUBLIC KEY:\n{bar}\n")

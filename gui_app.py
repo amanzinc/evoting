@@ -1657,7 +1657,7 @@ class VotingApp:
         grid.pack(expand=True, fill=tk.BOTH, padx=60)
         grid.grid_columnconfigure(0, weight=1)
         grid.grid_columnconfigure(1, weight=1)
-        for r in range(6):
+        for r in range(7):
             grid.grid_rowconfigure(r, weight=1)
 
         def _btn(text, cmd, bg, fg='white', row=0, col=0, colspan=1):
@@ -1689,18 +1689,22 @@ class VotingApp:
         _btn("🔄  [DEV] Return to USB Screen",
              self._admin_dev_restart_usb, '#37474f', row=2, col=1)
 
-        # Row 3 — Reset device (full width, high-contrast orange)
+        # Row 3 — Firmware update (full width, blue)
+        _btn("📡  Firmware Update (git pull)",
+             self._admin_firmware_update, '#1565c0', row=3, col=0, colspan=2)
+
+        # Row 4 — Reset device (full width, orange)
         _btn("🔁  Reset & Re-Provision Device",
-             self._admin_reset_device, '#e65100', row=3, col=0, colspan=2)
+             self._admin_reset_device, '#e65100', row=4, col=0, colspan=2)
 
-        # Row 4 — Exit (full width, danger red)
+        # Row 5 — Exit (full width, danger red)
         _btn("⛔  EXIT APPLICATION",
-             self._admin_exit_app, '#c62828', row=4, col=0, colspan=2)
+             self._admin_exit_app, '#c62828', row=5, col=0, colspan=2)
 
-        # Row 5 — Close (full width, muted)
+        # Row 6 — Close (full width, muted)
         _btn("✕  Close Admin Menu",
              self._close_admin_menu, '#21262d', fg='#cdd9e5',
-             row=5, col=0, colspan=2)
+             row=6, col=0, colspan=2)
 
     # ── Admin action handlers ─────────────────────────────────────────────────
 
@@ -1737,6 +1741,276 @@ class VotingApp:
     def _admin_exit_app(self):
         self._close_admin_menu()
         self.exit_app()
+
+    def _admin_system_status(self):
+        """Show a system info dialog inside the admin menu."""
+        # Hardware binding status
+        try:
+            import hardware_crypto
+            mid = hardware_crypto.get_machine_id()
+            if mid.startswith("OTP_"):
+                hw_status = "✅ OTP Silicon (clone-resistant)"
+            elif mid.startswith("CPUSERIAL_"):
+                hw_status = "✅ CPU Serial (clone-resistant)"
+            elif mid.startswith("DMI_"):
+                hw_status = "✅ DMI UUID (clone-resistant)"
+            else:
+                hw_status = "⚠️ FALLBACK — NOT secure against SD clone"
+        except Exception as e:
+            hw_status = f"Error: {e}"
+
+        # BMD ID from bmd_config.json
+        try:
+            import json
+            cfg_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "bmd_config.json"
+            )
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            bmd_id = cfg.get("bmd_id", "UNKNOWN")
+            prov_at = cfg.get("provisioned_at", "")[:10]
+        except Exception:
+            bmd_id = "UNKNOWN"
+            prov_at = ""
+
+        # Printer status
+        if (hasattr(self, 'printer_service') and self.printer_service
+                and self.printer_service.is_printer_connected()):
+            printer_status = "✅ Connected"
+        else:
+            printer_status = "❌ Not connected"
+
+        msg = (
+            f"BMD ID        : {bmd_id}"
+            + (f"  (provisioned {prov_at})" if prov_at else "") + "\n"
+            f"HW Binding    : {hw_status}\n"
+            f"Printer       : {printer_status}\n"
+            f"Print Mode    : {'ON' if self.print_enabled else 'OFF'}\n"
+            f"Log Dir       : {getattr(self, 'log_dir', 'N/A')}\n"
+        )
+        messagebox.showinfo("System Status", msg, parent=self._admin_overlay)
+
+    def _admin_reset_device(self):
+        """Wipe all provisioning data and restart into the provisioning wizard."""
+        if not messagebox.askyesno(
+            "Reset Device",
+            "⚠️  WARNING: This will permanently delete:\n\n"
+            "  • private.pem  (signing key)\n"
+            "  • public.pem   (public key)\n"
+            "  • bmd_config.json\n"
+            "  • .provisioned flag\n\n"
+            "The device will restart into the provisioning wizard.\n"
+            "A new BMD ID and key pair must be assigned.\n\n"
+            "Continue?",
+            parent=self._admin_overlay,
+            icon='warning',
+        ):
+            return
+
+        # Second confirmation — this is irreversible
+        if not messagebox.askyesno(
+            "Final Confirmation",
+            "This action CANNOT be undone.\n\n"
+            "All existing keys will be destroyed.\n"
+            "Any ballots encrypted with the current public key\n"
+            "will NO LONGER be decryptable on this device.\n\n"
+            "Are you absolutely sure?",
+            parent=self._admin_overlay,
+            icon='warning',
+        ):
+            return
+
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        to_delete = [
+            os.path.join(project_dir, "private.pem"),
+            os.path.join(project_dir, "public.pem"),
+            os.path.join(project_dir, "bmd_config.json"),
+        ]
+        log_dir = getattr(self, 'log_dir', None)
+        if log_dir:
+            to_delete.append(os.path.join(log_dir, ".provisioned"))
+
+        for path in to_delete:
+            try:
+                os.chmod(path, 0o644)   # ensure writable in case it was locked
+                os.remove(path)
+            except Exception:
+                pass
+
+        self._close_admin_menu()
+        # Restart the process — main.py will see no .provisioned and launch wizard
+        import sys
+        self.root.destroy()
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    def _admin_firmware_update(self):
+        """Run git pull to update application code, with full error handling."""
+        import subprocess
+        import threading
+
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # ── Progress overlay ──────────────────────────────────────────
+        fw_win = tk.Toplevel(self._admin_overlay)
+        fw_win.title("Firmware Update")
+        fw_win.configure(bg='#0d1117')
+        fw_win.geometry("700x420")
+        fw_win.resizable(False, False)
+        fw_win.transient(self._admin_overlay)
+        fw_win.grab_set()
+
+        tk.Label(
+            fw_win, text="📡  Firmware Update",
+            font=('Helvetica', 22, 'bold'), bg='#0d1117', fg='#f0f6fc'
+        ).pack(pady=(30, 8))
+
+        status_var = tk.StringVar(value="Connecting to GitHub…")
+        tk.Label(
+            fw_win, textvariable=status_var,
+            font=('Helvetica', 13), bg='#0d1117', fg='#8b949e',
+        ).pack(pady=(0, 10))
+
+        # Scrollable output box
+        out_frame = tk.Frame(fw_win, bg='#161b22', pady=10, padx=10)
+        out_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=(0, 10))
+        out_text = tk.Text(
+            out_frame, height=10, bg='#161b22', fg='#3fb950',
+            font=('Courier', 11), relief=tk.FLAT, wrap=tk.WORD,
+            state=tk.DISABLED
+        )
+        out_text.pack(fill=tk.BOTH, expand=True)
+
+        close_btn = tk.Button(
+            fw_win, text="✕  Close",
+            font=('Helvetica', 13, 'bold'),
+            bg='#21262d', fg='#cdd9e5',
+            padx=20, pady=10, relief=tk.FLAT, cursor='hand2',
+            state=tk.DISABLED,
+            command=fw_win.destroy,
+        )
+        close_btn.pack(pady=(0, 20))
+
+        def _append(line: str, color: str = '#3fb950'):
+            out_text.configure(state=tk.NORMAL)
+            out_text.insert(tk.END, line + '\n')
+            out_text.see(tk.END)
+            out_text.configure(state=tk.DISABLED)
+            fw_win.update_idletasks()
+
+        def _run():
+            try:
+                # ─ Verify git is installed ────────────────────────────────
+                self.root.after(0, lambda: status_var.set("Checking git…"))
+                ver = subprocess.run(
+                    ['git', '--version'],
+                    capture_output=True, text=True, timeout=10
+                )
+                if ver.returncode != 0:
+                    raise RuntimeError("git not found. Install git on this device.")
+                self.root.after(0, lambda: _append(f"git found: {ver.stdout.strip()}"))
+
+                # ─ Check current branch ─────────────────────────────────
+                branch_r = subprocess.run(
+                    ['git', '-C', project_dir, 'branch', '--show-current'],
+                    capture_output=True, text=True, timeout=10
+                )
+                branch = branch_r.stdout.strip() or 'main'
+                self.root.after(0, lambda: _append(f"Branch     : {branch}"))
+                self.root.after(0, lambda: _append(f"Directory  : {project_dir}"))
+                self.root.after(0, lambda: _append(""))
+
+                # ─ git fetch (test connectivity before pull) ──────────────
+                self.root.after(0, lambda: status_var.set("Fetching from remote…"))
+                self.root.after(0, lambda: _append("Running: git fetch…"))
+                fetch = subprocess.run(
+                    ['git', '-C', project_dir, 'fetch'],
+                    capture_output=True, text=True, timeout=60
+                )
+                if fetch.returncode != 0:
+                    err = fetch.stderr.strip() or fetch.stdout.strip()
+                    raise RuntimeError(
+                        f"git fetch failed.\n\n"
+                        f"Possible causes:\n"
+                        f"  • No internet / WiFi not connected\n"
+                        f"  • GitHub is unreachable\n"
+                        f"  • SSH keys / credentials missing\n\n"
+                        f"Git output:\n{err}"
+                    )
+                self.root.after(0, lambda: _append("Fetch OK."))
+
+                # ─ git pull ─────────────────────────────────────────
+                self.root.after(0, lambda: status_var.set("Pulling updates…"))
+                self.root.after(0, lambda: _append(f"Running: git pull origin {branch}…"))
+                pull = subprocess.run(
+                    ['git', '-C', project_dir, 'pull', 'origin', branch],
+                    capture_output=True, text=True, timeout=120
+                )
+                combined = (pull.stdout + pull.stderr).strip()
+                self.root.after(0, lambda: _append(combined))
+
+                if pull.returncode != 0:
+                    err = pull.stderr.strip()
+                    if 'CONFLICT' in err or 'conflict' in err:
+                        raise RuntimeError(
+                            "Merge conflict detected.\n\n"
+                            "Local changes conflict with remote.\n"
+                            "On the Raspberry Pi terminal run:\n"
+                            "  git -C ~/evoting stash\n"
+                            "  git -C ~/evoting pull origin main"
+                        )
+                    elif 'not a git repository' in err:
+                        raise RuntimeError(
+                            "This directory is not a git repository.\n"
+                            "Re-clone the repo to enable firmware updates."
+                        )
+                    else:
+                        raise RuntimeError(f"git pull failed:\n{err}")
+
+                already_up = 'already up to date' in combined.lower()
+                if already_up:
+                    self.root.after(0, lambda: status_var.set("✅  Already up to date."))
+                    self.root.after(0, lambda: _append("\nNo new updates found."))
+                else:
+                    self.root.after(0, lambda: status_var.set("✅  Update successful!"))
+                    self.root.after(0, lambda: _append("\n✅  Firmware updated successfully."))
+                    self.root.after(0, lambda: _append(
+                        "Restart the application to apply changes."
+                    ))
+                    # Offer restart
+                    self.root.after(0, lambda: self._offer_restart_after_update(fw_win))
+                    return
+
+            except subprocess.TimeoutExpired:
+                self.root.after(0, lambda: status_var.set("❌  Timed out."))
+                self.root.after(0, lambda: _append(
+                    "❌  Operation timed out after 120 seconds.\n"
+                    "Check your internet connection and try again."
+                ))
+            except Exception as exc:
+                msg = str(exc)
+                self.root.after(0, lambda: status_var.set("❌  Update failed."))
+                self.root.after(0, lambda: _append(f"❌  Error:\n{msg}"))
+
+            self.root.after(0, lambda: close_btn.configure(state=tk.NORMAL))
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _offer_restart_after_update(self, parent_win):
+        """Ask the operator whether to restart the app to apply the firmware update."""
+        parent_win.grab_release()
+        restart = messagebox.askyesno(
+            "Restart Required",
+            "✅  Firmware updated successfully!\n\n"
+            "The application must restart to apply the new code.\n\n"
+            "Restart now?",
+            parent=parent_win,
+        )
+        parent_win.destroy()
+        if restart:
+            self._close_admin_menu()
+            import sys
+            self.root.destroy()
+            os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def _admin_system_status(self):
         """Show a system info dialog inside the admin menu."""
