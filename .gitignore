@@ -12,6 +12,8 @@ Desktop.ini
 # Logs and Temp
 *.log
 tmp/
+logs/
+applogs/
 __pycache__/
 
 ballots/

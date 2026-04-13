@@ -106,7 +106,9 @@ class VotingApp:
                 
                 # Create importer (demo_mode=False requires RPi hardware)
                 importer = USBBallotImporter(
-                    private_key_path="private.pem",
+                    private_key_path=os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)), "private.pem"
+                    ),
                     local_storage_dir="ballot",
                     demo_mode=False
                 )

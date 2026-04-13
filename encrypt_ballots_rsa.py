@@ -5,10 +5,10 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 
 def encrypt_ballots():
-    key_path = "public.pem"
+    key_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public.pem")
     if not os.path.exists(key_path):
         print(f"Error: {key_path} not found!")
-        print("Please copy the EVM's public.pem to this folder first.")
+        print("Please run provisioning on this device first to generate public.pem.")
         return
 
     # Load Public Key

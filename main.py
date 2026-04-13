@@ -3,6 +3,9 @@ from tkinter import messagebox
 from gui_app import VotingApp
 from ballot_manager import BallotManager
 import os
+import sys
+import logging
+import datetime
 
 from rfid_service import RFIDService
 
@@ -31,7 +34,91 @@ def _is_provisioned(log_dir):
     return os.path.exists(os.path.join(log_dir, PROVISIONED_FILENAME))
 
 
+def _setup_logging(log_dir):
+    """Route all stdout, stderr, and Python logging to a timestamped log file.
+
+    Two destinations:
+      1. The original console (so journalctl / terminal still show output).
+      2. A persistent log file on the LOGS partition (survives reboots).
+
+    File naming: app_YYYYMMDD_HHMMSS.log
+    Kept in:      <log_dir>/applogs/  (created if needed)
+    """
+    class _Tee:
+        """Write to both the original stream and a file simultaneously."""
+        def __init__(self, stream, file_obj):
+            self._stream = stream
+            self._file   = file_obj
+
+        def write(self, data):
+            try:
+                self._stream.write(data)
+                self._stream.flush()
+            except Exception:
+                pass
+            try:
+                self._file.write(data)
+                self._file.flush()
+            except Exception:
+                pass
+
+        def flush(self):
+            try:
+                self._stream.flush()
+            except Exception:
+                pass
+            try:
+                self._file.flush()
+            except Exception:
+                pass
+
+        def fileno(self):
+            return self._stream.fileno()
+
+    # Choose log directory
+    if log_dir and os.path.isdir(log_dir):
+        app_log_dir = os.path.join(log_dir, "applogs")
+    else:
+        # Fallback: project directory
+        app_log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+
+    os.makedirs(app_log_dir, exist_ok=True)
+
+    timestamp   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path    = os.path.join(app_log_dir, f"app_{timestamp}.log")
+
+    log_file = open(log_path, "a", encoding="utf-8", buffering=1)
+
+    # Write session header to file
+    log_file.write(f"{'='*60}\n")
+    log_file.write(f"EVoting BMD Session Started: {datetime.datetime.now().isoformat()}\n")
+    log_file.write(f"Log file: {log_path}\n")
+    log_file.write(f"{'='*60}\n")
+
+    # Tee stdout and stderr
+    sys.stdout = _Tee(sys.stdout, log_file)
+    sys.stderr = _Tee(sys.stderr, log_file)
+
+    # Python logging module -> same file
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.__stdout__),
+            logging.FileHandler(log_path, encoding="utf-8"),
+        ]
+    )
+
+    print(f"[main] Logging to: {log_path}")
+    return log_path
+
+
 def main():
+    # ── Logging: must be first so every subsequent print is captured ──────────
+    # Discover log dir early (before provisioning check) so logs persist.
+    log_dir_early, _ = _find_log_dir()
+    _setup_logging(log_dir_early)
+
     root = tk.Tk()
 
     log_dir, log_err = _find_log_dir()
