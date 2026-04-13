@@ -18,3 +18,7 @@ ballots/
 ballots.json
 secret.key
 *.pem
+
+# Device-specific provisioning files (generated at first boot, never committed)
+bmd_config.json
+.provisioned

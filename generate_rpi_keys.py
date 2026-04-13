@@ -7,12 +7,23 @@ from hardware_crypto import get_hardware_passphrase
 
 
 def _resolve_bmd_id(default_value=1):
-    """Resolve BMD ID from env or fallback default."""
-    raw = os.environ.get("EVOTING_BMD_ID", str(default_value)).strip()
-    try:
-        return int(raw)
-    except Exception:
-        return default_value
+    """Resolve BMD ID from env var, then bmd_config.json, then fallback default."""
+    raw = os.environ.get("EVOTING_BMD_ID", "").strip()
+    if raw:
+        try:
+            return int(raw)
+        except Exception:
+            pass
+    # Fallback: read from bmd_config.json written by the provisioner
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bmd_config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return int(data.get("bmd_id", default_value))
+        except Exception:
+            pass
+    return default_value
 
 
 def _resolve_key_version(default_value=1):

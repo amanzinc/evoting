@@ -26,7 +26,13 @@ class VotingApp:
         
         self.root.title("Ballot Marking Device")
         self.root.attributes('-fullscreen', True)
-        self.root.bind("<Escape>", self.exit_app)
+        # NOTE: Escape no longer exits — use the Admin Menu (type 'Aman') instead.
+
+        # ── Hidden admin menu trigger ────────────────────────────────────────────
+        # Typing the word 'Aman' anywhere (case-sensitive) opens the admin panel.
+        self._admin_key_buffer = ""
+        self._admin_overlay = None
+        self.root.bind("<Key>", self._on_key_press)
 
         # Style configuration
         self.style = ttk.Style()
@@ -294,33 +300,19 @@ class VotingApp:
             print(f"Image Load Error: {e}")
             tk.Label(frame, text="Please Scan Card", font=('Helvetica', 32), fg="white", bg="black").pack(expand=True)
 
-        # Overlay Status Label (Bottom Center)
-        self.rfid_status_label = tk.Label(frame, text="Waiting for Card...", font=('Helvetica', 16, 'italic'), bg="#333", fg="#fff", padx=20, pady=5)
-        self.rfid_status_label.place(relx=0.5, rely=0.9, anchor=tk.CENTER)
-        
-        # Dev Skip Button (Top Right, discreet)
-        tk.Button(frame, text="[DEV] Skip", font=('Helvetica', 10), command=self.skip_rfid_check, bg="#444", fg="white").place(relx=0.95, rely=0.05, anchor=tk.NE)
-        
-        # Dev Reset Log Button (Top Left, discreet)
-        tk.Button(frame, text="[DEV] Reset Log", font=('Helvetica', 10), command=self.reset_token_log, bg="#ffcccb", fg="black").place(relx=0.05, rely=0.05, anchor=tk.NW)
-
-        # Print toggle for testing (no paper mode).
-        self.print_toggle_btn = tk.Button(
+        # Overlay Status Label (Bottom Centre)
+        self.rfid_status_label = tk.Label(
             frame,
-            text=f"Printing: {'ON' if self.print_enabled else 'OFF'}",
-            font=('Helvetica', 12, 'bold'),
-            command=self.toggle_printing,
-            bg="#2E7D32" if self.print_enabled else "#C62828",
-            fg="white",
-            padx=10,
-            pady=5
+            text="Waiting for Card...",
+            font=('Helvetica', 16, 'italic'),
+            bg="#333", fg="#fff",
+            padx=20, pady=5
         )
-        self.print_toggle_btn.place(relx=0.5, rely=0.05, anchor=tk.N)
-        
-        # Admin Button to End Election (Bottom Right)
-        tk.Button(frame, text="End Election & Export", font=('Helvetica', 12, 'bold'), 
-              command=self.end_election, bg="#ff4c4c", fg="white", 
-              padx=10, pady=5).place(relx=0.95, rely=0.95, anchor=tk.SE)
+        self.rfid_status_label.place(relx=0.5, rely=0.9, anchor=tk.CENTER)
+
+        # ─ Admin hint (invisible to voters) ──────────────────────────────────
+        # All admin/dev actions are accessible via the admin menu only.
+        # (type 'Aman' anywhere to open it)
         
         # Start Scanning Thread
         self.stop_scanning = False
@@ -1609,4 +1601,181 @@ class VotingApp:
         self.print_status_after_id = self.root.after(500, self.check_print_status)
 
     def exit_app(self, event=None):
+        """Exit the application. Only callable from the Admin Menu."""
         self.root.quit()
+
+    # ============================================================
+    # ADMIN MENU  —  triggered by typing 'Aman' anywhere
+    # ============================================================
+
+    def _on_key_press(self, event):
+        """Accumulate keystrokes; open admin menu when 'Aman' is typed."""
+        if event.char and event.char.isprintable():
+            self._admin_key_buffer += event.char
+            self._admin_key_buffer = self._admin_key_buffer[-10:]   # rolling window
+            if self._admin_key_buffer.endswith("Aman"):
+                self._admin_key_buffer = ""
+                self.show_admin_menu()
+
+    def show_admin_menu(self):
+        """Full-screen admin panel overlay.  The ONLY way to exit the app."""
+        # Prevent duplicate overlays
+        if self._admin_overlay:
+            try:
+                if self._admin_overlay.winfo_exists():
+                    self._admin_overlay.lift()
+                    return
+            except Exception:
+                pass
+
+        overlay = tk.Toplevel(self.root)
+        overlay.attributes('-fullscreen', True)
+        overlay.configure(bg='#0d1117')
+        overlay.transient(self.root)
+        overlay.grab_set()
+        self._admin_overlay = overlay
+
+        # ── Header ────────────────────────────────────────────────────────────
+        header = tk.Frame(overlay, bg='#161b22', pady=22)
+        header.pack(fill=tk.X)
+        tk.Label(
+            header, text="🔒  ADMIN PANEL",
+            font=('Helvetica', 28, 'bold'),
+            bg='#161b22', fg='#f0f6fc'
+        ).pack()
+        tk.Label(
+            header, text="Restricted Access — Polling Officer Only",
+            font=('Helvetica', 14),
+            bg='#161b22', fg='#8b949e'
+        ).pack(pady=(4, 0))
+
+        # ── Button grid ───────────────────────────────────────────────────────
+        grid = tk.Frame(overlay, bg='#0d1117', pady=20)
+        grid.pack(expand=True, fill=tk.BOTH, padx=60)
+        grid.grid_columnconfigure(0, weight=1)
+        grid.grid_columnconfigure(1, weight=1)
+        for r in range(5):
+            grid.grid_rowconfigure(r, weight=1)
+
+        def _btn(text, cmd, bg, fg='white', row=0, col=0, colspan=1):
+            tk.Button(
+                grid, text=text, command=cmd,
+                font=('Helvetica', 15, 'bold'),
+                bg=bg, fg=fg, activebackground=bg,
+                padx=16, pady=20, relief=tk.FLAT, bd=0, cursor='hand2',
+                wraplength=340
+            ).grid(row=row, column=col, columnspan=colspan,
+                   padx=12, pady=8, sticky='nsew')
+
+        # Row 0 — Election
+        _btn("🗳  End Election & Export",
+             self._admin_end_election, '#b71c1c', row=0, col=0)
+        _btn("📊  System Status",
+             self._admin_system_status, '#1565c0', row=0, col=1)
+
+        # Row 1 — Operations
+        print_label = f"🖨  Printing: {'ON  ✅' if self.print_enabled else 'OFF  ❌'}"
+        _btn(print_label, self._admin_toggle_print,
+             '#2e7d32' if self.print_enabled else '#6a0000', row=1, col=0)
+        _btn("🗑  Reset Token Log",
+             self._admin_reset_token_log, '#4a148c', row=1, col=1)
+
+        # Row 2 — Dev tools
+        _btn("⚡  [DEV] Skip RFID Scan",
+             self._admin_dev_skip, '#37474f', row=2, col=0)
+        _btn("🔄  [DEV] Return to USB Screen",
+             self._admin_dev_restart_usb, '#37474f', row=2, col=1)
+
+        # Row 3 — Exit (full width, high contrast danger)
+        _btn("⛔  EXIT APPLICATION",
+             self._admin_exit_app, '#c62828', row=3, col=0, colspan=2)
+
+        # Row 4 — Close (full width, muted)
+        _btn("✕  Close Admin Menu",
+             self._close_admin_menu, '#21262d', fg='#cdd9e5',
+             row=4, col=0, colspan=2)
+
+    # ── Admin action handlers ─────────────────────────────────────────────────
+
+    def _close_admin_menu(self):
+        if self._admin_overlay:
+            try:
+                self._admin_overlay.grab_release()
+                self._admin_overlay.destroy()
+            except Exception:
+                pass
+            self._admin_overlay = None
+
+    def _admin_end_election(self):
+        self._close_admin_menu()
+        self.end_election()
+
+    def _admin_toggle_print(self):
+        """Toggle printing state and re-open menu so button label refreshes."""
+        self._close_admin_menu()
+        self.toggle_printing()
+        self.root.after(80, self.show_admin_menu)
+
+    def _admin_reset_token_log(self):
+        self.reset_token_log()
+
+    def _admin_dev_skip(self):
+        self._close_admin_menu()
+        self.skip_rfid_check()
+
+    def _admin_dev_restart_usb(self):
+        self._close_admin_menu()
+        self.show_usb_waiting_screen()
+
+    def _admin_exit_app(self):
+        self._close_admin_menu()
+        self.exit_app()
+
+    def _admin_system_status(self):
+        """Show a system info dialog inside the admin menu."""
+        # Hardware binding status
+        try:
+            import hardware_crypto
+            mid = hardware_crypto.get_machine_id()
+            if mid.startswith("OTP_"):
+                hw_status = "✅ OTP Silicon (clone-resistant)"
+            elif mid.startswith("CPUSERIAL_"):
+                hw_status = "✅ CPU Serial (clone-resistant)"
+            elif mid.startswith("DMI_"):
+                hw_status = "✅ DMI UUID (clone-resistant)"
+            else:
+                hw_status = "⚠️ FALLBACK — NOT secure against SD clone"
+        except Exception as e:
+            hw_status = f"Error: {e}"
+
+        # BMD ID from bmd_config.json
+        try:
+            import json
+            cfg_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "bmd_config.json"
+            )
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            bmd_id = cfg.get("bmd_id", "UNKNOWN")
+            prov_at = cfg.get("provisioned_at", "")[:10]
+        except Exception:
+            bmd_id = "UNKNOWN"
+            prov_at = ""
+
+        # Printer status
+        if (hasattr(self, 'printer_service') and self.printer_service
+                and self.printer_service.is_printer_connected()):
+            printer_status = "✅ Connected"
+        else:
+            printer_status = "❌ Not connected"
+
+        msg = (
+            f"BMD ID        : {bmd_id}"
+            + (f"  (provisioned {prov_at})" if prov_at else "") + "\n"
+            f"HW Binding    : {hw_status}\n"
+            f"Printer       : {printer_status}\n"
+            f"Print Mode    : {'ON' if self.print_enabled else 'OFF'}\n"
+            f"Log Dir       : {getattr(self, 'log_dir', 'N/A')}\n"
+        )
+        messagebox.showinfo("System Status", msg, parent=self._admin_overlay)
+

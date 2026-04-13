@@ -1,0 +1,24 @@
+[Unit]
+Description=Ballot Marking Device — evoting application
+# Start after the graphical session is ready (X11 or XWayland available)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# DISPLAY and XAUTHORITY must be set so Tkinter can reach the X server.
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/evoting/.Xauthority
+# Use the project venv; adjust path if the repo is cloned elsewhere.
+ExecStart=/home/evoting/evoting/venv/bin/python /home/evoting/evoting/main.py
+# Restart on crash (e.g. an uncaught exception), but not on clean exit.
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+# Ensure the working directory is always the project root so relative
+# paths (private.pem, bmd_config.json, etc.) resolve correctly.
+WorkingDirectory=/home/evoting/evoting
+
+[Install]
+WantedBy=graphical-session.target
