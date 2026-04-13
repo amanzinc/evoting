@@ -530,16 +530,23 @@ class ProvisionApp:
         qr = qrcode.QRCode(
             version=None,
             error_correction=qrcode.constants.ERROR_CORRECT_M,
-            box_size=6, border=2,
+            box_size=8,   # natural pixel size; no resize needed
+            border=3,
         )
         qr.add_data(fingerprint)
         qr.make(fit=True)
-        qr_raw     = qr.make_image(fill_color="black", back_color="white")
-        qr_size    = min(paper_width - 20, 300)
-        qr_resized = qr_raw.resize((qr_size, qr_size))
-        # RGB canvas — required for correct ESC/POS rendering
-        canvas = Image.new("RGB", (paper_width, qr_size), "white")
-        canvas.paste(qr_resized, ((paper_width - qr_size) // 2, 0))
+
+        # make_image() returns a PIL image; convert to explicit RGB mode.
+        # We do NOT resize — resizing a QR causes alignment artifacts in
+        # the ESC/POS raster encoder and is the root cause of split images.
+        qr_pil  = qr.make_image(fill_color="black", back_color="white")
+        qr_rgb  = qr_pil.convert("RGB")
+
+        # Centre the QR on a paper-width RGB canvas.
+        qr_w, qr_h = qr_rgb.size
+        canvas = Image.new("RGB", (paper_width, qr_h), "white")
+        x_off  = max(0, (paper_width - qr_w) // 2)
+        canvas.paste(qr_rgb, (x_off, 0))
         tmp_qr = f"/tmp/bmd_qr_{bmd_id}.png"
         canvas.save(tmp_qr)
 
@@ -558,7 +565,8 @@ class ProvisionApp:
             printer.set(align="center", bold=True)
             printer.text("PUBLIC KEY FINGERPRINT (SHA-256)\n")
             printer.text("Scan QR or compare text below:\n\n")
-            printer.image(tmp_qr)
+            # bitImageColumn sends the image in one pass — prevents split QR
+            printer.image(tmp_qr, impl="bitImageColumn")
             printer.text("\n")
 
             printer.set(align="left", bold=False)
