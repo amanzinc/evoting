@@ -401,6 +401,8 @@ class ProvisionApp:
             self._set_step("keys", "running")
             self._set_status(f"Generating RSA-2048 key pair for BMD #{bmd_id}…")
             os.environ["EVOTING_BMD_ID"] = str(bmd_id)
+            # Ensure CWD is the project dir so any relative-path writes land correctly.
+            os.chdir(project_dir)
             from generate_rpi_keys import generate_keys
             generate_keys()
             self._set_step("keys", "done")

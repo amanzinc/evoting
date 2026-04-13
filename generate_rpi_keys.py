@@ -41,7 +41,10 @@ def _iso_utc_now():
 
 def generate_keys():
     print("Generating 2048-bit RSA Hardware-Bound Keys...")
-    
+
+    # Always save keys alongside this script, regardless of current working dir.
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+
     # 1. Generate Private Key
     private_key = rsa.generate_private_key(
         public_exponent=65537,
@@ -59,7 +62,7 @@ def generate_keys():
         encryption_algorithm=serialization.BestAvailableEncryption(passphrase)
     )
 
-    with open('private.pem', 'wb') as f:
+    with open(os.path.join(_script_dir, 'private.pem'), 'wb') as f:
         f.write(private_pem)
 
     # 4. Serialize Public Key (Unencrypted)
@@ -69,7 +72,7 @@ def generate_keys():
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     )
 
-    with open('public.pem', 'wb') as f:
+    with open(os.path.join(_script_dir, 'public.pem'), 'wb') as f:
         f.write(public_pem)
 
     # 5. Generate bmd_key.json for key distribution workflows.
@@ -83,7 +86,7 @@ def generate_keys():
         }
     ]
 
-    with open('bmd_key.json', 'w', encoding='utf-8') as f:
+    with open(os.path.join(_script_dir, 'bmd_key.json'), 'w', encoding='utf-8') as f:
         json.dump(bmd_key_payload, f, indent=2)
 
     print("Success! Generated 'public.pem', 'private.pem', and 'bmd_key.json'.")
