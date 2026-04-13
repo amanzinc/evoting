@@ -356,10 +356,10 @@ class PrinterService:
 
             if stage in ("both", "vvpat", "receipt"):
                 self._print_vote_vvpat_section(p, context)
-                # Extra feed so the VVPAT slip clears the print head and falls out
+                p.cut(mode='FULL')
+                # Extra feed after the cut
                 p.text("\n\n\n\n\n\n")
                 time.sleep(2)
-                p.cut(mode='FULL')
                 return {"stage": "vvpat_complete", "context": context}
 
             return True
@@ -466,10 +466,10 @@ class PrinterService:
             p.text(self._center_line("VVPAT SLIP") + "\n")
             p.text(TOP_BAR + "\n")
 
-            # Extra feed so the slip clears the print head and falls out cleanly
+            p.cut(mode='FULL')
+            # Extra feed after the cut
             p.text("\n\n\n\n\n\n")
             time.sleep(2)
-            p.cut(mode='FULL')
 
             return {"stage": "vvpat_complete"}
 
