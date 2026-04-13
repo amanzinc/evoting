@@ -20,12 +20,37 @@ We have provided a script to automate the dependency installation and configurat
     ```
 
 3.  **Generate Hardware-Bound RSA Keys**:
-    Once dependencies are installed, you must generate the lock for this specific Raspberry Pi.
+    Once dependencies are installed, generate keys locked to this specific Raspberry Pi's silicon.
     ```bash
     source venv/bin/activate
     python generate_rpi_keys.py
     ```
-    *This will generate `public.pem` (copy this to your PC to encrypt ballots) and `private.pem` (locked to this Pi's MAC/CPU).*
+    *This generates `public.pem` (share with Election Admin to encrypt ballots) and `private.pem`
+    (locked to this Pi's OTP silicon fuses — **not** the SD card).*
+
+    > **⚠️ IMPORTANT — SD Card Clone Attack**
+    >
+    > The old binding (`/etc/machine-id`) was filesystem-based: cloning the SD card
+    > copied the machine ID too, so `private.pem` could be decrypted on the clone.
+    >
+    > The current binding uses `vcgencmd otp_dump` to read the Raspberry Pi's
+    > **one-time-programmable (OTP) silicon fuses** — values burned into the SoC at
+    > manufacture that are physically impossible to copy by cloning the card.
+    >
+    > **Verify the binding is active** before trusting any key pair:
+    > ```bash
+    > python hardware_crypto.py
+    > # Look for: ✅  Bound to RPi OTP silicon fuses — SD clone-resistant.
+    > # If you see ⚠️  Fallback seed used — vcgencmd is missing or broken.
+    > ```
+    >
+    > If you previously generated keys with the old `hardware_crypto.py` (V2), those
+    > keys use the old passphrase and **must be regenerated**:
+    > ```bash
+    > rm private.pem public.pem bmd_key.json
+    > python generate_rpi_keys.py
+    > # Re-encrypt and re-distribute all ballot files with the new public.pem.
+    > ```
 
 4.  **Reboot**:
     ```bash
