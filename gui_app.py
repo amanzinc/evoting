@@ -544,26 +544,36 @@ class VotingApp:
             fg="#1B5E20"
         ).pack(pady=(180, 24))
 
-        tk.Label(
+        self.countdown_label = tk.Label(
             frame,
             text="Returning to home screen in 5 seconds...",
             font=('Helvetica', 24),
             bg="#E8F5E9",
             fg="#2E7D32"
-        ).pack(pady=10)
+        )
+        self.countdown_label.pack(pady=10)
 
-        if self.session_complete_after_id:
+        if getattr(self, 'session_complete_after_id', None):
             try:
                 self.root.after_cancel(self.session_complete_after_id)
             except Exception:
                 pass
             self.session_complete_after_id = None
 
-        self.session_complete_after_id = self.root.after(5000, self._return_home_after_complete)
+        self._countdown_seconds = 5
+        self._update_countdown()
 
-    def _return_home_after_complete(self):
-        self.session_complete_after_id = None
-        self.show_rfid_screen()
+    def _update_countdown(self):
+        if not hasattr(self, 'countdown_label') or not self.countdown_label.winfo_exists():
+            return
+            
+        if self._countdown_seconds > 0:
+            self.countdown_label.config(text=f"Returning to home screen in {self._countdown_seconds} seconds...")
+            self._countdown_seconds -= 1
+            self.session_complete_after_id = self.root.after(1000, self._update_countdown)
+        else:
+            self.session_complete_after_id = None
+            self.show_rfid_screen()
 
     def show_rfid_error(self, message):
         self.clear_container()
