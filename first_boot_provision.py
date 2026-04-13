@@ -57,6 +57,14 @@ class ProvisionApp:
         self.root.title("BMD First-Boot Provisioning")
         self.root.attributes("-fullscreen", True)
         self.root.resizable(False, False)
+        
+        # Force strict kiosk mode (bypasses window manager entirely)
+        self.root.overrideredirect(True)
+        # Ensure it covers the whole screen since geometry might not be auto-inferred
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        self.root.geometry(f"{screen_w}x{screen_h}+0+0")
+        
         # Force to stay on top
         self.root.lift()
         self.root.focus_force()
