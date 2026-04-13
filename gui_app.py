@@ -1121,8 +1121,7 @@ class VotingApp:
 
             self.pending_print_job = None
 
-            if not self.merge_receipts:
-                messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
+            self.pending_print_job = None
 
             self.start_next_election()
         except Exception as e:
@@ -1493,9 +1492,7 @@ class VotingApp:
                         status="USED"
                     )
                     
-                    if not self.merge_receipts:
-                        messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
-
+                    # No confirmation dialog required.
                     self.pending_print_job = None
                     self._cancel_pending_print_polling()
                     
