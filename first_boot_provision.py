@@ -281,14 +281,14 @@ class ProvisionApp:
 
     def _bmd_confirm(self):
         if not self.bmd_id_str:
-            messagebox.showwarning("No ID", "Please enter a BMD ID first.")
+            messagebox.showwarning("No ID", "Please enter a BMD ID first.", parent=self.root)
             return
         try:
             bmd_id = int(self.bmd_id_str)
             if bmd_id < 1:
                 raise ValueError()
         except ValueError:
-            messagebox.showerror("Invalid", "BMD ID must be a positive integer.")
+            messagebox.showerror("Invalid", "BMD ID must be a positive integer.", parent=self.root)
             return
         self.show_confirm(bmd_id)
 
@@ -723,9 +723,9 @@ class ProvisionApp:
             machine_id = hardware_crypto.get_machine_id()
             bmd_id = getattr(self, "_last_bmd_id", 0)
             self._print_ticket(bmd_id, public_key_pem, machine_id)
-            messagebox.showinfo("Reprint", "Ticket reprinted successfully.")
+            messagebox.showinfo("Reprint", "Ticket reprinted successfully.", parent=self.root)
         except Exception as exc:
-            messagebox.showerror("Reprint Failed", str(exc))
+            messagebox.showerror("Reprint Failed", str(exc), parent=self.root)
 
     def _launch_voting_app(self):
         """Restart main.py — the .provisioned flag now exists, so the voting app loads."""
