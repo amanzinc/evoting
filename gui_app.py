@@ -26,24 +26,7 @@ class VotingApp:
         
         self.root.title("Ballot Marking Device")
         self.root.attributes('-fullscreen', True)
-        self.root.resizable(False, False)
-        
-        # Force strict kiosk mode (bypasses window manager entirely)
-        self.root.overrideredirect(True)
-        # Ensure it covers the whole screen since geometry might not be auto-inferred
-        screen_w = self.root.winfo_screenwidth()
-        screen_h = self.root.winfo_screenheight()
-        self.root.geometry(f"{screen_w}x{screen_h}+0+0")
-        
-        # Disable the OS window-close button — only the admin menu can exit.
-        self.root.protocol("WM_DELETE_WINDOW", lambda: None)
-        # NOTE: Escape no longer exits — use the Admin Menu (type 'Aman') instead.
-
-        # ── Hidden admin menu trigger ────────────────────────────────────────────
-        # Typing the word 'Aman' anywhere (case-sensitive) opens the admin panel.
-        self._admin_key_buffer = ""
-        self._admin_overlay = None
-        self.root.bind("<Key>", self._on_key_press)
+        self.root.bind("<Escape>", self.exit_app)
 
         # Style configuration
         self.style = ttk.Style()
@@ -56,8 +39,8 @@ class VotingApp:
         self.max_ranks = 3
         self.current_rank = 1
         self.selections = {}
-        self.merge_receipts = False  # Each election gets its own VVPAT immediately
-        self.receipt_buffer = []      # Kept for compatibility; not used in non-merge mode
+        self.merge_receipts = True # Temporary flag for merged printing
+        self.receipt_buffer = [] # Store print data for batching 
         self.print_enabled = True
         self.pending_print_job = None
         self.pending_batch_receipts = None
@@ -114,9 +97,7 @@ class VotingApp:
                 
                 # Create importer (demo_mode=False requires RPi hardware)
                 importer = USBBallotImporter(
-                    private_key_path=os.path.join(
-                        os.path.dirname(os.path.abspath(__file__)), "private.pem"
-                    ),
+                    private_key_path="private.pem",
                     local_storage_dir="ballot",
                     demo_mode=False
                 )
@@ -162,27 +143,42 @@ class VotingApp:
     def end_election(self):
         """Triggers secure export process without automatic shutdown."""
         if messagebox.askyesno("Confirm End Election", "Are you sure you want to officially end the election?\nThis will export data to USB.", icon='warning'):
-            try:
-                # Find the USB drive explicitly in case it was unplugged
-                usb_path = self.ballot_manager._find_usb_drive(None)
-                if not usb_path:
-                    messagebox.showerror("Export Failed", "USB Drive not found! Please insert the admin USB drive to export logs.")
-                    return
-                
-                from export_service import ExportService
-                exporter = ExportService("private.pem")
-                export_path = exporter.export_election_data(self.log_dir, usb_path)
-                
-                # Fetch final hash and force printing of final receipt before shutdown.
-                if self.print_enabled and hasattr(self, 'data_handler') and hasattr(self, 'printer_service'):
-                    final_hash = self.data_handler.last_hash or "UNKNOWN_HASH"
-                    self.printer_service.print_end_election_ticket(final_hash, export_path)
-                elif self.print_enabled:
-                    raise Exception("Core services unavailable for end-of-election receipt printing.")
-                
-                messagebox.showinfo("Export Successful", f"Election successfully ended.\nEncrypted logs safely exported to:\n{export_path}\n\nAutomatic shutdown is temporarily disabled.")
-            except Exception as e:
-                messagebox.showerror("Export Error", f"A critical error occurred during export:\n{str(e)}")
+            self.stop_scanning = True
+            self.show_printing_modal(text="Ending election and exporting logs...")
+            threading.Thread(target=self._end_election_worker, daemon=True).start()
+
+    def _end_election_worker(self):
+        try:
+            # Find the USB drive explicitly in case it was unplugged.
+            usb_path = self.ballot_manager._find_usb_drive(None)
+            if not usb_path:
+                raise Exception("USB Drive not found! Please insert the admin USB drive to export logs.")
+
+            from export_service import ExportService
+            exporter = ExportService("private.pem")
+            export_path = exporter.export_election_data(self.log_dir, usb_path)
+
+            # Fetch final hash and force printing of final receipt before shutdown.
+            if self.print_enabled and hasattr(self, 'data_handler') and hasattr(self, 'printer_service'):
+                final_hash = self.data_handler.last_hash or "UNKNOWN_HASH"
+                self.printer_service.print_end_election_ticket(final_hash, export_path)
+            elif self.print_enabled:
+                raise Exception("Core services unavailable for end-of-election receipt printing.")
+
+            self.root.after(0, lambda: self._complete_end_election(export_path))
+        except Exception as e:
+            self.root.after(0, lambda err=str(e): self._fail_end_election(err))
+
+    def _complete_end_election(self, export_path):
+        self.close_printing_modal()
+        messagebox.showinfo(
+            "Export Successful",
+            f"Election successfully ended.\nEncrypted logs safely exported to:\n{export_path}\n\nAutomatic shutdown is temporarily disabled."
+        )
+
+    def _fail_end_election(self, error_message):
+        self.close_printing_modal()
+        messagebox.showerror("Export Error", f"A critical error occurred during export:\n{error_message}")
 
     def initialize_core_services(self):
         try:
@@ -313,19 +309,33 @@ class VotingApp:
             print(f"Image Load Error: {e}")
             tk.Label(frame, text="Please Scan Card", font=('Helvetica', 32), fg="white", bg="black").pack(expand=True)
 
-        # Overlay Status Label (Bottom Centre)
-        self.rfid_status_label = tk.Label(
-            frame,
-            text="Waiting for Card...",
-            font=('Helvetica', 16, 'italic'),
-            bg="#333", fg="#fff",
-            padx=20, pady=5
-        )
+        # Overlay Status Label (Bottom Center)
+        self.rfid_status_label = tk.Label(frame, text="Waiting for Card...", font=('Helvetica', 16, 'italic'), bg="#333", fg="#fff", padx=20, pady=5)
         self.rfid_status_label.place(relx=0.5, rely=0.9, anchor=tk.CENTER)
+        
+        # Dev Skip Button (Top Right, discreet)
+        tk.Button(frame, text="[DEV] Skip", font=('Helvetica', 10), command=self.skip_rfid_check, bg="#444", fg="white").place(relx=0.95, rely=0.05, anchor=tk.NE)
+        
+        # Dev Reset Log Button (Top Left, discreet)
+        tk.Button(frame, text="[DEV] Reset Log", font=('Helvetica', 10), command=self.reset_token_log, bg="#ffcccb", fg="black").place(relx=0.05, rely=0.05, anchor=tk.NW)
 
-        # ─ Admin hint (invisible to voters) ──────────────────────────────────
-        # All admin/dev actions are accessible via the admin menu only.
-        # (type 'Aman' anywhere to open it)
+        # Print toggle for testing (no paper mode).
+        self.print_toggle_btn = tk.Button(
+            frame,
+            text=f"Printing: {'ON' if self.print_enabled else 'OFF'}",
+            font=('Helvetica', 12, 'bold'),
+            command=self.toggle_printing,
+            bg="#2E7D32" if self.print_enabled else "#C62828",
+            fg="white",
+            padx=10,
+            pady=5
+        )
+        self.print_toggle_btn.place(relx=0.5, rely=0.05, anchor=tk.N)
+        
+        # Admin Button to End Election (Bottom Right)
+        tk.Button(frame, text="End Election & Export", font=('Helvetica', 12, 'bold'), 
+              command=self.end_election, bg="#ff4c4c", fg="white", 
+              padx=10, pady=5).place(relx=0.95, rely=0.95, anchor=tk.SE)
         
         # Start Scanning Thread
         self.stop_scanning = False
@@ -503,9 +513,7 @@ class VotingApp:
             is_pair_layout = bool(getattr(self.data_handler, 'pref_combo_map', {}))
             is_preferential = hasattr(self.data_handler, 'is_preferential_election') and self.data_handler.is_preferential_election()
 
-            if getattr(self.data_handler, 'is_block_election', lambda: False)():
-                self.start_block_voting()
-            elif is_preferential or is_pair_layout:
+            if is_preferential or is_pair_layout:
                 self.start_preferential_voting()
             else:
                 self.start_normal_voting()
@@ -517,12 +525,91 @@ class VotingApp:
             self.show_rfid_screen()
 
     def finish_voter_session(self, aborted=False):
-        """Called when all eligible elections are completed.
+        """Called when all eligible elections are completed."""
+        # 1. BATCH PRINTING IF ENABLED
+        if not aborted and self.merge_receipts and hasattr(self, 'receipt_buffer') and self.receipt_buffer and self.print_enabled:
+            self.pending_batch_receipts = list(self.receipt_buffer)
+            self.show_printing_modal(text="Printing Consolidated VVPAT...")
+            
+            self.batch_print_queue = queue.Queue()
+            
+            def batch_printer_worker(receipts):
+                try:
+                    result = self.printer_service.print_session_receipts(receipts, stage="vvpat")
+                    self.batch_print_queue.put(result)
+                except Exception as e:
+                    self.batch_print_queue.put(e)
 
-        With merge_receipts=False each election already printed its own VVPAT
-        immediately after voting, so there is nothing to batch here.
-        """
+            self.batch_print_thread = threading.Thread(target=batch_printer_worker, args=(self.receipt_buffer,))
+            self.batch_print_thread.daemon = True
+            self.batch_print_thread.start()
+            
+            self.batch_print_start_time = datetime.datetime.now()
+            self.check_batch_print_status(aborted)
+            return
+
+        # If printing is disabled, persist buffered votes without printing.
+        if not aborted and self.merge_receipts and hasattr(self, 'receipt_buffer') and self.receipt_buffer and not self.print_enabled:
+            all_records = [entry.get('vote_record') for entry in self.receipt_buffer if entry.get('vote_record')]
+            for r in all_records:
+                self.data_handler.save_json(r)
+            self.receipt_buffer = []
+            self.pending_batch_receipts = None
+
         self._finalize_session(aborted)
+
+    def check_batch_print_status(self, aborted=False):
+        try:
+            result = self.batch_print_queue.get_nowait()
+            if isinstance(result, dict) and result.get('stage') == 'vvpat_complete':
+                self.close_printing_modal()
+                self._show_vvpat_confirmation_modal(
+                    "This is VVPAT. Please put it in the VVPAT box.\n\nPress OK to continue.",
+                    self._start_receipt_stage_for_batch,
+                )
+                return
+            self.close_printing_modal()
+            if result is True:
+                # 2. Log Votes (Only if Print Succeeded)
+                all_records = []
+                source_buffer = self.pending_batch_receipts if self.pending_batch_receipts is not None else self.receipt_buffer
+                for entry in source_buffer:
+                    if 'vote_record' in entry:
+                         all_records.append(entry['vote_record'])
+                
+                if all_records:
+                    for r in all_records:
+                        self.data_handler.save_json(r)
+                self.receipt_buffer = []
+                self.pending_batch_receipts = None
+                self._cancel_pending_print_polling()
+                self._finalize_session(aborted)
+            else:
+                print(f"Batch print error: {result}")
+                retry = messagebox.askretrycancel("Printer Error", f"Failed to print session receipt: {result}\n\nRetry?")
+                if retry:
+                    self.finish_voter_session(aborted)
+                else:
+                    self.receipt_buffer = []
+                    self.pending_batch_receipts = None
+                    # Pass True so we don't log votes if the receipt failed to print!
+                    self._finalize_session(True)
+            return
+        except queue.Empty:
+            pass
+
+        elapsed = (datetime.datetime.now() - self.batch_print_start_time).total_seconds()
+        if elapsed > 60:
+            self.close_printing_modal()
+            retry = messagebox.askretrycancel("Printer Timeout", "Printer is taking too long.\n\nRetry?")
+            if retry:
+                self.finish_voter_session(aborted)
+            else:
+                self.receipt_buffer = []
+                self._finalize_session(True)
+            return
+
+        self.batch_print_status_after_id = self.root.after(500, self.check_batch_print_status, aborted)
 
     def _finalize_session(self, aborted=False):
         # 2. LOG SESSION TOKEN
@@ -535,10 +622,11 @@ class VotingApp:
             self._show_session_complete_screen()
             return
         else:
-            self.active_token = None
-            self.current_election_id = None
-            self.show_rfid_error("Your session has been cancelled.")
-            return
+            messagebox.showinfo("Session Aborted", "Your session has been cancelled.")
+            
+        self.active_token = None
+        self.current_election_id = None
+        self.show_rfid_screen()
 
     def _show_session_complete_screen(self):
         self.clear_container()
@@ -553,36 +641,26 @@ class VotingApp:
             fg="#1B5E20"
         ).pack(pady=(180, 24))
 
-        self.countdown_label = tk.Label(
+        tk.Label(
             frame,
             text="Returning to home screen in 5 seconds...",
             font=('Helvetica', 24),
             bg="#E8F5E9",
             fg="#2E7D32"
-        )
-        self.countdown_label.pack(pady=10)
+        ).pack(pady=10)
 
-        if getattr(self, 'session_complete_after_id', None):
+        if self.session_complete_after_id:
             try:
                 self.root.after_cancel(self.session_complete_after_id)
             except Exception:
                 pass
             self.session_complete_after_id = None
 
-        self._countdown_seconds = 5
-        self._update_countdown()
+        self.session_complete_after_id = self.root.after(5000, self._return_home_after_complete)
 
-    def _update_countdown(self):
-        if not hasattr(self, 'countdown_label') or not self.countdown_label.winfo_exists():
-            return
-            
-        if self._countdown_seconds > 0:
-            self.countdown_label.config(text=f"Returning to home screen in {self._countdown_seconds} seconds...")
-            self._countdown_seconds -= 1
-            self.session_complete_after_id = self.root.after(1000, self._update_countdown)
-        else:
-            self.session_complete_after_id = None
-            self.show_rfid_screen()
+    def _return_home_after_complete(self):
+        self.session_complete_after_id = None
+        self.show_rfid_screen()
 
     def show_rfid_error(self, message):
         self.clear_container()
@@ -625,24 +703,14 @@ class VotingApp:
         self.max_ranks = max(1, getattr(self.data_handler, 'max_preferences', len(self.data_handler.candidates_base) - 1))
         self.show_selection_screen()
 
-    def start_block_voting(self):
-        self.voting_mode = 'block'
-        self.selections = {}
-        self.current_rank = 1
-        self.max_ranks = getattr(self.data_handler, 'number_of_preferences', 2) or 2
-        self.show_selection_screen()
-
     def show_selection_screen(self):
         self.clear_container()
         
-        header_bg = "#E8EAF6" if self.voting_mode == 'block' else ("#E3F2FD" if self.voting_mode == 'normal' else "#F3E5F5")
+        header_bg = "#E3F2FD" if self.voting_mode == 'normal' else "#F3E5F5"
         header = tk.Frame(self.main_container, bg=header_bg, pady=5)
         header.pack(fill=tk.X)
         
-        if self.voting_mode == 'block':
-            mode_text = f"Select Candidate {self.current_rank} of {self.max_ranks}"
-        else:
-            mode_text = "Single Choice Vote" if self.voting_mode == 'normal' else f"Select Preference #{self.current_rank}"
+        mode_text = "Single Choice Vote" if self.voting_mode == 'normal' else f"Select Preference #{self.current_rank}"
         
         # Dynamic Header
         e_name = getattr(self.data_handler, 'election_name', 'General Election')
@@ -697,8 +765,8 @@ class VotingApp:
             state_val = tk.NORMAL
             bg_color = "white"
             
-            # Preferential or Block Mode: Gray out candidates already selected in previous ranks
-            if self.voting_mode in ('preferential', 'block'):
+            # Preferential Mode: Gray out candidates already selected in previous ranks
+            if self.voting_mode == 'preferential':
                 selected_rank = None
                 for rank, cid in self.selections.items():
                     if rank < self.current_rank and cid == cand['id']:
@@ -710,8 +778,7 @@ class VotingApp:
                     state_val = tk.DISABLED
                     bg_color = "#e0e0e0"
                     fg_color = "#888888"
-                    sel_text = f"Rank {selected_rank}" if self.voting_mode == 'preferential' else f"Chosen"
-                    cand_text += f"\n({sel_text})"
+                    cand_text += f"\n(Rank {selected_rank})"
 
             tk.Radiobutton(
                 frame, text=cand_text, variable=self.current_selection_var, value=cand['id'],
@@ -799,20 +866,6 @@ class VotingApp:
                     fg="#666",
                     bg="#e8f5e9"
                 ).pack(side=tk.LEFT, padx=(8, 0))
-        elif self.voting_mode == 'block':
-            ranks = sorted(self.selections.keys())
-            tk.Label(content, text=f"You have selected ({len(ranks)}/{self.max_ranks}):", font=('Helvetica', 16), bg="white").pack(pady=5)
-            for rank in ranks:
-                cid = self.selections[rank]
-                cand = self.data_handler.get_candidate_by_id(cid)
-                if not cand: continue
-                f = tk.Frame(content, bg="#e8f5e9", bd=2, relief=tk.SOLID, padx=30, pady=5)
-                f.pack(pady=5, fill=tk.X)
-                name_row = tk.Frame(f, bg="#e8f5e9")
-                name_row.pack()
-                tk.Label(name_row, text=cand['name'], font=('Helvetica', 20), bg="#e8f5e9").pack(side=tk.LEFT)
-                if cand.get('candidate_number'):
-                    tk.Label(name_row, text=f"({cand['candidate_number']})", font=('Helvetica', 14, 'italic'), fg="#666", bg="#e8f5e9").pack(side=tk.LEFT, padx=(8, 0))
         else:
             for rank in range(1, self.max_ranks + 1):
                 cid = self.selections.get(rank)
@@ -915,17 +968,6 @@ class VotingApp:
             sel_str = get_cand_display(cid)
             vvpat_sel_str = get_vvpat_display(cid)
             qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
-        elif self.voting_mode == 'block':
-            ranks = sorted(self.selections.keys())
-            vals = []
-            vvpat_vals = []
-            for r in ranks:
-                cid = self.selections[r]
-                vals.append(get_cand_display(cid))
-                vvpat_vals.append(f"- {get_vvpat_display(cid)}")
-            sel_str = ", ".join(vals)
-            vvpat_sel_str = "\n        ".join(vvpat_vals) if vvpat_vals else "None"
-            qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
         else:
             ranks = sorted(self.selections.keys())
             vals = []
@@ -933,9 +975,9 @@ class VotingApp:
             for r in ranks:
                 c = self.selections[r]
                 vals.append(get_cand_display(c))
-                vvpat_vals.append(f"Rank {r}: {get_vvpat_display(c)}")
+                vvpat_vals.append(get_vvpat_display(c))
             sel_str = ", ".join(vals)
-            vvpat_sel_str = "\n        ".join(vvpat_vals)
+            vvpat_sel_str = ", ".join(vvpat_vals)
             qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
 
         # Pre-generate log JSON while context is valid
@@ -948,12 +990,7 @@ class VotingApp:
         )
 
         # Voter receipt QR should contain only selected commitment.
-        if self.voting_mode == 'block':
-            ranks = sorted(self.selections.keys())
-            cids = [str(self.selections[r]) for r in ranks]
-            voter_qr_data = ",".join(cids)
-        else:
-            voter_qr_data = qr_data
+        voter_qr_data = qr_data
 
         receipt_entry = {
             'election_id': getattr(self.data_handler, 'election_id', '???'),
@@ -1181,7 +1218,8 @@ class VotingApp:
 
             self.pending_print_job = None
 
-            self.pending_print_job = None
+            if not self.merge_receipts:
+                messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
 
             self.start_next_election()
         except Exception as e:
@@ -1484,17 +1522,148 @@ class VotingApp:
 
     def show_polling_officer_action_menu(self):
         self.stop_scanning = True
-        continue_election = messagebox.askyesno(
-            "Officer Action Required",
-            "Polling Officer menu.\n\n"
-            "Yes: Continue election for this voter with a fresh ballot.\n"
-            "No: Permanently stop election (End Election & Export)."
-        )
 
-        if continue_election:
-            self.restart_current_election_after_challenge()
+        if hasattr(self, 'officer_action_overlay') and self.officer_action_overlay:
+            try:
+                self.officer_action_overlay.destroy()
+            except Exception:
+                pass
+
+        overlay = tk.Toplevel(self.root)
+        self.officer_action_overlay = overlay
+        overlay.title("Officer Action Required")
+        overlay.transient(self.root)
+        overlay.grab_set()
+        overlay.resizable(False, False)
+
+        w, h = 720, 360
+        x = (self.root.winfo_screenwidth() // 2) - (w // 2)
+        y = (self.root.winfo_screenheight() // 2) - (h // 2)
+        overlay.geometry(f"{w}x{h}+{x}+{y}")
+
+        overlay.protocol("WM_DELETE_WINDOW", self.close_officer_action_menu)
+
+        frame = tk.Frame(overlay, bg="#0d1117", padx=30, pady=28)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        tk.Label(
+            frame,
+            text="Polling Officer Action",
+            font=('Helvetica', 24, 'bold'),
+            bg="#0d1117",
+            fg="white"
+        ).pack(pady=(0, 10))
+
+        tk.Label(
+            frame,
+            text=(
+                "Continue election for this voter with a fresh ballot, or end the election and export logs."
+            ),
+            font=('Helvetica', 14),
+            bg="#0d1117",
+            fg="#cfd8dc",
+            wraplength=640,
+            justify=tk.CENTER
+        ).pack(pady=(0, 22))
+
+        button_row = tk.Frame(frame, bg="#0d1117")
+        button_row.pack(fill=tk.X, pady=12)
+
+        tk.Button(
+            button_row,
+            text="Continue Election",
+            font=('Helvetica', 14, 'bold'),
+            bg="#2E7D32",
+            fg="white",
+            padx=18,
+            pady=10,
+            command=self._continue_officer_election
+        ).pack(side=tk.LEFT, padx=10, expand=True, fill=tk.X)
+
+        tk.Button(
+            button_row,
+            text="End Election & Export",
+            font=('Helvetica', 14, 'bold'),
+            bg="#C62828",
+            fg="white",
+            padx=18,
+            pady=10,
+            command=self._end_officer_election
+        ).pack(side=tk.LEFT, padx=10, expand=True, fill=tk.X)
+
+        bottom_row = tk.Frame(frame, bg="#0d1117")
+        bottom_row.pack(fill=tk.X, pady=(20, 0))
+
+        tk.Button(
+            bottom_row,
+            text="Close Menu",
+            font=('Helvetica', 12),
+            bg="#37474F",
+            fg="white",
+            padx=14,
+            pady=8,
+            command=self.close_officer_action_menu
+        ).pack(side=tk.LEFT)
+
+        tk.Button(
+            bottom_row,
+            text="Close Application",
+            font=('Helvetica', 12),
+            bg="#455A64",
+            fg="white",
+            padx=14,
+            pady=8,
+            command=self.exit_app
+        ).pack(side=tk.RIGHT)
+
+    def close_officer_action_menu(self):
+        if hasattr(self, 'officer_action_overlay') and self.officer_action_overlay:
+            try:
+                self.officer_action_overlay.grab_release()
+            except Exception:
+                pass
+            try:
+                self.officer_action_overlay.destroy()
+            except Exception:
+                pass
+            self.officer_action_overlay = None
+
+    def _continue_officer_election(self):
+        self.close_officer_action_menu()
+        self.show_printing_modal(text="Loading fresh ballot...")
+        threading.Thread(target=self._continue_officer_election_worker, daemon=True).start()
+
+    def _continue_officer_election_worker(self):
+        try:
+            if not self.current_election_id:
+                raise Exception("No active election context found.")
+
+            new_id, new_file = self.ballot_manager.get_unused_ballot(self.current_election_id)
+            self.data_handler.set_ballot_file(new_file)
+
+            election_type = str(getattr(self.data_handler, 'election_type', '') or '').lower()
+            is_pair_layout = bool(getattr(self.data_handler, 'pref_combo_map', {}))
+            is_preferential = 'preferential' in election_type or 'ranked' in election_type or is_pair_layout
+
+            self.root.after(0, lambda: self._complete_officer_election_continue(new_id, is_preferential))
+        except Exception as e:
+            self.root.after(0, lambda err=str(e): self._fail_officer_action(err))
+
+    def _complete_officer_election_continue(self, ballot_id, is_preferential):
+        self.close_printing_modal()
+        print(f"Officer continue loaded fresh ballot: {ballot_id}")
+        if is_preferential:
+            self.start_preferential_voting()
         else:
-            self.end_election()
+            self.start_normal_voting()
+
+    def _end_officer_election(self):
+        self.close_officer_action_menu()
+        self.end_election()
+
+    def _fail_officer_action(self, error_message):
+        self.close_printing_modal()
+        messagebox.showerror("Officer Action Failed", error_message)
 
     def show_printing_modal(self, text="Printing VVPAT..."):
         self.printing_overlay = tk.Toplevel(self.root)
@@ -1521,7 +1690,10 @@ class VotingApp:
             result = self.print_queue.get_nowait()
             if isinstance(result, dict) and result.get('stage') == 'vvpat_complete':
                 self.close_printing_modal()
-                self._start_receipt_stage_for_vote()
+                self._show_vvpat_confirmation_modal(
+                    "This is VVPAT. Please put it in the VVPAT box.\n\nPress OK to continue.",
+                    self._start_receipt_stage_for_vote,
+                )
                 return
             self.close_printing_modal()
             if result is True:
@@ -1552,7 +1724,9 @@ class VotingApp:
                         status="USED"
                     )
                     
-                    # No confirmation dialog required.
+                    if not self.merge_receipts:
+                        messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
+
                     self.pending_print_job = None
                     self._cancel_pending_print_polling()
                     
@@ -1581,515 +1755,4 @@ class VotingApp:
         self.print_status_after_id = self.root.after(500, self.check_print_status)
 
     def exit_app(self, event=None):
-        """Exit the application. Only callable from the Admin Menu."""
         self.root.quit()
-
-    # ============================================================
-    # ADMIN MENU  —  triggered by typing 'Aman' anywhere
-    # ============================================================
-
-    def _on_key_press(self, event):
-        """Accumulate keystrokes; open admin menu when 'Aman' is typed."""
-        if event.char and event.char.isprintable():
-            self._admin_key_buffer += event.char
-            self._admin_key_buffer = self._admin_key_buffer[-10:]   # rolling window
-            if self._admin_key_buffer.endswith("Aman"):
-                self._admin_key_buffer = ""
-                self.show_admin_menu()
-
-    def show_admin_menu(self):
-        """Full-screen admin panel overlay.  The ONLY way to exit the app."""
-        # Prevent duplicate overlays
-        if self._admin_overlay:
-            try:
-                if self._admin_overlay.winfo_exists():
-                    self._admin_overlay.lift()
-                    return
-            except Exception:
-                pass
-
-        overlay = tk.Toplevel(self.root)
-        overlay.attributes('-fullscreen', True)
-        overlay.overrideredirect(True)
-        overlay.geometry(f"{self.root.winfo_screenwidth()}x{self.root.winfo_screenheight()}+0+0")
-        overlay.configure(bg='#0d1117')
-        overlay.transient(self.root)
-        overlay.grab_set()
-        self._admin_overlay = overlay
-
-        # ── Header ────────────────────────────────────────────────────────────
-        header = tk.Frame(overlay, bg='#161b22', pady=22)
-        header.pack(fill=tk.X)
-        tk.Label(
-            header, text="🔒  ADMIN PANEL",
-            font=('Helvetica', 28, 'bold'),
-            bg='#161b22', fg='#f0f6fc'
-        ).pack()
-        tk.Label(
-            header, text="Restricted Access — Polling Officer Only",
-            font=('Helvetica', 14),
-            bg='#161b22', fg='#8b949e'
-        ).pack(pady=(4, 0))
-
-        # ── Button grid ───────────────────────────────────────────────────────
-        grid = tk.Frame(overlay, bg='#0d1117', pady=20)
-        grid.pack(expand=True, fill=tk.BOTH, padx=60)
-        grid.grid_columnconfigure(0, weight=1)
-        grid.grid_columnconfigure(1, weight=1)
-        for r in range(7):
-            grid.grid_rowconfigure(r, weight=1)
-
-        def _btn(text, cmd, bg, fg='white', row=0, col=0, colspan=1):
-            tk.Button(
-                grid, text=text, command=cmd,
-                font=('Helvetica', 15, 'bold'),
-                bg=bg, fg=fg, activebackground=bg,
-                padx=16, pady=20, relief=tk.FLAT, bd=0, cursor='hand2',
-                wraplength=340
-            ).grid(row=row, column=col, columnspan=colspan,
-                   padx=12, pady=8, sticky='nsew')
-
-        # Row 0 — Election
-        _btn("🗳  End Election & Export",
-             self._admin_end_election, '#b71c1c', row=0, col=0)
-        _btn("📊  System Status",
-             self._admin_system_status, '#1565c0', row=0, col=1)
-
-        # Row 1 — Operations
-        print_label = f"🖨  Printing: {'ON  ✅' if self.print_enabled else 'OFF  ❌'}"
-        _btn(print_label, self._admin_toggle_print,
-             '#2e7d32' if self.print_enabled else '#6a0000', row=1, col=0)
-        _btn("🗑  Reset Token Log",
-             self._admin_reset_token_log, '#4a148c', row=1, col=1)
-
-        # Row 2 — Dev tools
-        _btn("⚡  [DEV] Skip RFID Scan",
-             self._admin_dev_skip, '#37474f', row=2, col=0)
-        _btn("🔄  [DEV] Return to USB Screen",
-             self._admin_dev_restart_usb, '#37474f', row=2, col=1)
-
-        # Row 3 — Firmware update (full width, blue)
-        _btn("📡  Firmware Update (git pull)",
-             self._admin_firmware_update, '#1565c0', row=3, col=0, colspan=2)
-
-        # Row 4 — Reset device (full width, orange)
-        _btn("🔁  Reset & Re-Provision Device",
-             self._admin_reset_device, '#e65100', row=4, col=0, colspan=2)
-
-        # Row 5 — Exit (full width, danger red)
-        _btn("⛔  EXIT APPLICATION",
-             self._admin_exit_app, '#c62828', row=5, col=0, colspan=2)
-
-        # Row 6 — Close (full width, muted)
-        _btn("✕  Close Admin Menu",
-             self._close_admin_menu, '#21262d', fg='#cdd9e5',
-             row=6, col=0, colspan=2)
-
-    # ── Admin action handlers ─────────────────────────────────────────────────
-
-    def _close_admin_menu(self):
-        if self._admin_overlay:
-            try:
-                self._admin_overlay.grab_release()
-                self._admin_overlay.destroy()
-            except Exception:
-                pass
-            self._admin_overlay = None
-
-    def _admin_end_election(self):
-        self._close_admin_menu()
-        self.end_election()
-
-    def _admin_toggle_print(self):
-        """Toggle printing state and re-open menu so button label refreshes."""
-        self._close_admin_menu()
-        self.toggle_printing()
-        self.root.after(80, self.show_admin_menu)
-
-    def _admin_reset_token_log(self):
-        self._close_admin_menu()
-        self.reset_token_log()
-
-    def _admin_dev_skip(self):
-        self._close_admin_menu()
-        self.skip_rfid_check()
-
-    def _admin_dev_restart_usb(self):
-        self._close_admin_menu()
-        self.show_usb_waiting_screen()
-
-    def _admin_exit_app(self):
-        self._close_admin_menu()
-        self.exit_app()
-
-    def _admin_system_status(self):
-        """Show a system info dialog inside the admin menu."""
-        # Hardware binding status
-        try:
-            import hardware_crypto
-            mid = hardware_crypto.get_machine_id()
-            if mid.startswith("OTP_"):
-                hw_status = "✅ OTP Silicon (clone-resistant)"
-            elif mid.startswith("CPUSERIAL_"):
-                hw_status = "✅ CPU Serial (clone-resistant)"
-            elif mid.startswith("DMI_"):
-                hw_status = "✅ DMI UUID (clone-resistant)"
-            else:
-                hw_status = "⚠️ FALLBACK — NOT secure against SD clone"
-        except Exception as e:
-            hw_status = f"Error: {e}"
-
-        # BMD ID from bmd_config.json
-        try:
-            import json
-            cfg_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "bmd_config.json"
-            )
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-            bmd_id = cfg.get("bmd_id", "UNKNOWN")
-            prov_at = cfg.get("provisioned_at", "")[:10]
-        except Exception:
-            bmd_id = "UNKNOWN"
-            prov_at = ""
-
-        # Printer status
-        if (hasattr(self, 'printer_service') and self.printer_service
-                and self.printer_service.is_printer_connected()):
-            printer_status = "✅ Connected"
-        else:
-            printer_status = "❌ Not connected"
-
-        msg = (
-            f"BMD ID        : {bmd_id}"
-            + (f"  (provisioned {prov_at})" if prov_at else "") + "\n"
-            f"HW Binding    : {hw_status}\n"
-            f"Printer       : {printer_status}\n"
-            f"Print Mode    : {'ON' if self.print_enabled else 'OFF'}\n"
-            f"Log Dir       : {getattr(self, 'log_dir', 'N/A')}\n"
-        )
-        messagebox.showinfo("System Status", msg, parent=self._admin_overlay)
-
-    def _admin_reset_device(self):
-        """Wipe all provisioning data and restart into the provisioning wizard."""
-        if not messagebox.askyesno(
-            "Reset Device",
-            "⚠️  WARNING: This will permanently delete:\n\n"
-            "  • private.pem  (signing key)\n"
-            "  • public.pem   (public key)\n"
-            "  • bmd_config.json\n"
-            "  • .provisioned flag\n\n"
-            "The device will restart into the provisioning wizard.\n"
-            "A new BMD ID and key pair must be assigned.\n\n"
-            "Continue?",
-            parent=self._admin_overlay,
-            icon='warning',
-        ):
-            return
-
-        # Second confirmation — this is irreversible
-        if not messagebox.askyesno(
-            "Final Confirmation",
-            "This action CANNOT be undone.\n\n"
-            "All existing keys will be destroyed.\n"
-            "Any ballots encrypted with the current public key\n"
-            "will NO LONGER be decryptable on this device.\n\n"
-            "Are you absolutely sure?",
-            parent=self._admin_overlay,
-            icon='warning',
-        ):
-            return
-
-        project_dir = os.path.dirname(os.path.abspath(__file__))
-        to_delete = [
-            os.path.join(project_dir, "private.pem"),
-            os.path.join(project_dir, "public.pem"),
-            os.path.join(project_dir, "bmd_config.json"),
-        ]
-        log_dir = getattr(self, 'log_dir', None)
-        if log_dir:
-            to_delete.append(os.path.join(log_dir, ".provisioned"))
-
-        for path in to_delete:
-            try:
-                os.chmod(path, 0o644)   # ensure writable in case it was locked
-                os.remove(path)
-            except Exception:
-                pass
-
-        self._close_admin_menu()
-        # Restart the process — main.py will see no .provisioned and launch wizard
-        import sys
-        self.root.destroy()
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-
-    def _admin_firmware_update(self):
-        """Run git pull to update application code, with full error handling."""
-        import subprocess
-        import threading
-
-        project_dir = os.path.dirname(os.path.abspath(__file__))
-
-        # ── Progress overlay ──────────────────────────────────────────
-        fw_win = tk.Toplevel(self._admin_overlay)
-        fw_win.title("Firmware Update")
-        fw_win.configure(bg='#0d1117')
-        fw_win.geometry("700x420")
-        fw_win.resizable(False, False)
-        fw_win.transient(self._admin_overlay)
-        fw_win.grab_set()
-
-        tk.Label(
-            fw_win, text="📡  Firmware Update",
-            font=('Helvetica', 22, 'bold'), bg='#0d1117', fg='#f0f6fc'
-        ).pack(pady=(30, 8))
-
-        status_var = tk.StringVar(value="Connecting to GitHub…")
-        tk.Label(
-            fw_win, textvariable=status_var,
-            font=('Helvetica', 13), bg='#0d1117', fg='#8b949e',
-        ).pack(pady=(0, 10))
-
-        # Scrollable output box
-        out_frame = tk.Frame(fw_win, bg='#161b22', pady=10, padx=10)
-        out_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=(0, 10))
-        out_text = tk.Text(
-            out_frame, height=10, bg='#161b22', fg='#3fb950',
-            font=('Courier', 11), relief=tk.FLAT, wrap=tk.WORD,
-            state=tk.DISABLED
-        )
-        out_text.pack(fill=tk.BOTH, expand=True)
-
-        close_btn = tk.Button(
-            fw_win, text="✕  Close",
-            font=('Helvetica', 13, 'bold'),
-            bg='#21262d', fg='#cdd9e5',
-            padx=20, pady=10, relief=tk.FLAT, cursor='hand2',
-            state=tk.DISABLED,
-            command=fw_win.destroy,
-        )
-        close_btn.pack(pady=(0, 20))
-
-        def _append(line: str, color: str = '#3fb950'):
-            out_text.configure(state=tk.NORMAL)
-            out_text.insert(tk.END, line + '\n')
-            out_text.see(tk.END)
-            out_text.configure(state=tk.DISABLED)
-            fw_win.update_idletasks()
-
-        def _run():
-            try:
-                # ─ Verify git is installed ────────────────────────────────
-                self.root.after(0, lambda: status_var.set("Checking git…"))
-                ver = subprocess.run(
-                    ['git', '--version'],
-                    capture_output=True, text=True, timeout=10
-                )
-                if ver.returncode != 0:
-                    raise RuntimeError("git not found. Install git on this device.")
-                self.root.after(0, lambda: _append(f"git found: {ver.stdout.strip()}"))
-
-                # ─ Check current branch ─────────────────────────────────
-                branch_r = subprocess.run(
-                    ['git', '-C', project_dir, 'branch', '--show-current'],
-                    capture_output=True, text=True, timeout=10
-                )
-                branch = branch_r.stdout.strip() or 'main'
-                self.root.after(0, lambda: _append(f"Branch     : {branch}"))
-                self.root.after(0, lambda: _append(f"Directory  : {project_dir}"))
-                self.root.after(0, lambda: _append(""))
-
-                # ─ git fetch (test connectivity before pull) ──────────────
-                self.root.after(0, lambda: status_var.set("Fetching from remote…"))
-                self.root.after(0, lambda: _append("Running: git fetch…"))
-                fetch = subprocess.run(
-                    ['git', '-C', project_dir, 'fetch'],
-                    capture_output=True, text=True, timeout=15
-                )
-                if fetch.returncode != 0:
-                    err = fetch.stderr.strip() or fetch.stdout.strip()
-                    raise RuntimeError(
-                        f"git fetch failed.\n\n"
-                        f"Possible causes:\n"
-                        f"  • No internet / WiFi not connected\n"
-                        f"  • GitHub is unreachable\n"
-                        f"  • SSH keys / credentials missing\n\n"
-                        f"Git output:\n{err}"
-                    )
-                self.root.after(0, lambda: _append("Fetch OK."))
-
-                # ─ git pull ─────────────────────────────────────────
-                self.root.after(0, lambda: status_var.set("Pulling updates…"))
-                self.root.after(0, lambda: _append(f"Running: git pull origin {branch}…"))
-                pull = subprocess.run(
-                    ['git', '-C', project_dir, 'pull', 'origin', branch],
-                    capture_output=True, text=True, timeout=30
-                )
-                combined = (pull.stdout + pull.stderr).strip()
-                self.root.after(0, lambda: _append(combined))
-
-                if pull.returncode != 0:
-                    err = pull.stderr.strip()
-                    if 'CONFLICT' in err or 'conflict' in err:
-                        raise RuntimeError(
-                            "Merge conflict detected.\n\n"
-                            "Local changes conflict with remote.\n"
-                            "On the Raspberry Pi terminal run:\n"
-                            "  git -C ~/evoting stash\n"
-                            "  git -C ~/evoting pull origin main"
-                        )
-                    elif 'not a git repository' in err:
-                        raise RuntimeError(
-                            "This directory is not a git repository.\n"
-                            "Re-clone the repo to enable firmware updates."
-                        )
-                    else:
-                        raise RuntimeError(f"git pull failed:\n{err}")
-
-                already_up = 'already up to date' in combined.lower()
-                if already_up:
-                    self.root.after(0, lambda: status_var.set("✅  Already up to date."))
-                    self.root.after(0, lambda: _append("\nNo new updates found."))
-                else:
-                    self.root.after(0, lambda: status_var.set("✅  Update successful!"))
-                    self.root.after(0, lambda: _append("\n✅  Firmware updated successfully."))
-                    self.root.after(0, lambda: _append(
-                        "Restart the application to apply changes."
-                    ))
-                    # Offer restart
-                    self.root.after(0, lambda: self._offer_restart_after_update(fw_win))
-                    return
-
-            except subprocess.TimeoutExpired:
-                self.root.after(0, lambda: status_var.set("❌  Timed out."))
-                self.root.after(0, lambda: _append(
-                    "❌  Operation timed out.\n"
-                    "Check your internet connection and try again."
-                ))
-            except Exception as exc:
-                msg = str(exc)
-                self.root.after(0, lambda: status_var.set("❌  Update failed."))
-                self.root.after(0, lambda: _append(f"❌  Error:\n{msg}"))
-
-            self.root.after(0, lambda: close_btn.configure(state=tk.NORMAL))
-
-        threading.Thread(target=_run, daemon=True).start()
-
-    def _offer_restart_after_update(self, parent_win):
-        """Ask the operator whether to restart the app to apply the firmware update."""
-        parent_win.grab_release()
-        restart = messagebox.askyesno(
-            "Restart Required",
-            "✅  Firmware updated successfully!\n\n"
-            "The application must restart to apply the new code.\n\n"
-            "Restart now?",
-            parent=parent_win,
-        )
-        parent_win.destroy()
-        if restart:
-            self._close_admin_menu()
-            import sys
-            self.root.destroy()
-            os.execv(sys.executable, [sys.executable] + sys.argv)
-
-    def _admin_system_status(self):
-        """Show a system info dialog inside the admin menu."""
-        # Hardware binding status
-        try:
-            import hardware_crypto
-            mid = hardware_crypto.get_machine_id()
-            if mid.startswith("OTP_"):
-                hw_status = "✅ OTP Silicon (clone-resistant)"
-            elif mid.startswith("CPUSERIAL_"):
-                hw_status = "✅ CPU Serial (clone-resistant)"
-            elif mid.startswith("DMI_"):
-                hw_status = "✅ DMI UUID (clone-resistant)"
-            else:
-                hw_status = "⚠️ FALLBACK — NOT secure against SD clone"
-        except Exception as e:
-            hw_status = f"Error: {e}"
-
-        # BMD ID from bmd_config.json
-        try:
-            import json
-            cfg_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "bmd_config.json"
-            )
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-            bmd_id = cfg.get("bmd_id", "UNKNOWN")
-            prov_at = cfg.get("provisioned_at", "")[:10]
-        except Exception:
-            bmd_id = "UNKNOWN"
-            prov_at = ""
-
-        # Printer status
-        if (hasattr(self, 'printer_service') and self.printer_service
-                and self.printer_service.is_printer_connected()):
-            printer_status = "✅ Connected"
-        else:
-            printer_status = "❌ Not connected"
-
-        msg = (
-            f"BMD ID        : {bmd_id}"
-            + (f"  (provisioned {prov_at})" if prov_at else "") + "\n"
-            f"HW Binding    : {hw_status}\n"
-            f"Printer       : {printer_status}\n"
-            f"Print Mode    : {'ON' if self.print_enabled else 'OFF'}\n"
-            f"Log Dir       : {getattr(self, 'log_dir', 'N/A')}\n"
-        )
-        messagebox.showinfo("System Status", msg, parent=self._admin_overlay)
-
-    def _admin_reset_device(self):
-        """Wipe all provisioning data and restart into the provisioning wizard."""
-        if not messagebox.askyesno(
-            "Reset Device",
-            "⚠️  WARNING: This will permanently delete:\n\n"
-            "  • private.pem  (signing key)\n"
-            "  • public.pem   (public key)\n"
-            "  • bmd_config.json\n"
-            "  • .provisioned flag\n\n"
-            "The device will restart into the provisioning wizard.\n"
-            "A new BMD ID and key pair must be assigned.\n\n"
-            "Continue?",
-            parent=self._admin_overlay,
-            icon='warning',
-        ):
-            return
-
-        # Second confirmation — this is irreversible
-        if not messagebox.askyesno(
-            "Final Confirmation",
-            "This action CANNOT be undone.\n\n"
-            "All existing keys will be destroyed.\n"
-            "Any ballots encrypted with the current public key\n"
-            "will NO LONGER be decryptable on this device.\n\n"
-            "Are you absolutely sure?",
-            parent=self._admin_overlay,
-            icon='warning',
-        ):
-            return
-
-        project_dir = os.path.dirname(os.path.abspath(__file__))
-        to_delete = [
-            os.path.join(project_dir, "private.pem"),
-            os.path.join(project_dir, "public.pem"),
-            os.path.join(project_dir, "bmd_config.json"),
-        ]
-        log_dir = getattr(self, 'log_dir', None)
-        if log_dir:
-            to_delete.append(os.path.join(log_dir, ".provisioned"))
-
-        for path in to_delete:
-            try:
-                os.chmod(path, 0o644)   # ensure writable in case it was locked
-                os.remove(path)
-            except Exception:
-                pass
-
-        self._close_admin_menu()
-        # Restart the process — main.py will see no .provisioned and launch wizard
-        import sys
-        self.root.destroy()
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-
