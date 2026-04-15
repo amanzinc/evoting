@@ -557,7 +557,7 @@ class VotingApp:
             if isinstance(result, dict) and result.get('stage') == 'vvpat_complete':
                 self.close_printing_modal()
                 self._show_vvpat_confirmation_modal(
-                        "This is VVPAT. Please put it in the VVPAT box.",
+                        "",
                     self._start_receipt_stage_for_batch,
                 )
                 return
@@ -730,7 +730,7 @@ class VotingApp:
         if self.voting_mode == 'normal':
             mode_text = "Single Choice Vote"
         elif self.voting_mode == 'block':
-            mode_text = f"Select {self.max_ranks} out of candidates"
+            mode_text = f"Select {self.max_ranks} candidates"
         else:
             mode_text = f"Select Preference #{self.current_rank}"
         
@@ -1191,15 +1191,16 @@ class VotingApp:
             bg="#FFF8E1",
             fg="#6D4C41"
         ).pack(pady=(30, 10))
-        tk.Label(
-            frame,
-            text=message,
-            font=('Helvetica', 22),
-            bg="#FFF8E1",
-            fg="#4E342E",
-            wraplength=840,
-            justify=tk.CENTER
-        ).pack(pady=(10, 18))
+        if message:
+            tk.Label(
+                frame,
+                text=message,
+                font=('Helvetica', 22),
+                bg="#FFF8E1",
+                fg="#4E342E",
+                wraplength=840,
+                justify=tk.CENTER
+            ).pack(pady=(10, 18))
 
         countdown_label = tk.Label(
             frame,
@@ -2021,7 +2022,7 @@ class VotingApp:
             if isinstance(result, dict) and result.get('stage') == 'vvpat_complete':
                 self.close_printing_modal()
                 self._show_vvpat_confirmation_modal(
-                    "This is VVPAT. Please put it in the VVPAT box.",
+                    "",
                     self._start_receipt_stage_for_vote,
                 )
                 return
