@@ -557,7 +557,7 @@ class VotingApp:
             if isinstance(result, dict) and result.get('stage') == 'vvpat_complete':
                 self.close_printing_modal()
                 self._show_vvpat_confirmation_modal(
-                    "This is VVPAT. Please put it in the VVPAT box.\n\nPress OK to continue.",
+                        "This is VVPAT. Please put it in the VVPAT box.",
                     self._start_receipt_stage_for_batch,
                 )
                 return
@@ -637,13 +637,14 @@ class VotingApp:
             fg="#1B5E20"
         ).pack(pady=(180, 24))
 
-        tk.Label(
+        countdown_label = tk.Label(
             frame,
             text="Returning to home screen in 5 seconds...",
             font=('Helvetica', 24),
             bg="#E8F5E9",
             fg="#2E7D32"
-        ).pack(pady=10)
+        )
+        countdown_label.pack(pady=10)
 
         if self.session_complete_after_id:
             try:
@@ -652,7 +653,14 @@ class VotingApp:
                 pass
             self.session_complete_after_id = None
 
-        self.session_complete_after_id = self.root.after(5000, self._return_home_after_complete)
+        def tick(seconds_left):
+            countdown_label.config(text=f"Returning to home screen in {seconds_left}...")
+            if seconds_left <= 1:
+                self._return_home_after_complete()
+                return
+            self.session_complete_after_id = self.root.after(1000, lambda: tick(seconds_left - 1))
+
+        tick(5)
 
     def _return_home_after_complete(self):
         self.session_complete_after_id = None
@@ -1193,23 +1201,31 @@ class VotingApp:
             justify=tk.CENTER
         ).pack(pady=(10, 18))
 
-        button_row = tk.Frame(frame, bg="#FFF8E1")
-        button_row.pack(pady=(10, 30))
+        countdown_label = tk.Label(
+            frame,
+            text="Returning in 5...",
+            font=('Helvetica', 24, 'bold'),
+            bg="#FFF8E1",
+            fg="#1B5E20"
+        )
+        countdown_label.pack(pady=(14, 30))
 
-        def confirm_and_continue():
+        self.vvpat_countdown_after_id = None
+
+        def tick(seconds_left):
+            if not (hasattr(self, 'vvpat_confirmation_overlay') and self.vvpat_confirmation_overlay):
+                return
+
+            if seconds_left > 0:
+                countdown_label.config(text=f"Returning in {seconds_left}...")
+                self.vvpat_countdown_after_id = self.root.after(1000, lambda: tick(seconds_left - 1))
+                return
+
+            self.vvpat_countdown_after_id = None
             self.close_vvpat_confirmation_modal()
             on_ok()
 
-        tk.Button(
-            button_row,
-            text="OK",
-            font=('Helvetica', 24, 'bold'),
-            bg="#2E7D32",
-            fg="white",
-            padx=48,
-            pady=16,
-            command=confirm_and_continue
-        ).pack()
+        tick(5)
 
     def _show_large_yes_no_dialog(self, title, message, yes_text="Yes", no_text="No"):
         result = {"value": False}
@@ -1277,6 +1293,14 @@ class VotingApp:
         return result["value"]
 
     def close_vvpat_confirmation_modal(self):
+        after_id = getattr(self, 'vvpat_countdown_after_id', None)
+        if after_id:
+            try:
+                self.root.after_cancel(after_id)
+            except Exception:
+                pass
+            self.vvpat_countdown_after_id = None
+
         if hasattr(self, 'vvpat_confirmation_overlay') and self.vvpat_confirmation_overlay:
             self.vvpat_confirmation_overlay.destroy()
             self.vvpat_confirmation_overlay = None
@@ -1997,7 +2021,7 @@ class VotingApp:
             if isinstance(result, dict) and result.get('stage') == 'vvpat_complete':
                 self.close_printing_modal()
                 self._show_vvpat_confirmation_modal(
-                    "This is VVPAT. Please put it in the VVPAT box.\n\nPress OK to continue.",
+                    "This is VVPAT. Please put it in the VVPAT box.",
                     self._start_receipt_stage_for_vote,
                 )
                 return
