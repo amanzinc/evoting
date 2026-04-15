@@ -27,6 +27,11 @@ class VotingApp:
         self.root.title("Ballot Marking Device")
         self.root.attributes('-fullscreen', True)
         self.root.bind("<Escape>", self.exit_app)
+        self.root.bind("<Key>", self._on_key_press)
+
+        # Hidden polling-officer menu trigger: typing "Aman" opens the panel.
+        self._admin_key_buffer = ""
+        self._admin_overlay = None
 
         # Style configuration
         self.style = ttk.Style()
@@ -1524,17 +1529,189 @@ class VotingApp:
 
     def show_polling_officer_action_menu(self):
         self.stop_scanning = True
-        continue_election = messagebox.askyesno(
-            "Officer Action Required",
-            "Polling Officer menu.\n\n"
-            "Yes: Continue election for this voter with a fresh ballot.\n"
-            "No: Permanently stop election (End Election & Export)."
+        self.show_admin_menu()
+
+    def _on_key_press(self, event):
+        """Accumulate keystrokes and open polling officer menu on 'Aman'."""
+        if event.char and event.char.isprintable():
+            self._admin_key_buffer += event.char
+            self._admin_key_buffer = self._admin_key_buffer[-10:]
+            if self._admin_key_buffer.endswith("Aman"):
+                self._admin_key_buffer = ""
+                self.show_admin_menu()
+
+    def show_admin_menu(self):
+        """Full-screen polling officer menu overlay with administrative actions."""
+        if self._admin_overlay:
+            try:
+                if self._admin_overlay.winfo_exists():
+                    self._admin_overlay.lift()
+                    return
+            except Exception:
+                pass
+
+        overlay = tk.Toplevel(self.root)
+        overlay.attributes('-fullscreen', True)
+        overlay.configure(bg="#0d1117")
+        overlay.transient(self.root)
+        overlay.grab_set()
+        self._admin_overlay = overlay
+
+        header = tk.Frame(overlay, bg="#161b22", pady=22)
+        header.pack(fill=tk.X)
+        tk.Label(
+            header,
+            text="POLLING OFFICER MENU",
+            font=('Helvetica', 28, 'bold'),
+            bg="#161b22",
+            fg="#f0f6fc"
+        ).pack()
+        tk.Label(
+            header,
+            text="Restricted Access",
+            font=('Helvetica', 14),
+            bg="#161b22",
+            fg="#8b949e"
+        ).pack(pady=(4, 0))
+
+        grid = tk.Frame(overlay, bg="#0d1117", pady=20)
+        grid.pack(expand=True, fill=tk.BOTH, padx=60)
+        grid.grid_columnconfigure(0, weight=1)
+        grid.grid_columnconfigure(1, weight=1)
+        for row_idx in range(5):
+            grid.grid_rowconfigure(row_idx, weight=1)
+
+        def _btn(text, cmd, bg, fg="white", row=0, col=0, colspan=1):
+            tk.Button(
+                grid,
+                text=text,
+                command=cmd,
+                font=('Helvetica', 15, 'bold'),
+                bg=bg,
+                fg=fg,
+                activebackground=bg,
+                padx=16,
+                pady=20,
+                relief=tk.FLAT,
+                bd=0,
+                cursor='hand2',
+                wraplength=340
+            ).grid(
+                row=row,
+                column=col,
+                columnspan=colspan,
+                padx=12,
+                pady=8,
+                sticky='nsew'
+            )
+
+        _btn("End Election and Export", self._admin_end_election, "#b71c1c", row=0, col=0)
+        _btn("System Status", self._admin_system_status, "#1565c0", row=0, col=1)
+
+        print_label = f"Printing: {'ON' if self.print_enabled else 'OFF'}"
+        _btn(
+            print_label,
+            self._admin_toggle_print,
+            "#2e7d32" if self.print_enabled else "#6a0000",
+            row=1,
+            col=0
+        )
+        _btn("Reset Token Log", self._admin_reset_token_log, "#4a148c", row=1, col=1)
+
+        _btn("Continue Election", self._admin_continue_election, "#2e7d32", row=2, col=0)
+        _btn("DEV: Skip RFID Scan", self._admin_dev_skip, "#37474f", row=2, col=1)
+
+        _btn("DEV: Return to USB Screen", self._admin_dev_restart_usb, "#37474f", row=3, col=0)
+        _btn("Close Application", self._admin_exit_app, "#c62828", row=3, col=1)
+
+        _btn(
+            "Close Polling Officer Menu",
+            self._close_admin_menu,
+            "#21262d",
+            fg="#cdd9e5",
+            row=4,
+            col=0,
+            colspan=2
         )
 
-        if continue_election:
-            self.restart_current_election_after_challenge()
+    def _close_admin_menu(self):
+        if self._admin_overlay:
+            try:
+                self._admin_overlay.grab_release()
+                self._admin_overlay.destroy()
+            except Exception:
+                pass
+            self._admin_overlay = None
+
+    def _admin_end_election(self):
+        self._close_admin_menu()
+        self.end_election()
+
+    def _admin_continue_election(self):
+        self._close_admin_menu()
+        self.restart_current_election_after_challenge()
+
+    def _admin_toggle_print(self):
+        self._close_admin_menu()
+        self.toggle_printing()
+        self.root.after(80, self.show_admin_menu)
+
+    def _admin_reset_token_log(self):
+        self.reset_token_log()
+
+    def _admin_dev_skip(self):
+        self._close_admin_menu()
+        self.skip_rfid_check()
+
+    def _admin_dev_restart_usb(self):
+        self._close_admin_menu()
+        self.show_usb_waiting_screen()
+
+    def _admin_exit_app(self):
+        self._close_admin_menu()
+        self.exit_app()
+
+    def _admin_system_status(self):
+        """Show system status inside the polling officer menu."""
+        try:
+            import hardware_crypto
+            machine_id = hardware_crypto.get_machine_id()
+            if machine_id.startswith("OTP_"):
+                hw_status = "OTP Silicon (clone-resistant)"
+            elif machine_id.startswith("CPUSERIAL_"):
+                hw_status = "CPU Serial (clone-resistant)"
+            elif machine_id.startswith("DMI_"):
+                hw_status = "DMI UUID (clone-resistant)"
+            else:
+                hw_status = "Fallback identity (not clone-resistant)"
+        except Exception as e:
+            hw_status = f"Error: {e}"
+
+        try:
+            import json
+            cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bmd_config.json")
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            bmd_id = cfg.get("bmd_id", "UNKNOWN")
+            provisioned_at = str(cfg.get("provisioned_at", ""))[:10]
+        except Exception:
+            bmd_id = "UNKNOWN"
+            provisioned_at = ""
+
+        if hasattr(self, 'printer_service') and self.printer_service and self.printer_service.is_printer_connected():
+            printer_status = "Connected"
         else:
-            self.end_election()
+            printer_status = "Not connected"
+
+        msg = (
+            f"BMD ID        : {bmd_id}"
+            + (f"  (provisioned {provisioned_at})" if provisioned_at else "") + "\n"
+            + f"HW Binding    : {hw_status}\n"
+            + f"Printer       : {printer_status}\n"
+            + f"Print Mode    : {'ON' if self.print_enabled else 'OFF'}\n"
+            + f"Log Dir       : {getattr(self, 'log_dir', 'N/A')}\n"
+        )
+        messagebox.showinfo("System Status", msg, parent=self._admin_overlay)
 
     def show_printing_modal(self, text="Printing VVPAT..."):
         self.printing_overlay = tk.Toplevel(self.root)
