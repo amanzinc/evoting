@@ -1851,7 +1851,14 @@ class VotingApp:
     def _admin_update_firmware_done(self, output_text):
         self.close_printing_modal()
         detail = output_text if output_text else "Already up to date."
-        messagebox.showinfo("Firmware Update Complete", detail)
+        messagebox.showinfo(
+            "Firmware Update Complete",
+            f"{detail}\n\nRestarting application to apply updates."
+        )
+
+        import sys
+        self.root.destroy()
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def _admin_update_firmware_failed(self, error_message):
         self.close_printing_modal()
