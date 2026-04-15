@@ -4,6 +4,7 @@ import datetime
 import time
 import shutil
 import subprocess
+import json
 import qrcode
 from PIL import Image, ImageDraw, ImageFont
 
@@ -356,10 +357,8 @@ class PrinterService:
 
             if stage in ("both", "vvpat", "receipt"):
                 self._print_vote_vvpat_section(p, context)
+                time.sleep(5)
                 p.cut(mode='FULL')
-                # Extra feed after the cut
-                p.text("\n\n\n\n\n\n")
-                time.sleep(10)
                 return {"stage": "vvpat_complete", "context": context}
 
             return True
@@ -426,59 +425,171 @@ class PrinterService:
             print(f"Voter QR Error: {e}")
             raise e
 
-    def print_single_vvpat(self, receipt_entry):
-        """Print one VVPAT slip for a single election immediately after voting.
+    def _generate_provision_qr(self, payload_text):
+        """Generate a printer-friendly QR image for provisioning payloads.
 
-        Replaces the old consolidated (batch) approach.  Each election gets its
-        own slip cut immediately so the paper falls from the printer.
+        This mirrors the VVPAT image path: render QR -> convert to RGB canvas
+        sized to printer width -> print with p.image(...).
         """
-        if not self.printer:
-            self.connect_printer()
-        if not self.printer:
+        try:
+            qr = qrcode.QRCode(
+                version=None,
+                error_correction=qrcode.constants.ERROR_CORRECT_M,
+                box_size=8,
+                border=2,
+            )
+            qr.add_data(payload_text)
+            qr.make(fit=True)
+
+            qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+
+            max_qr_size = min(self.paper_width_dots - 40, 360)
+            qr_img.thumbnail((max_qr_size, max_qr_size), Image.Resampling.NEAREST)
+
+            canvas_h = qr_img.height + 10
+            canvas = Image.new("RGB", (self.paper_width_dots, canvas_h), "white")
+            x_pos = (self.paper_width_dots - qr_img.width) // 2
+            canvas.paste(qr_img, (x_pos, 5))
+
+            if self.reverse_print:
+                canvas = canvas.rotate(180)
+
+            temp_filename = f"temp_qr_provision_{uuid.uuid4().hex}.png"
+            canvas.save(temp_filename)
+            return temp_filename
+        except Exception as e:
+            print(f"Provision QR Error: {e}")
+            raise e
+
+    def print_provisioning_ticket(self, bmd_id, public_key_pem, machine_id="UNKNOWN"):
+        """Print a provisioning ticket with QR payload containing BMD ID and public key."""
+        if not self.is_printer_connected():
             raise Exception("Printer not connected")
 
-        p = self.printer
-        DIVIDER = self._bar("-")
-        TOP_BAR = self._bar("=")
-
         try:
+            p = self.printer
+            TOP_BAR = self._bar("=")
+            timestamp = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+
+            if machine_id and "OTP_" in str(machine_id):
+                hw_label = "OTP (clone-resistant)"
+            elif machine_id and "CPUSERIAL_" in str(machine_id):
+                hw_label = "CPU Serial (clone-resistant)"
+            elif machine_id and "DMI_" in str(machine_id):
+                hw_label = "DMI UUID (clone-resistant)"
+            else:
+                hw_label = "FALLBACK (not secure)"
+
+            qr_payload = json.dumps(
+                [{
+                    "bmd_id": int(bmd_id) if str(bmd_id).isdigit() else str(bmd_id),
+                    "rsa_public_key_pem": public_key_pem.strip() + "\n",
+                    "is_active": True,
+                }],
+                separators=(",", ":")
+            )
+
             self._set_reverse_print_mode(True)
 
-            p.text("\n")
-            p.text(DIVIDER + "\n")
+            p.text("SEND TO ELECTION ADMIN\n")
+            p.text(TOP_BAR + "\n")
+            p.text("BMD PROVISIONING RECEIPT\n")
+            p.text(TOP_BAR + "\n")
 
-            qr_data     = receipt_entry['qr_choice_data']
-            short_b_id  = self.data_handler.get_short_ballot_id(receipt_entry['ballot_id'])
-            temp_qr     = self._generate_vvpat_qr(qr_data, short_b_id)
+            p.set(align='left', bold=False)
+            p.text(f"Date/Time  : {timestamp}\n")
+            p.text(f"BMD ID     : {bmd_id}\n")
+            p.text(f"HW Binding : {hw_label}\n\n")
 
+            p.set(align='left', bold=True)
+            p.text("QR: BMD ID + FULL PUBLIC KEY\n")
+            p.set(align='left', bold=False)
+
+            temp_qr = self._generate_provision_qr(qr_payload)
             p.set(align='left')
             p.image(temp_qr)
             if os.path.exists(temp_qr):
                 os.remove(temp_qr)
 
+            p.text("\n")
             p.set(align='left', bold=True)
-            p.text(f"Choice: {receipt_entry.get('vvpat_choice_str', receipt_entry.get('choice_str', '?'))}\n")
+            p.text("PUBLIC KEY (PEM):\n")
             p.set(align='left', bold=False)
-            p.text(f"Election: {receipt_entry.get('election_id', '?')}\n")
+            for line in public_key_pem.strip().splitlines():
+                p.text(f"{line}\n")
 
-            p.text(TOP_BAR + "\n\n")
-            p.text(self._center_line("(Internal Audit Trail)") + "\n")
-            p.text(self._center_line("VVPAT SLIP") + "\n")
+            p.text("\n" + TOP_BAR + "\n")
+            p.text("KEEP THIS SLIP FOR SETUP\n")
             p.text(TOP_BAR + "\n")
-
-            p.cut(mode='FULL')
-            # Extra feed after the cut
+            p.set(align='left', font='a', width=1, height=1, bold=True)
             p.text("\n\n\n\n\n\n")
-            time.sleep(10)
-
-            return {"stage": "vvpat_complete"}
-
+            p.cut(mode='FULL')
+            return True
         except Exception as e:
-            print(f"VVPAT Print Error: {e}")
             try:
                 if self.printer:
                     self.printer.close()
             except Exception:
+                pass
+            self.printer = None
+            raise Exception(f"Failed to print provisioning ticket: {e}")
+        finally:
+            self._set_reverse_print_mode(False)
+
+    def print_session_receipts(self, receipts_list, stage="both"):
+        """Prints a consolidated VVPAT strip and cuts it for the box."""
+        if not self.printer:
+            self.connect_printer()
+        if not self.printer:
+            return # Fail silently or log
+            
+        p = self.printer
+        TOP_BAR = self._bar("=")
+        DIVIDER = self._bar("-")
+        
+        try:
+            self._set_reverse_print_mode(True)
+
+            if stage in ("both", "vvpat", "receipt"):
+                p.text("\n")
+
+                for i, r in enumerate(reversed(receipts_list)):
+                    idx = len(receipts_list) - i
+                    p.text(DIVIDER + "\n")
+
+                    qr_data = r['qr_choice_data']
+                    short_b_id = self.data_handler.get_short_ballot_id(r['ballot_id'])
+                    temp_qr = self._generate_vvpat_qr(qr_data, short_b_id)
+
+                    p.set(align='left')
+                    p.image(temp_qr)
+                    if os.path.exists(temp_qr):
+                        os.remove(temp_qr)
+
+                    p.set(align='left', bold=False)
+                    p.set(align='left', bold=True)
+                    p.text(f"Choice: {r.get('vvpat_choice_str', r['choice_str'])}\n")
+                    p.set(align='left', bold=False)
+                    p.text(f"#{idx}: {r.get('election_id', '???')}\n")
+
+                p.text(TOP_BAR + "\n\n")
+                p.text(self._center_line("(Internal Audit Trail)") + "\n")
+                p.text(self._center_line("CONSOLIDATED VVPAT SLIPS") + "\n")
+                p.text(TOP_BAR + "\n")
+                p.set(align='left', font='a', width=1, height=1, bold=True)
+
+                p.text("\n\n")
+                time.sleep(5)
+                p.cut(mode='FULL')
+
+                return {"stage": "vvpat_complete"}
+            
+        except Exception as e:
+            print(f"Batch Print Error: {e}")
+            try:
+                if self.printer:
+                    self.printer.close()
+            except:
                 pass
             self.printer = None
             raise e
