@@ -28,8 +28,20 @@ class RFIDService:
         self.connected = False
         
         self.START_BLOCK = 4
-        self.MAX_BLOCKS = 40
+        self.MAX_BLOCK_NO = 255
+        self.MIN_REQUIRED_SECTORS = 24
         self.KEY_DEFAULT = b'\xFF' * 6
+
+    def _block_to_sector(self, block_no):
+        # MIFARE Classic 4K: sectors 0-31 have 4 blocks, sectors 32-39 have 16 blocks.
+        if block_no < 128:
+            return block_no // 4
+        return 32 + ((block_no - 128) // 16)
+
+    def _sector_layout(self, sector_no):
+        if sector_no < 32:
+            return sector_no * 4, 4
+        return 128 + (sector_no - 32) * 16, 16
 
     def load_key(self):
         if not os.path.exists(self.key_path):
@@ -67,7 +79,9 @@ class RFIDService:
             return False
 
     def is_trailer_block(self, block_no):
-        return (block_no + 1) % 4 == 0
+        sector_no = self._block_to_sector(block_no)
+        sector_first_block, blocks_per_sector = self._sector_layout(sector_no)
+        return block_no == (sector_first_block + blocks_per_sector - 1)
 
     def read_card(self):
         """
@@ -90,36 +104,58 @@ class RFIDService:
             # Read Data
             block_no = self.START_BLOCK
             raw_bytes = bytearray()
-            
-            for _ in range(self.MAX_BLOCKS):
+            read_sectors = set()
+            payload_complete = False
+
+            while block_no <= self.MAX_BLOCK_NO:
                 while self.is_trailer_block(block_no):
                     block_no += 1
+
+                if block_no > self.MAX_BLOCK_NO:
+                    break
                 
                 auth = self.pn532.mifare_classic_authenticate_block(
                     uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
                 )
                 
                 if not auth:
-                    break
+                    block_no += 1
+                    continue
                     
                 data = self.pn532.mifare_classic_read_block(block_no)
                 if data is None:
+                    block_no += 1
+                    continue
+
+                read_sectors.add(self._block_to_sector(block_no))
+
+                if not payload_complete:
+                    if b'\x00' in data:
+                        raw_bytes.extend(data.split(b'\x00')[0])
+                        payload_complete = True
+                    else:
+                        raw_bytes.extend(data)
+
+                # Enforce reading at least N sectors before allowing decrypt.
+                if payload_complete and len(read_sectors) >= self.MIN_REQUIRED_SECTORS:
                     break
-                
-                if b'\x00' in data:
-                    raw_bytes.extend(data.split(b'\x00')[0])
-                    break
-                    
-                raw_bytes.extend(data)
+
                 block_no += 1
-            
+
+            if len(read_sectors) < self.MIN_REQUIRED_SECTORS:
+                print(
+                    f"Card read rejected: only {len(read_sectors)} sectors read; "
+                    f"minimum required is {self.MIN_REQUIRED_SECTORS}."
+                )
+                return None
+
             if not raw_bytes:
                 return None
 
             # Decrypt
             if not self.private_key:
                 if not self.load_key():
-                    return (uid.hex(), "DECRYPTION_FAILED_NO_KEY")
+                    return None
 
             try:
                 import base64
@@ -136,7 +172,7 @@ class RFIDService:
                 decrypted = decrypted_bytes.decode("utf-8")
             except Exception as e:
                 print(f"Decryption failed: {e}")
-                return (uid.hex(), "DECRYPTION_FAILED")
+                return None
             
             try:
                 import json
