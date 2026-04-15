@@ -1663,7 +1663,11 @@ class VotingApp:
                 pass
 
             if not hasattr(self, 'printer_service') or not self.printer_service:
-                raise Exception("Printer service unavailable")
+                from printer_service import PrinterService
+                self.printer_service = PrinterService(self.data_handler)
+
+            if not self.printer_service.is_printer_connected():
+                raise Exception("Printer not connected")
 
             self.printer_service.print_provisioning_ticket(bmd_id, public_key_pem, machine_id)
             self.root.after(0, self._admin_reprint_device_slip_done)
