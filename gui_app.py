@@ -299,7 +299,7 @@ class VotingApp:
             screen_w = self.root.winfo_screenwidth()
             screen_h = self.root.winfo_screenheight()
             
-            # Use a slightly smaller area to leave room for buttons if needed
+            # Use full area; this screen should not show action buttons.
             target_w = screen_w
             target_h = screen_h
             
@@ -319,30 +319,6 @@ class VotingApp:
         # Overlay Status Label (Bottom Center)
         self.rfid_status_label = tk.Label(frame, text="Waiting for Card...", font=('Helvetica', 16, 'italic'), bg="#333", fg="#fff", padx=20, pady=5)
         self.rfid_status_label.place(relx=0.5, rely=0.9, anchor=tk.CENTER)
-        
-        # Dev Skip Button (Top Right, discreet)
-        tk.Button(frame, text="[DEV] Skip", font=('Helvetica', 10), command=self.skip_rfid_check, bg="#444", fg="white").place(relx=0.95, rely=0.05, anchor=tk.NE)
-        
-        # Dev Reset Log Button (Top Left, discreet)
-        tk.Button(frame, text="[DEV] Reset Log", font=('Helvetica', 10), command=self.reset_token_log, bg="#ffcccb", fg="black").place(relx=0.05, rely=0.05, anchor=tk.NW)
-
-        # Print toggle for testing (no paper mode).
-        self.print_toggle_btn = tk.Button(
-            frame,
-            text=f"Printing: {'ON' if self.print_enabled else 'OFF'}",
-            font=('Helvetica', 12, 'bold'),
-            command=self.toggle_printing,
-            bg="#2E7D32" if self.print_enabled else "#C62828",
-            fg="white",
-            padx=10,
-            pady=5
-        )
-        self.print_toggle_btn.place(relx=0.5, rely=0.05, anchor=tk.N)
-        
-        # Admin Button to End Election (Bottom Right)
-        tk.Button(frame, text="End Election & Export", font=('Helvetica', 12, 'bold'), 
-              command=self.end_election, bg="#ff4c4c", fg="white", 
-              padx=10, pady=5).place(relx=0.95, rely=0.95, anchor=tk.SE)
         
         # Start Scanning Thread
         self.stop_scanning = False
@@ -1578,7 +1554,7 @@ class VotingApp:
         grid.pack(expand=True, fill=tk.BOTH, padx=60)
         grid.grid_columnconfigure(0, weight=1)
         grid.grid_columnconfigure(1, weight=1)
-        for row_idx in range(5):
+        for row_idx in range(6):
             grid.grid_rowconfigure(row_idx, weight=1)
 
         def _btn(text, cmd, bg, fg="white", row=0, col=0, colspan=1):
@@ -1622,14 +1598,16 @@ class VotingApp:
         _btn("DEV: Skip RFID Scan", self._admin_dev_skip, "#37474f", row=2, col=1)
 
         _btn("DEV: Return to USB Screen", self._admin_dev_restart_usb, "#37474f", row=3, col=0)
-        _btn("Close Application", self._admin_exit_app, "#c62828", row=3, col=1)
+        _btn("Reset and Re-Provision Device", self._admin_reset_device, "#e65100", row=3, col=1)
+
+        _btn("Close Application", self._admin_exit_app, "#c62828", row=4, col=0, colspan=2)
 
         _btn(
             "Close Polling Officer Menu",
             self._close_admin_menu,
             "#21262d",
             fg="#cdd9e5",
-            row=4,
+            row=5,
             col=0,
             colspan=2
         )
@@ -1712,6 +1690,58 @@ class VotingApp:
             + f"Log Dir       : {getattr(self, 'log_dir', 'N/A')}\n"
         )
         messagebox.showinfo("System Status", msg, parent=self._admin_overlay)
+
+    def _admin_reset_device(self):
+        """Wipe provisioning artifacts and relaunch into first-boot provisioning."""
+        if not messagebox.askyesno(
+            "Reset Device",
+            "WARNING: This will permanently delete:\n\n"
+            "  - private.pem (signing key)\n"
+            "  - public.pem (public key)\n"
+            "  - bmd_config.json\n"
+            "  - .provisioned flag\n\n"
+            "The device will restart into the first provisioning menu.\n"
+            "A new BMD ID and key pair must be assigned.\n\n"
+            "Continue?",
+            parent=self._admin_overlay,
+            icon='warning',
+        ):
+            return
+
+        if not messagebox.askyesno(
+            "Final Confirmation",
+            "This action cannot be undone.\n\n"
+            "All existing keys will be destroyed.\n"
+            "Any ballots encrypted with the current public key\n"
+            "will no longer be decryptable on this device.\n\n"
+            "Are you absolutely sure?",
+            parent=self._admin_overlay,
+            icon='warning',
+        ):
+            return
+
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        to_delete = [
+            os.path.join(project_dir, "private.pem"),
+            os.path.join(project_dir, "public.pem"),
+            os.path.join(project_dir, "bmd_config.json"),
+        ]
+
+        log_dir = getattr(self, 'log_dir', None)
+        if log_dir:
+            to_delete.append(os.path.join(log_dir, ".provisioned"))
+
+        for path in to_delete:
+            try:
+                os.chmod(path, 0o644)
+                os.remove(path)
+            except Exception:
+                pass
+
+        self._close_admin_menu()
+        import sys
+        self.root.destroy()
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def show_printing_modal(self, text="Printing VVPAT..."):
         self.printing_overlay = tk.Toplevel(self.root)
