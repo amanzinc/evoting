@@ -1186,47 +1186,22 @@ class VotingApp:
 
         tk.Label(
             frame,
-            text="VVPAT Printed",
+            text="VVPAT printed.",
             font=('Helvetica', 28, 'bold'),
             bg="#FFF8E1",
             fg="#6D4C41"
-        ).pack(pady=(30, 10))
-        if message:
-            tk.Label(
-                frame,
-                text=message,
-                font=('Helvetica', 22),
-                bg="#FFF8E1",
-                fg="#4E342E",
-                wraplength=840,
-                justify=tk.CENTER
-            ).pack(pady=(10, 18))
-
-        countdown_label = tk.Label(
-            frame,
-            text="Returning in 5...",
-            font=('Helvetica', 24, 'bold'),
-            bg="#FFF8E1",
-            fg="#1B5E20"
-        )
-        countdown_label.pack(pady=(14, 30))
+        ).pack(pady=(150, 30))
 
         self.vvpat_countdown_after_id = None
 
-        def tick(seconds_left):
+        def proceed_after_brief_pause():
             if not (hasattr(self, 'vvpat_confirmation_overlay') and self.vvpat_confirmation_overlay):
                 return
-
-            if seconds_left > 0:
-                countdown_label.config(text=f"Returning in {seconds_left}...")
-                self.vvpat_countdown_after_id = self.root.after(1000, lambda: tick(seconds_left - 1))
-                return
-
             self.vvpat_countdown_after_id = None
             self.close_vvpat_confirmation_modal()
             on_ok()
 
-        tick(5)
+        self.vvpat_countdown_after_id = self.root.after(1200, proceed_after_brief_pause)
 
     def _show_large_yes_no_dialog(self, title, message, yes_text="Yes", no_text="No"):
         result = {"value": False}
