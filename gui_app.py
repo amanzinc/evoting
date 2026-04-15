@@ -503,7 +503,9 @@ class VotingApp:
             is_pair_layout = bool(getattr(self.data_handler, 'pref_combo_map', {}))
             is_preferential = hasattr(self.data_handler, 'is_preferential_election') and self.data_handler.is_preferential_election()
 
-            if is_preferential or is_pair_layout:
+            if getattr(self.data_handler, 'is_block_election', lambda: False)():
+                self.start_block_voting()
+            elif is_preferential or is_pair_layout:
                 self.start_preferential_voting()
             else:
                 self.start_normal_voting()
@@ -623,14 +625,24 @@ class VotingApp:
         self.max_ranks = max(1, getattr(self.data_handler, 'max_preferences', len(self.data_handler.candidates_base) - 1))
         self.show_selection_screen()
 
+    def start_block_voting(self):
+        self.voting_mode = 'block'
+        self.selections = {}
+        self.current_rank = 1
+        self.max_ranks = getattr(self.data_handler, 'number_of_preferences', 2) or 2
+        self.show_selection_screen()
+
     def show_selection_screen(self):
         self.clear_container()
         
-        header_bg = "#E3F2FD" if self.voting_mode == 'normal' else "#F3E5F5"
+        header_bg = "#E8EAF6" if self.voting_mode == 'block' else ("#E3F2FD" if self.voting_mode == 'normal' else "#F3E5F5")
         header = tk.Frame(self.main_container, bg=header_bg, pady=5)
         header.pack(fill=tk.X)
         
-        mode_text = "Single Choice Vote" if self.voting_mode == 'normal' else f"Select Preference #{self.current_rank}"
+        if self.voting_mode == 'block':
+            mode_text = f"Select Candidate {self.current_rank} of {self.max_ranks}"
+        else:
+            mode_text = "Single Choice Vote" if self.voting_mode == 'normal' else f"Select Preference #{self.current_rank}"
         
         # Dynamic Header
         e_name = getattr(self.data_handler, 'election_name', 'General Election')
@@ -685,8 +697,8 @@ class VotingApp:
             state_val = tk.NORMAL
             bg_color = "white"
             
-            # Preferential Mode: Gray out candidates already selected in previous ranks
-            if self.voting_mode == 'preferential':
+            # Preferential or Block Mode: Gray out candidates already selected in previous ranks
+            if self.voting_mode in ('preferential', 'block'):
                 selected_rank = None
                 for rank, cid in self.selections.items():
                     if rank < self.current_rank and cid == cand['id']:
@@ -698,7 +710,8 @@ class VotingApp:
                     state_val = tk.DISABLED
                     bg_color = "#e0e0e0"
                     fg_color = "#888888"
-                    cand_text += f"\n(Rank {selected_rank})"
+                    sel_text = f"Rank {selected_rank}" if self.voting_mode == 'preferential' else f"Chosen"
+                    cand_text += f"\n({sel_text})"
 
             tk.Radiobutton(
                 frame, text=cand_text, variable=self.current_selection_var, value=cand['id'],
@@ -786,6 +799,20 @@ class VotingApp:
                     fg="#666",
                     bg="#e8f5e9"
                 ).pack(side=tk.LEFT, padx=(8, 0))
+        elif self.voting_mode == 'block':
+            ranks = sorted(self.selections.keys())
+            tk.Label(content, text=f"You have selected ({len(ranks)}/{self.max_ranks}):", font=('Helvetica', 16), bg="white").pack(pady=5)
+            for rank in ranks:
+                cid = self.selections[rank]
+                cand = self.data_handler.get_candidate_by_id(cid)
+                if not cand: continue
+                f = tk.Frame(content, bg="#e8f5e9", bd=2, relief=tk.SOLID, padx=30, pady=5)
+                f.pack(pady=5, fill=tk.X)
+                name_row = tk.Frame(f, bg="#e8f5e9")
+                name_row.pack()
+                tk.Label(name_row, text=cand['name'], font=('Helvetica', 20), bg="#e8f5e9").pack(side=tk.LEFT)
+                if cand.get('candidate_number'):
+                    tk.Label(name_row, text=f"({cand['candidate_number']})", font=('Helvetica', 14, 'italic'), fg="#666", bg="#e8f5e9").pack(side=tk.LEFT, padx=(8, 0))
         else:
             for rank in range(1, self.max_ranks + 1):
                 cid = self.selections.get(rank)
@@ -888,6 +915,17 @@ class VotingApp:
             sel_str = get_cand_display(cid)
             vvpat_sel_str = get_vvpat_display(cid)
             qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
+        elif self.voting_mode == 'block':
+            ranks = sorted(self.selections.keys())
+            vals = []
+            vvpat_vals = []
+            for r in ranks:
+                cid = self.selections[r]
+                vals.append(get_cand_display(cid))
+                vvpat_vals.append(f"- {get_vvpat_display(cid)}")
+            sel_str = ", ".join(vals)
+            vvpat_sel_str = "\n        ".join(vvpat_vals) if vvpat_vals else "None"
+            qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
         else:
             ranks = sorted(self.selections.keys())
             vals = []
@@ -910,7 +948,12 @@ class VotingApp:
         )
 
         # Voter receipt QR should contain only selected commitment.
-        voter_qr_data = qr_data
+        if self.voting_mode == 'block':
+            ranks = sorted(self.selections.keys())
+            cids = [str(self.selections[r]) for r in ranks]
+            voter_qr_data = ",".join(cids)
+        else:
+            voter_qr_data = qr_data
 
         receipt_entry = {
             'election_id': getattr(self.data_handler, 'election_id', '???'),
@@ -1664,6 +1707,7 @@ class VotingApp:
         self.root.after(80, self.show_admin_menu)
 
     def _admin_reset_token_log(self):
+        self._close_admin_menu()
         self.reset_token_log()
 
     def _admin_dev_skip(self):

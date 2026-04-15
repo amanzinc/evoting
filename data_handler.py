@@ -372,6 +372,17 @@ class DataHandler:
                 return ""
             commitment = str(cand.get('commitment', ''))
             return commitment
+            
+        if voting_mode == 'block':
+            # In block mode, we just concatenate all selected commitments
+            ranks = sorted(selections.keys())
+            commitments = []
+            for r in ranks:
+                cid = selections[r]
+                cand = self.get_candidate_by_id(cid)
+                if cand and cand.get('commitment'):
+                    commitments.append(str(cand.get('commitment')))
+            return "_".join(commitments)
 
         # Preferential mode
         ranks = sorted(selections.keys())
@@ -407,6 +418,11 @@ class DataHandler:
         et = self.election_type_normalized or self._normalize_election_type(self.election_type)
         keywords = ("preferential", "ranked", "rank", "preference")
         return any(k in et for k in keywords)
+
+    def is_block_election(self):
+        """Return True for block election types (multi-select, equal-weight)."""
+        et = self.election_type_normalized or self._normalize_election_type(self.election_type)
+        return "block" in et
 
     def get_candidates_for_rank(self, rank):
         """Return unique candidate options for a given preferential rank screen."""
@@ -638,6 +654,16 @@ class DataHandler:
             raise e
 
     def save_vote(self, vote_data, voting_mode, voter_id="UNKNOWN_VOTER", booth_num=1, token_id="UNKNOWN"):
-        """Saves the vote data as a JSON line."""
-        record = self.generate_vote_json(vote_data, voting_mode, voter_id, booth_num, token_id)
-        self.save_json(record)
+        """Saves the vote data as a JSON line. In block mode, saves multiple JSON lines."""
+        if voting_mode == 'block':
+            selections = vote_data.get('selections', {})
+            for r in sorted(selections.keys()):
+                cid = selections[r]
+                # Mock a single choice selection for the loop
+                single_vote_data = vote_data.copy()
+                single_vote_data['selections'] = {1: cid}
+                record = self.generate_vote_json(single_vote_data, 'normal', voter_id, booth_num, token_id)
+                self.save_json(record)
+        else:
+            record = self.generate_vote_json(vote_data, voting_mode, voter_id, booth_num, token_id)
+            self.save_json(record)
