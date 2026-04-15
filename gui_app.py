@@ -5,6 +5,7 @@ import queue
 import datetime
 import time
 import os
+import subprocess
 
 class VotingApp:
     def __init__(self, root, data_handler, printer_service, ballot_manager, rfid_service, db_path, votes_log, tokens_log, log_dir):
@@ -1554,7 +1555,7 @@ class VotingApp:
         grid.pack(expand=True, fill=tk.BOTH, padx=60)
         grid.grid_columnconfigure(0, weight=1)
         grid.grid_columnconfigure(1, weight=1)
-        for row_idx in range(6):
+        for row_idx in range(7):
             grid.grid_rowconfigure(row_idx, weight=1)
 
         def _btn(text, cmd, bg, fg="white", row=0, col=0, colspan=1):
@@ -1594,20 +1595,22 @@ class VotingApp:
         )
         _btn("Reset Token Log", self._admin_reset_token_log, "#4a148c", row=1, col=1)
 
-        _btn("Continue Election", self._admin_continue_election, "#2e7d32", row=2, col=0)
-        _btn("DEV: Skip RFID Scan", self._admin_dev_skip, "#37474f", row=2, col=1)
+        _btn("Re-Print Device Slip", self._admin_reprint_device_slip, "#2e7d32", row=2, col=0)
+        _btn("Update Firmware", self._admin_update_firmware, "#1565c0", row=2, col=1)
 
-        _btn("DEV: Return to USB Screen", self._admin_dev_restart_usb, "#37474f", row=3, col=0)
-        _btn("Reset and Re-Provision Device", self._admin_reset_device, "#e65100", row=3, col=1)
+        _btn("DEV: Skip RFID Scan", self._admin_dev_skip, "#37474f", row=3, col=0)
+        _btn("DEV: Return to USB Screen", self._admin_dev_restart_usb, "#37474f", row=3, col=1)
 
-        _btn("Close Application", self._admin_exit_app, "#c62828", row=4, col=0, colspan=2)
+        _btn("Reset and Re-Provision Device", self._admin_reset_device, "#e65100", row=4, col=0, colspan=2)
+
+        _btn("Close Application", self._admin_exit_app, "#c62828", row=5, col=0, colspan=2)
 
         _btn(
             "Close Polling Officer Menu",
             self._close_admin_menu,
             "#21262d",
             fg="#cdd9e5",
-            row=5,
+            row=6,
             col=0,
             colspan=2
         )
@@ -1625,9 +1628,100 @@ class VotingApp:
         self._close_admin_menu()
         self.end_election()
 
-    def _admin_continue_election(self):
+    def _admin_reprint_device_slip(self):
         self._close_admin_menu()
-        self.restart_current_election_after_challenge()
+        self.show_printing_modal(text="Re-printing device slip...")
+        threading.Thread(target=self._admin_reprint_device_slip_worker, daemon=True).start()
+
+    def _admin_reprint_device_slip_worker(self):
+        try:
+            project_dir = os.path.dirname(os.path.abspath(__file__))
+
+            pub_key_path = os.path.join(project_dir, "public.pem")
+            if not os.path.exists(pub_key_path):
+                raise FileNotFoundError("public.pem not found. Provisioning may be incomplete.")
+
+            with open(pub_key_path, "r", encoding="utf-8") as f:
+                public_key_pem = f.read()
+
+            bmd_id = "UNKNOWN"
+            cfg_path = os.path.join(project_dir, "bmd_config.json")
+            if os.path.exists(cfg_path):
+                try:
+                    import json
+                    with open(cfg_path, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                    bmd_id = cfg.get("bmd_id", "UNKNOWN")
+                except Exception:
+                    pass
+
+            machine_id = "UNKNOWN"
+            try:
+                import hardware_crypto
+                machine_id = hardware_crypto.get_machine_id()
+            except Exception:
+                pass
+
+            if not hasattr(self, 'printer_service') or not self.printer_service:
+                raise Exception("Printer service unavailable")
+
+            self.printer_service.print_provisioning_ticket(bmd_id, public_key_pem, machine_id)
+            self.root.after(0, self._admin_reprint_device_slip_done)
+        except Exception as e:
+            self.root.after(0, lambda err=str(e): self._admin_reprint_device_slip_failed(err))
+
+    def _admin_reprint_device_slip_done(self):
+        self.close_printing_modal()
+        messagebox.showinfo("Reprint Complete", "Device slip was printed successfully.")
+
+    def _admin_reprint_device_slip_failed(self, error_message):
+        self.close_printing_modal()
+        messagebox.showerror("Reprint Failed", f"Could not print device slip:\n{error_message}")
+
+    def _admin_update_firmware(self):
+        if not messagebox.askyesno(
+            "Update Firmware",
+            "This will run 'git pull --ff-only' in the app directory.\n\nContinue?",
+            parent=self._admin_overlay,
+            icon='question',
+        ):
+            return
+
+        self._close_admin_menu()
+        self.show_printing_modal(text="Updating firmware...\nRunning git pull")
+        threading.Thread(target=self._admin_update_firmware_worker, daemon=True).start()
+
+    def _admin_update_firmware_worker(self):
+        try:
+            project_dir = os.path.dirname(os.path.abspath(__file__))
+            result = subprocess.run(
+                ["git", "pull", "--ff-only"],
+                cwd=project_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+
+            output = (result.stdout or "").strip()
+            error_output = (result.stderr or "").strip()
+            combined = "\n".join([x for x in [output, error_output] if x]).strip()
+
+            if result.returncode != 0:
+                raise Exception(combined or "git pull failed")
+
+            self.root.after(0, lambda out=combined: self._admin_update_firmware_done(out))
+        except Exception as e:
+            self.root.after(0, lambda err=str(e): self._admin_update_firmware_failed(err))
+
+    def _admin_update_firmware_done(self, output_text):
+        self.close_printing_modal()
+        detail = output_text if output_text else "Already up to date."
+        messagebox.showinfo("Firmware Update Complete", detail)
+
+    def _admin_update_firmware_failed(self, error_message):
+        self.close_printing_modal()
+        messagebox.showerror("Firmware Update Failed", error_message)
 
     def _admin_toggle_print(self):
         self._close_admin_menu()
