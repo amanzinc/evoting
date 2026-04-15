@@ -97,7 +97,9 @@ class VotingApp:
                 
                 # Create importer (demo_mode=False requires RPi hardware)
                 importer = USBBallotImporter(
-                    private_key_path="private.pem",
+                    private_key_path=os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)), "private.pem"
+                    ),
                     local_storage_dir="ballot",
                     demo_mode=False
                 )
@@ -1522,148 +1524,17 @@ class VotingApp:
 
     def show_polling_officer_action_menu(self):
         self.stop_scanning = True
+        continue_election = messagebox.askyesno(
+            "Officer Action Required",
+            "Polling Officer menu.\n\n"
+            "Yes: Continue election for this voter with a fresh ballot.\n"
+            "No: Permanently stop election (End Election & Export)."
+        )
 
-        if hasattr(self, 'officer_action_overlay') and self.officer_action_overlay:
-            try:
-                self.officer_action_overlay.destroy()
-            except Exception:
-                pass
-
-        overlay = tk.Toplevel(self.root)
-        self.officer_action_overlay = overlay
-        overlay.title("Officer Action Required")
-        overlay.transient(self.root)
-        overlay.grab_set()
-        overlay.resizable(False, False)
-
-        w, h = 720, 360
-        x = (self.root.winfo_screenwidth() // 2) - (w // 2)
-        y = (self.root.winfo_screenheight() // 2) - (h // 2)
-        overlay.geometry(f"{w}x{h}+{x}+{y}")
-
-        overlay.protocol("WM_DELETE_WINDOW", self.close_officer_action_menu)
-
-        frame = tk.Frame(overlay, bg="#0d1117", padx=30, pady=28)
-        frame.pack(fill=tk.BOTH, expand=True)
-
-        tk.Label(
-            frame,
-            text="Polling Officer Action",
-            font=('Helvetica', 24, 'bold'),
-            bg="#0d1117",
-            fg="white"
-        ).pack(pady=(0, 10))
-
-        tk.Label(
-            frame,
-            text=(
-                "Continue election for this voter with a fresh ballot, or end the election and export logs."
-            ),
-            font=('Helvetica', 14),
-            bg="#0d1117",
-            fg="#cfd8dc",
-            wraplength=640,
-            justify=tk.CENTER
-        ).pack(pady=(0, 22))
-
-        button_row = tk.Frame(frame, bg="#0d1117")
-        button_row.pack(fill=tk.X, pady=12)
-
-        tk.Button(
-            button_row,
-            text="Continue Election",
-            font=('Helvetica', 14, 'bold'),
-            bg="#2E7D32",
-            fg="white",
-            padx=18,
-            pady=10,
-            command=self._continue_officer_election
-        ).pack(side=tk.LEFT, padx=10, expand=True, fill=tk.X)
-
-        tk.Button(
-            button_row,
-            text="End Election & Export",
-            font=('Helvetica', 14, 'bold'),
-            bg="#C62828",
-            fg="white",
-            padx=18,
-            pady=10,
-            command=self._end_officer_election
-        ).pack(side=tk.LEFT, padx=10, expand=True, fill=tk.X)
-
-        bottom_row = tk.Frame(frame, bg="#0d1117")
-        bottom_row.pack(fill=tk.X, pady=(20, 0))
-
-        tk.Button(
-            bottom_row,
-            text="Close Menu",
-            font=('Helvetica', 12),
-            bg="#37474F",
-            fg="white",
-            padx=14,
-            pady=8,
-            command=self.close_officer_action_menu
-        ).pack(side=tk.LEFT)
-
-        tk.Button(
-            bottom_row,
-            text="Close Application",
-            font=('Helvetica', 12),
-            bg="#455A64",
-            fg="white",
-            padx=14,
-            pady=8,
-            command=self.exit_app
-        ).pack(side=tk.RIGHT)
-
-    def close_officer_action_menu(self):
-        if hasattr(self, 'officer_action_overlay') and self.officer_action_overlay:
-            try:
-                self.officer_action_overlay.grab_release()
-            except Exception:
-                pass
-            try:
-                self.officer_action_overlay.destroy()
-            except Exception:
-                pass
-            self.officer_action_overlay = None
-
-    def _continue_officer_election(self):
-        self.close_officer_action_menu()
-        self.show_printing_modal(text="Loading fresh ballot...")
-        threading.Thread(target=self._continue_officer_election_worker, daemon=True).start()
-
-    def _continue_officer_election_worker(self):
-        try:
-            if not self.current_election_id:
-                raise Exception("No active election context found.")
-
-            new_id, new_file = self.ballot_manager.get_unused_ballot(self.current_election_id)
-            self.data_handler.set_ballot_file(new_file)
-
-            election_type = str(getattr(self.data_handler, 'election_type', '') or '').lower()
-            is_pair_layout = bool(getattr(self.data_handler, 'pref_combo_map', {}))
-            is_preferential = 'preferential' in election_type or 'ranked' in election_type or is_pair_layout
-
-            self.root.after(0, lambda: self._complete_officer_election_continue(new_id, is_preferential))
-        except Exception as e:
-            self.root.after(0, lambda err=str(e): self._fail_officer_action(err))
-
-    def _complete_officer_election_continue(self, ballot_id, is_preferential):
-        self.close_printing_modal()
-        print(f"Officer continue loaded fresh ballot: {ballot_id}")
-        if is_preferential:
-            self.start_preferential_voting()
+        if continue_election:
+            self.restart_current_election_after_challenge()
         else:
-            self.start_normal_voting()
-
-    def _end_officer_election(self):
-        self.close_officer_action_menu()
-        self.end_election()
-
-    def _fail_officer_action(self, error_message):
-        self.close_printing_modal()
-        messagebox.showerror("Officer Action Failed", error_message)
+            self.end_election()
 
     def show_printing_modal(self, text="Printing VVPAT..."):
         self.printing_overlay = tk.Toplevel(self.root)
