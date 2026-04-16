@@ -54,6 +54,7 @@ def _find_log_dir(wait_seconds=0.0, poll_interval=0.5):
         candidates = [
             _normalize_logs_path(os.environ.get("EVOTING_LOG_DIR", "").strip()),
             _normalize_logs_path("/media/evoting/LOGS"),
+            _normalize_logs_path("/media/evoting/LOGS1"),
             _normalize_logs_path("/logs"),
         ]
 
@@ -80,7 +81,8 @@ def _find_log_dir(wait_seconds=0.0, poll_interval=0.5):
 
     return None, (
         "Log partition not found! The system cannot start without a writable "
-        "log partition. Please ensure the storage is mounted at /media/evoting/LOGS."
+        "log partition. Please ensure the storage is mounted at /media/evoting/LOGS "
+        "(or /media/evoting/LOGS1)."
     )
 
 

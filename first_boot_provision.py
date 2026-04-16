@@ -184,6 +184,7 @@ class ProvisionApp:
             candidates = [
                 os.environ.get("EVOTING_LOG_DIR", ""),
                 "/media/evoting/LOGS",
+                "/media/evoting/LOGS1",
                 "/logs",
             ]
             non_writable_paths = []
@@ -208,7 +209,7 @@ class ProvisionApp:
                     uniq.append(p)
             return False, "Found but not writable: " + ", ".join(uniq)
 
-        return False, "Not found — mount at /media/evoting/LOGS"
+        return False, "Not found — mount at /media/evoting/LOGS (or /media/evoting/LOGS1)"
 
     # ──────────────────────────────────────────────────────────────────────────
     # Screen 1 — Welcome / prerequisite checks
