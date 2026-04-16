@@ -22,6 +22,7 @@ import sys
 import json
 import datetime
 import threading
+import time
 
 # ── Colour palette (dark, matches admin menu) ─────────────────────────────────
 P = {
@@ -43,6 +44,37 @@ P = {
 PROVISIONED_FILENAME = ".provisioned"
 
 
+def _normalize_logs_path(path):
+    """Resolve common misconfiguration where LOGS/LOGS is used instead of LOGS."""
+    if not path:
+        return path
+    normalized = os.path.realpath(os.path.abspath(path))
+    if os.path.basename(normalized).upper() == "LOGS":
+        parent = os.path.dirname(normalized)
+        if os.path.basename(parent).upper() == "LOGS":
+            return parent
+    return normalized
+
+
+def _is_writable_log_dir(path):
+    """Return True only if directory exists and a write/remove test succeeds."""
+    if not path or not os.path.isdir(path):
+        return False
+    probe_path = os.path.join(path, f".evoting_write_probe_{os.getpid()}")
+    try:
+        with open(probe_path, "w", encoding="utf-8") as f:
+            f.write("probe")
+        os.remove(probe_path)
+        return True
+    except Exception:
+        try:
+            if os.path.exists(probe_path):
+                os.remove(probe_path)
+        except Exception:
+            pass
+        return False
+
+
 class ProvisionApp:
     """5-screen first-boot provisioning wizard."""
 
@@ -53,6 +85,7 @@ class ProvisionApp:
         self._step_icons: dict[str, tk.Label] = {}
         self._status_var: tk.StringVar | None  = None
         self._countdown_var: tk.StringVar | None = None
+        self._logs_probe_done = False
 
         self.root.title("BMD First-Boot Provisioning")
         self.root.attributes("-fullscreen", True)
@@ -141,15 +174,40 @@ class ProvisionApp:
         return False, "Not found (ticket print will be skipped)"
 
     def _check_logs(self) -> tuple[bool, str]:
-        candidates = [
-            os.environ.get("EVOTING_LOG_DIR", ""),
-            "/media/evoting/LOGS",
-            "/logs",
-        ]
-        for path in candidates:
-            if path and os.path.isdir(path):
-                self.log_dir = path
-                return True, path
+        # At first boot, mounts may appear a few seconds late. Probe once with grace period.
+        wait_seconds = 8.0 if not self._logs_probe_done else 0.0
+        self._logs_probe_done = True
+        deadline = time.time() + wait_seconds
+        non_writable_paths = []
+
+        while True:
+            candidates = [
+                os.environ.get("EVOTING_LOG_DIR", ""),
+                "/media/evoting/LOGS",
+                "/logs",
+            ]
+            non_writable_paths = []
+            for path in candidates:
+                normalized = _normalize_logs_path(path)
+                if _is_writable_log_dir(normalized):
+                    self.log_dir = normalized
+                    return True, normalized
+                if normalized and os.path.isdir(normalized):
+                    non_writable_paths.append(normalized)
+
+            if time.time() >= deadline:
+                break
+            time.sleep(0.5)
+
+        if non_writable_paths:
+            uniq = []
+            seen = set()
+            for p in non_writable_paths:
+                if p not in seen:
+                    seen.add(p)
+                    uniq.append(p)
+            return False, "Found but not writable: " + ", ".join(uniq)
+
         return False, "Not found — mount at /media/evoting/LOGS"
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -456,7 +514,14 @@ class ProvisionApp:
             if not self.log_dir:
                 raise RuntimeError("LOGS partition not mounted")
             flag_path = os.path.join(self.log_dir, PROVISIONED_FILENAME)
-            with open(flag_path, "w", encoding="utf-8") as f:
+            if os.path.exists(flag_path):
+                try:
+                    os.chmod(flag_path, 0o644)
+                except Exception:
+                    pass
+
+            tmp_flag_path = flag_path + ".tmp"
+            with open(tmp_flag_path, "w", encoding="utf-8") as f:
                 json.dump(
                     {
                         "bmd_id": bmd_id,
@@ -465,11 +530,18 @@ class ProvisionApp:
                     f,
                     indent=2,
                 )
+            os.replace(tmp_flag_path, flag_path)
             try:
                 os.chmod(flag_path, 0o444)   # make read-only
             except Exception:
                 pass
             self._set_step("flag", "done")
+        except PermissionError as exc:
+            self._set_step("flag", "error")
+            errors.append(
+                f"Flag write (permission denied): {exc}. "
+                f"LOGS path={self.log_dir} uid={os.getuid()} gid={os.getgid()}"
+            )
         except Exception as exc:
             self._set_step("flag", "error")
             errors.append(f"Flag write: {exc}")

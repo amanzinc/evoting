@@ -6,21 +6,78 @@ import os
 import sys
 import logging
 import datetime
+import shutil
+import time
 
 from rfid_service import RFIDService
 
 PROVISIONED_FILENAME = ".provisioned"
 
 
-def _find_log_dir():
+def _normalize_logs_path(path):
+    """Resolve common misconfiguration where LOGS/LOGS is used instead of LOGS."""
+    if not path:
+        return path
+    normalized = os.path.realpath(os.path.abspath(path))
+    if os.path.basename(normalized).upper() == "LOGS":
+        parent = os.path.dirname(normalized)
+        if os.path.basename(parent).upper() == "LOGS":
+            return parent
+    return normalized
+
+
+def _is_writable_log_dir(path):
+    """Return True only if directory exists and we can create/remove a file in it."""
+    if not path or not os.path.isdir(path):
+        return False
+    probe_path = os.path.join(path, f".evoting_write_probe_{os.getpid()}")
+    try:
+        with open(probe_path, "w", encoding="utf-8") as f:
+            f.write("probe")
+        os.remove(probe_path)
+        return True
+    except Exception:
+        try:
+            if os.path.exists(probe_path):
+                os.remove(probe_path)
+        except Exception:
+            pass
+        return False
+
+
+def _find_log_dir(wait_seconds=0.0, poll_interval=0.5):
     """Find the writable log directory. Returns (log_dir, error_msg)."""
-    log_dir = os.environ.get("EVOTING_LOG_DIR", "").strip()
-    if log_dir and os.path.isdir(log_dir):
-        return log_dir, None
-    if os.path.isdir("/media/evoting/LOGS"):
-        return "/media/evoting/LOGS", None
-    if os.path.isdir("/logs"):
-        return "/logs", None
+    deadline = time.time() + max(0.0, float(wait_seconds or 0.0))
+    last_non_writable = []
+
+    while True:
+        candidates = [
+            _normalize_logs_path(os.environ.get("EVOTING_LOG_DIR", "").strip()),
+            _normalize_logs_path("/media/evoting/LOGS"),
+            _normalize_logs_path("/logs"),
+        ]
+
+        last_non_writable = []
+        seen = set()
+        for cand in candidates:
+            if not cand or cand in seen:
+                continue
+            seen.add(cand)
+            if _is_writable_log_dir(cand):
+                return cand, None
+            if os.path.isdir(cand):
+                last_non_writable.append(cand)
+
+        if time.time() >= deadline:
+            break
+        time.sleep(max(0.1, float(poll_interval or 0.5)))
+
+    if last_non_writable:
+        return None, (
+            "Log partition found but not writable for current user. "
+            f"Checked: {', '.join(last_non_writable)}"
+        )
+
     return None, (
         "Log partition not found! The system cannot start without a writable "
         "log partition. Please ensure the storage is mounted at /media/evoting/LOGS."
@@ -31,7 +88,24 @@ def _is_provisioned(log_dir):
     """Return True if this device has already completed first-boot provisioning."""
     if not log_dir:
         return False
-    return os.path.exists(os.path.join(log_dir, PROVISIONED_FILENAME))
+
+    canonical_log_dir = _normalize_logs_path(log_dir)
+    canonical_flag = os.path.join(canonical_log_dir, PROVISIONED_FILENAME)
+    if os.path.exists(canonical_flag):
+        return True
+
+    # Self-heal: older/misconfigured deployments may have written the flag under LOGS/LOGS/.provisioned.
+    nested_flag = os.path.join(canonical_log_dir, "LOGS", PROVISIONED_FILENAME)
+    if os.path.exists(nested_flag):
+        try:
+            shutil.copy2(nested_flag, canonical_flag)
+            print(f"[main] Migrated misplaced provision flag from {nested_flag} to {canonical_flag}")
+            return True
+        except Exception as exc:
+            print(f"[main] Found misplaced provision flag but could not migrate it: {exc}")
+            return True
+
+    return False
 
 
 def _setup_logging(log_dir):
@@ -116,12 +190,13 @@ def _setup_logging(log_dir):
 def main():
     # ── Logging: must be first so every subsequent print is captured ──────────
     # Discover log dir early (before provisioning check) so logs persist.
-    log_dir_early, _ = _find_log_dir()
+    # Give mount services a short grace period during cold boot.
+    log_dir_early, _ = _find_log_dir(wait_seconds=8)
     _setup_logging(log_dir_early)
 
     root = tk.Tk()
 
-    log_dir, log_err = _find_log_dir()
+    log_dir, log_err = _find_log_dir(wait_seconds=2)
 
     # ── First-boot provisioning ─────────────────────────────────────────────
     # If the .provisioned flag is absent (or log partition not yet mounted),
