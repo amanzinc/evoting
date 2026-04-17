@@ -27,6 +27,11 @@ class VotingApp:
         self.challenge_counts_by_election = {}
         self.max_challenges_per_election = 1
         self._kiosk_enforcing = False
+
+        # Hidden polling-officer menu trigger: typing "Aman" opens the panel.
+        self._admin_key_buffer = ""
+        self._admin_overlay = None
+        self.polling_officer_phrase = "YOU WILL NEVER WALK ALONE"
         
         self.root.title("Ballot Marking Device")
         self.root.overrideredirect(True)
@@ -36,11 +41,6 @@ class VotingApp:
         self.root.bind("<Configure>", self._on_root_configure)
         self.root.bind("<Escape>", self.exit_app)
         self.root.bind("<Key>", self._on_key_press)
-
-        # Hidden polling-officer menu trigger: typing "Aman" opens the panel.
-        self._admin_key_buffer = ""
-        self._admin_overlay = None
-        self.polling_officer_phrase = "YOU WILL NEVER WALK ALONE"
 
         # Style configuration
         self.style = ttk.Style()
@@ -79,9 +79,10 @@ class VotingApp:
 
         # Do not re-assert root fullscreen while admin overlay is active,
         # otherwise some window managers push the overlay behind root.
-        if self._admin_overlay:
+        admin_overlay = getattr(self, "_admin_overlay", None)
+        if admin_overlay:
             try:
-                if self._admin_overlay.winfo_exists():
+                if admin_overlay.winfo_exists():
                     return
             except Exception:
                 pass
