@@ -66,6 +66,7 @@ class VotingApp:
         self.inactive_check_after_id = None
         self.election_schedule = None
         self.election_schedule_path = None
+        self._last_schedule_active = None
 
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
@@ -246,6 +247,13 @@ class VotingApp:
             self.root.after(0, lambda err=str(e): self._fail_end_election(err))
 
     def _complete_end_election(self, export_path):
+        try:
+            schedule = self._load_election_schedule()
+            schedule["end_election_completed"] = True
+            self._save_election_schedule()
+        except Exception as exc:
+            print(f"[schedule] Warning: could not persist end-election completion flag: {exc}")
+
         self.close_printing_modal()
         messagebox.showinfo(
             "Export Successful",
@@ -352,11 +360,13 @@ class VotingApp:
         return self.election_schedule_path
 
     def _default_election_schedule(self):
-        # enabled=False keeps legacy behavior (always active) until a window is configured.
+        # Secure default: election stays inactive until a valid start/end window is set.
         return {
-            "enabled": False,
+            "enabled": True,
             "start": "",
             "end": "",
+            "start_ticket_printed_for": "",
+            "end_election_completed": False,
         }
 
     def _load_election_schedule(self):
@@ -453,10 +463,52 @@ class VotingApp:
             return "Schedule not set (always active)."
         start = str(schedule.get("start", "") or "").strip() or "N/A"
         end = str(schedule.get("end", "") or "").strip() or "N/A"
-        return f"Active window: {start} -> {end}"
+        end_done = bool(schedule.get("end_election_completed", False))
+        status = "End election done" if end_done else "End election pending"
+        return f"Active window: {start} -> {end} | {status}"
+
+    def _ensure_start_ticket_for_active_window(self):
+        schedule = self._load_election_schedule()
+        if not schedule.get("enabled", False):
+            return
+
+        start_text = str(schedule.get("start", "") or "").strip()
+        if not start_text:
+            return
+
+        if schedule.get("start_ticket_printed_for", "") == start_text:
+            return
+
+        if not self.print_enabled:
+            schedule["start_ticket_printed_for"] = start_text
+            self._save_election_schedule()
+            return
+
+        if not hasattr(self, 'printer_service') or not self.printer_service:
+            return
+
+        if not self.printer_service.is_printer_connected():
+            print("[schedule] Start-window ticket pending: printer not connected.")
+            return
+
+        try:
+            election_hash = getattr(self.data_handler, 'last_hash', None) if hasattr(self, 'data_handler') else None
+            self.printer_service.print_startup_ticket(election_hash or "UNKNOWN_HASH", self.log_dir)
+            schedule["start_ticket_printed_for"] = start_text
+            self._save_election_schedule()
+            print("[schedule] Start-window ticket printed.")
+        except Exception as exc:
+            print(f"[schedule] Failed printing start-window ticket: {exc}")
 
     def show_idle_screen(self):
-        if self._is_election_active_now():
+        is_active = self._is_election_active_now()
+
+        if is_active and self._last_schedule_active is not True:
+            self._ensure_start_ticket_for_active_window()
+
+        self._last_schedule_active = is_active
+
+        if is_active:
             self.show_rfid_screen()
         else:
             self.show_election_inactive_screen()
@@ -489,6 +541,25 @@ class VotingApp:
             bg="#FFF3E0",
             fg="#555"
         ).pack(pady=(14, 6))
+
+        schedule = self._load_election_schedule()
+        try:
+            _, end_dt = self._get_schedule_window()
+        except Exception:
+            end_dt = None
+        now = datetime.datetime.now()
+        show_pending_end_msg = bool(end_dt and now > end_dt and not schedule.get("end_election_completed", False))
+
+        if show_pending_end_msg:
+            tk.Label(
+                frame,
+                text="Election window ended. Polling Officer must run End Election and Export.",
+                font=('Helvetica', 14, 'bold'),
+                bg="#FFF3E0",
+                fg="#B45309",
+                wraplength=900,
+                justify='center'
+            ).pack(pady=(4, 8))
 
         tk.Label(
             frame,
@@ -2899,6 +2970,8 @@ class VotingApp:
         schedule["enabled"] = True
         schedule["start"] = start_dt.strftime("%Y-%m-%d %H:%M:%S")
         schedule["end"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+        schedule["start_ticket_printed_for"] = ""
+        schedule["end_election_completed"] = False
         if not self._save_election_schedule():
             return False
 
@@ -2935,6 +3008,7 @@ class VotingApp:
             return False
 
         schedule["end"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+        schedule["end_election_completed"] = False
         if not self._save_election_schedule():
             return False
 

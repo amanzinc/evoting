@@ -289,6 +289,24 @@ class RFIDService:
             if not raw_bytes:
                 return None
 
+            raw_text = raw_bytes.decode('utf-8', errors='ignore').strip()
+            if not raw_text:
+                return None
+
+            # Plain officer/admin payloads are small strings. Check them first,
+            # then attempt RSA decrypt only for data that looks like ciphertext.
+            compact = "".join(raw_text.split())
+            base64_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+            looks_like_base64_ciphertext = (
+                len(compact) >= 128
+                and len(compact) % 4 == 0
+                and all(ch in base64_chars for ch in compact)
+            )
+
+            if not looks_like_base64_ciphertext:
+                print(f"✅ Card Read Success! Plain payload: {raw_text}")
+                return (uid.hex(), raw_text)
+
             # Decrypt
             if not self.private_key:
                 if not self.load_key():
@@ -296,8 +314,7 @@ class RFIDService:
 
             try:
                 import base64
-                raw_text = raw_bytes.decode('utf-8').strip()
-                encrypted_bytes = base64.b64decode(raw_text)
+                encrypted_bytes = base64.b64decode(compact)
                 
                 decrypted_bytes = self.private_key.decrypt(
                     encrypted_bytes,
@@ -312,10 +329,9 @@ class RFIDService:
                 print(f"Decryption failed: {e}")
                 # Allow controlled plaintext payload cards (e.g. admin trigger card).
                 try:
-                    plaintext = raw_bytes.decode("utf-8", errors="ignore").strip()
-                    if plaintext:
-                        print(f"✅ Card Read Success! Plain payload: {plaintext}")
-                        return (uid.hex(), plaintext)
+                    if raw_text:
+                        print(f"✅ Card Read Success! Plain payload: {raw_text}")
+                        return (uid.hex(), raw_text)
                 except Exception:
                     pass
                 return None
