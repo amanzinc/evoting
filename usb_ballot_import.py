@@ -15,7 +15,7 @@ Handles importing encrypted ballots from USB with the following structure:
 
 The process:
 1. Decrypt AES key from aes_key.enc using private RSA key (RPi only)
-2. Store AES key locally for reuse
+2. Store AES key on the same USB ballot folder as aes_key.dec
 3. Import election metadata and count ballots
 4. Decrypt each ballot on-demand during voting
 
@@ -40,23 +40,21 @@ import hardware_crypto
 
 
 class USBBallotImporter:
-    def __init__(self, private_key_path="private.pem", local_storage_dir="ballot", demo_mode=False, demo_aes_key_b64=None):
+    def __init__(self, private_key_path="private.pem", demo_mode=False, demo_aes_key_b64=None):
         """
         Initialize the USB Ballot Importer.
         
         Args:
             private_key_path: Path to the private RSA key (protected by hardware identity)
                              NOTE: Only works on RPi with hardware-bound passphrase
-            local_storage_dir: Directory to store decrypted AES keys and imported ballots
             demo_mode: If True, skip RSA decryption and use pre-provided AES key (for testing)
             demo_aes_key_b64: Base64-encoded AES key for demo mode (must provide if demo_mode=True)
         """
         self.private_key_path = private_key_path
-        self.local_storage_dir = local_storage_dir
         self.private_key = None
         self.decrypted_aes_key = None
         self.bmd_id = None
-        self.aes_key_storage_path = os.path.join(local_storage_dir, "aes_key.dec")
+        self.aes_key_storage_path = None
         self.demo_mode = demo_mode
         
         # For demo mode, accept a pre-decrypted AES key
@@ -64,7 +62,8 @@ class USBBallotImporter:
             self.decrypted_aes_key = base64.b64decode(demo_aes_key_b64)
             print(f"[DEMO MODE] Using provided AES key ({len(self.decrypted_aes_key)} bytes)")
         
-        os.makedirs(local_storage_dir, exist_ok=True)
+    def _resolve_usb_aes_key_path(self, usb_ballot_path):
+        return os.path.join(usb_ballot_path, "aes_key.dec")
 
     def _load_private_key(self):
         """
@@ -166,10 +165,14 @@ class USBBallotImporter:
         except Exception as e:
             raise Exception(f"Failed to decrypt AES key: {e}")
 
-    def store_aes_key_locally(self):
-        """Store the decrypted AES key in local storage for future use."""
+    def store_aes_key_on_usb(self, usb_ballot_path):
+        """Store the decrypted AES key on USB ballot folder as aes_key.dec."""
         if self.decrypted_aes_key is None:
             raise ValueError("No decrypted AES key available. Call decrypt_aes_key_from_usb first.")
+        if not usb_ballot_path or not os.path.isdir(usb_ballot_path):
+            raise ValueError("Invalid USB ballot path for storing AES key")
+
+        self.aes_key_storage_path = self._resolve_usb_aes_key_path(usb_ballot_path)
         
         # Store as JSON with metadata
         key_storage = {
@@ -179,13 +182,15 @@ class USBBallotImporter:
             "bmd_id": self.bmd_id or "UNKNOWN_BMD"
         }
         
-        with open(self.aes_key_storage_path, "w") as f:
+        with open(self.aes_key_storage_path, "w", encoding="utf-8") as f:
             json.dump(key_storage, f, indent=2)
         
-        print(f"✓ AES key stored locally at {self.aes_key_storage_path}")
+        print(f"✓ AES key stored on USB at {self.aes_key_storage_path}")
 
     def load_stored_aes_key(self):
-        """Load the previously stored AES key from local storage."""
+        """Load previously stored AES key from resolved storage path."""
+        if not self.aes_key_storage_path:
+            raise FileNotFoundError("AES key storage path not set")
         if not os.path.exists(self.aes_key_storage_path):
             raise FileNotFoundError(
                 f"Stored AES key not found at {self.aes_key_storage_path}. "
@@ -266,7 +271,7 @@ class USBBallotImporter:
         
         Process:
         1. Decrypt AES key from aes_key.enc
-        2. Store AES key locally
+        2. Store AES key on USB as aes_key.dec
         3. Find all election folders (election_id_1, election_id_2, etc.)
         4. For each election, import candidates metadata and count encrypted ballots
         5. Ballots remain encrypted on USB and are decrypted on-demand during voting
@@ -294,9 +299,9 @@ class USBBallotImporter:
             print("\n[1/3] Decrypting AES key from USB...")
             self.decrypt_aes_key_from_usb(usb_ballot_path)
             
-            # Step 2: Store AES key locally
-            print("[2/3] Storing AES key locally...")
-            self.store_aes_key_locally()
+            # Step 2: Store AES key on USB
+            print("[2/3] Storing AES key on USB...")
+            self.store_aes_key_on_usb(usb_ballot_path)
 
             # Step 3: Import elections
             print("[3/3] Importing ballot elections...")
@@ -420,7 +425,6 @@ def main():
     # Create importer
     importer = USBBallotImporter(
         private_key_path="private.pem",
-        local_storage_dir="ballot",
         demo_mode=args.demo,
         demo_aes_key_b64=args.aes_key
     )

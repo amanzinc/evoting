@@ -79,9 +79,23 @@ class DataHandler:
         if self.decrypted_aes_key is not None:
             return self.decrypted_aes_key
 
-        key_path = os.path.join("ballot", "aes_key.dec")
-        if not os.path.exists(key_path):
-            raise FileNotFoundError(f"Stored AES key not found at {key_path}")
+        env_key_path = os.environ.get("EVOTING_AES_KEY_PATH", "").strip()
+        key_candidates = []
+        if env_key_path:
+            key_candidates.append(env_key_path)
+        # Backward compatibility for older deployments.
+        key_candidates.append(os.path.join("ballot", "aes_key.dec"))
+
+        key_path = None
+        for candidate in key_candidates:
+            if candidate and os.path.exists(candidate):
+                key_path = candidate
+                break
+
+        if not key_path:
+            raise FileNotFoundError(
+                "Stored AES key not found. Set EVOTING_AES_KEY_PATH to USB aes_key.dec"
+            )
 
         with open(key_path, "r", encoding="utf-8") as f:
             key_data = json.load(f)

@@ -175,7 +175,6 @@ class VotingApp:
                     private_key_path=os.path.join(
                         os.path.dirname(os.path.abspath(__file__)), "private.pem"
                     ),
-                    local_storage_dir="ballot",
                     demo_mode=False
                 )
                 
@@ -189,6 +188,7 @@ class VotingApp:
                 )
                 
                 if summary["status"] == "success":
+                    os.environ["EVOTING_AES_KEY_PATH"] = os.path.join(ballot_path, "aes_key.dec")
                     status_label.config(
                         text=f"✓ Successfully imported {summary['total_ballots']} ballots\nProceeding to initialization...",
                         fg="#2E7D32"
@@ -232,7 +232,7 @@ class VotingApp:
                 raise Exception("USB Drive not found! Please insert the admin USB drive to export logs.")
 
             from export_service import ExportService
-            exporter = ExportService("private.pem")
+            exporter = ExportService("private.pem", usb_mount_point=usb_path)
             export_path = exporter.export_election_data(self.log_dir, usb_path)
 
             # Fetch final hash and force printing of final receipt before shutdown.

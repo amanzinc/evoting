@@ -463,6 +463,22 @@ class ProvisionApp:
         errors: list[str] = []
         project_dir = os.path.dirname(os.path.abspath(__file__))
 
+        def _cleanup_legacy_local_aes_key():
+            legacy_key_path = os.path.join(project_dir, "ballot", "aes_key.dec")
+            if os.path.exists(legacy_key_path):
+                try:
+                    os.remove(legacy_key_path)
+                    print(f"Removed legacy local AES key: {legacy_key_path}")
+                except Exception as exc:
+                    print(f"Warning: could not remove legacy local AES key: {exc}")
+
+            legacy_ballot_dir = os.path.join(project_dir, "ballot")
+            try:
+                if os.path.isdir(legacy_ballot_dir) and not os.listdir(legacy_ballot_dir):
+                    os.rmdir(legacy_ballot_dir)
+            except Exception:
+                pass
+
         # ── Step 1: Generate RSA keys ─────────────────────────────────────────
         try:
             self._set_step("keys", "running")
@@ -536,6 +552,7 @@ class ProvisionApp:
                 os.chmod(flag_path, 0o444)   # make read-only
             except Exception:
                 pass
+            _cleanup_legacy_local_aes_key()
             self._set_step("flag", "done")
         except PermissionError as exc:
             self._set_step("flag", "error")

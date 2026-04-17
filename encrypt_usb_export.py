@@ -11,7 +11,7 @@ def load_stored_aes_key(aes_key_file):
     if not os.path.exists(aes_key_file):
         raise FileNotFoundError(
             f"AES key file not found: {aes_key_file}. "
-            "Run ballot import first so ballot/aes_key.dec exists."
+            "Run ballot import first so USB aes_key.dec exists."
         )
 
     with open(aes_key_file, "r", encoding="utf-8") as f:
@@ -95,8 +95,8 @@ def main():
     )
     parser.add_argument(
         "--aes-key-file",
-        default="ballot/aes_key.dec",
-        help="Path to stored AES key file (default: ballot/aes_key.dec)",
+        default=os.environ.get("EVOTING_AES_KEY_PATH", "aes_key.dec"),
+        help="Path to stored AES key file (default: EVOTING_AES_KEY_PATH or aes_key.dec)",
     )
     parser.add_argument(
         "--out-dir",

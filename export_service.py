@@ -9,10 +9,48 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import hardware_crypto
 
 class ExportService:
-    def __init__(self, key_path="private.pem", aes_key_storage_path="ballot/aes_key.dec"):
+    def __init__(self, key_path="private.pem", aes_key_storage_path=None, usb_mount_point=None):
         self.key_path = key_path
         self.aes_key_storage_path = aes_key_storage_path
+        self.usb_mount_point = usb_mount_point
         self.private_key = None
+
+    def _find_ballot_folder(self, usb_root):
+        if not usb_root or not os.path.isdir(usb_root):
+            return None
+
+        ballot_variants = [
+            d for d in os.listdir(usb_root)
+            if d.startswith("ballot_") and os.path.isdir(os.path.join(usb_root, d))
+        ]
+        if ballot_variants:
+            return os.path.join(usb_root, sorted(ballot_variants)[0])
+
+        legacy_path = os.path.join(usb_root, "ballot")
+        if os.path.isdir(legacy_path):
+            return legacy_path
+
+        return None
+
+    def _resolve_aes_key_storage_path(self):
+        if self.aes_key_storage_path and os.path.exists(self.aes_key_storage_path):
+            return self.aes_key_storage_path
+
+        env_key_path = os.environ.get("EVOTING_AES_KEY_PATH", "").strip()
+        if env_key_path and os.path.exists(env_key_path):
+            return env_key_path
+
+        ballot_root = self._find_ballot_folder(self.usb_mount_point)
+        if ballot_root:
+            usb_key_path = os.path.join(ballot_root, "aes_key.dec")
+            if os.path.exists(usb_key_path):
+                return usb_key_path
+
+        legacy_local = os.path.join("ballot", "aes_key.dec")
+        if os.path.exists(legacy_local):
+            return legacy_local
+
+        return None
 
     def _load_private_key(self):
         """Loads and unlocks the private key using the hardware-bound passphrase."""
@@ -107,19 +145,19 @@ class ExportService:
         return enc_file_path, enc_key_path
 
     def _load_stored_aes_key(self):
-        """Load previously decrypted ballot AES key from local storage."""
-        if not os.path.exists(self.aes_key_storage_path):
+        """Load previously decrypted ballot AES key from USB/env/local fallback."""
+        key_path = self._resolve_aes_key_storage_path()
+        if not key_path:
             raise FileNotFoundError(
-                f"Stored AES key not found at {self.aes_key_storage_path}. "
-                "Import ballots first so aes_key.dec is available."
+                "Stored AES key not found. Set EVOTING_AES_KEY_PATH or import ballots from USB."
             )
 
-        with open(self.aes_key_storage_path, "r", encoding="utf-8") as f:
+        with open(key_path, "r", encoding="utf-8") as f:
             key_data = json.load(f)
 
         key_b64 = key_data.get("aes_key_b64")
         if not key_b64:
-            raise ValueError(f"Invalid AES key file at {self.aes_key_storage_path}: missing aes_key_b64")
+            raise ValueError(f"Invalid AES key file at {key_path}: missing aes_key_b64")
 
         aes_key = base64.b64decode(key_b64)
         if len(aes_key) != 32:
@@ -142,7 +180,7 @@ class ExportService:
         Resolve BMD ID on RPi using this order:
         1. EVOTING_BMD_ID env var
         2. /etc/evoting/bmd_id file
-        3. ballot/aes_key.dec metadata (bmd_id)
+        3. AES key metadata (bmd_id) from resolved key path
         4. UNKNOWN_BMD fallback
         """
         env_bmd = os.environ.get("EVOTING_BMD_ID", "").strip()
@@ -159,9 +197,10 @@ class ExportService:
             except Exception:
                 pass
 
-        if os.path.exists(self.aes_key_storage_path):
+        key_path = self._resolve_aes_key_storage_path()
+        if key_path and os.path.exists(key_path):
             try:
-                with open(self.aes_key_storage_path, "r", encoding="utf-8") as f:
+                with open(key_path, "r", encoding="utf-8") as f:
                     key_data = json.load(f)
                 key_bmd = str(key_data.get("bmd_id", "")).strip()
                 if key_bmd:
@@ -202,6 +241,8 @@ class ExportService:
         """
         if not usb_mount_point or not os.path.exists(usb_mount_point):
             raise Exception("USB Drive not found or not mounted.")
+
+        self.usb_mount_point = usb_mount_point
             
         export_dir = os.path.join(usb_mount_point, "exports")
         os.makedirs(export_dir, exist_ok=True)
