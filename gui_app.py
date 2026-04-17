@@ -76,6 +76,16 @@ class VotingApp:
     def _enforce_kiosk_mode(self):
         if self._kiosk_enforcing:
             return
+
+        # Do not re-assert root fullscreen while admin overlay is active,
+        # otherwise some window managers push the overlay behind root.
+        if self._admin_overlay:
+            try:
+                if self._admin_overlay.winfo_exists():
+                    return
+            except Exception:
+                pass
+
         self._kiosk_enforcing = True
         try:
             self.root.overrideredirect(True)
@@ -2117,16 +2127,22 @@ class VotingApp:
         if self._admin_overlay:
             try:
                 if self._admin_overlay.winfo_exists():
+                    self._admin_overlay.attributes('-topmost', True)
                     self._admin_overlay.lift()
+                    self._admin_overlay.focus_force()
                     return
             except Exception:
                 pass
 
         overlay = tk.Toplevel(self.root)
+        overlay.overrideredirect(True)
         overlay.attributes('-fullscreen', True)
+        overlay.attributes('-topmost', True)
         overlay.configure(bg="#0d1117")
         overlay.transient(self.root)
         overlay.grab_set()
+        overlay.lift()
+        overlay.focus_force()
         self._admin_overlay = overlay
 
         header = tk.Frame(overlay, bg="#161b22", pady=22)
@@ -2221,6 +2237,7 @@ class VotingApp:
             except Exception:
                 pass
             self._admin_overlay = None
+        self.root.after(40, self._enforce_kiosk_mode)
 
     def _admin_end_election(self):
         self._close_admin_menu()
