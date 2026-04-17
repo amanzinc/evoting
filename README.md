@@ -27,6 +27,24 @@ Python-based prototype for a Raspberry Pi Ballot Marking Device (BMD) with USB b
 If a DS3231 is connected on I2C bus 1 (default address `0x68`), the app now attempts to
 sync system time from RTC during startup.
 
+For production boot sync (required for non-root app services), enable the root one-shot
+systemd service included in this repo:
+
+```bash
+sudo cp evoting-rtc-sync.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable evoting-rtc-sync.service
+sudo systemctl start evoting-rtc-sync.service
+sudo systemctl status evoting-rtc-sync.service
+```
+
+Useful checks on Raspberry Pi:
+
+```bash
+sudo i2cdetect -y 1
+journalctl -u evoting-rtc-sync.service -b --no-pager
+```
+
 Manual RTC set helper:
 
 ```bash
@@ -45,7 +63,7 @@ Optional flags:
 - `--bus 1` (default)
 - `--addr 0x68` (default)
 
-Note: Updating Linux system time may require elevated privileges depending on service/user capabilities.
+Note: Updating Linux system time requires root/CAP_SYS_TIME; regular user services cannot set it.
 
 ## Main Files
 

@@ -1,0 +1,16 @@
+[Unit]
+Description=EVoting RTC boot sync from DS3231
+DefaultDependencies=no
+After=local-fs.target systemd-modules-load.service
+Before=time-sync.target sysinit.target
+Wants=time-sync.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/home/evoting/evoting
+ExecStart=/home/evoting/evoting/venv/bin/python /home/evoting/evoting/sync_rtc_boot.py
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

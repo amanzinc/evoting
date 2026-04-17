@@ -191,8 +191,13 @@ def _setup_logging(log_dir):
 
 
 def main():
-    # Sync system clock from DS3231 RTC as early as possible.
-    sync_system_time_from_rtc()
+    # Sync system clock from DS3231 RTC as early as possible when privileged.
+    # On deployed Pi, unprivileged app startup relies on the root boot service.
+    geteuid = getattr(os, "geteuid", None)
+    if callable(geteuid) and geteuid() == 0:
+        sync_system_time_from_rtc()
+    else:
+        print("[rtc] Skipping app-level clock set (non-root). Use boot RTC sync service.")
 
     # ── Logging: must be first so every subsequent print is captured ──────────
     # Discover log dir early (before provisioning check) so logs persist.

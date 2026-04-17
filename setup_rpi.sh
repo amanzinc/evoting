@@ -33,6 +33,10 @@ echo "[*] Installing Python libraries..."
 echo "[*] Adding user to 'lp' and 'dialout' groups for printer and serial access..."
 sudo usermod -a -G lp $USER
 sudo usermod -a -G dialout $USER
+sudo usermod -a -G i2c $USER
+
+echo "[*] Enabling I2C interface..."
+sudo raspi-config nonint do_i2c 0 2>/dev/null || true
 
 echo "[*] Creating udev rules for raw USB printer access..."
 cat << EOF | sudo tee /etc/udev/rules.d/99-escpos.rules
@@ -140,6 +144,11 @@ SERVICE_DIR="/home/evoting/.config/systemd/user"
 mkdir -p "$SERVICE_DIR"
 cp "$PROJECT_DIR/evoting.service" "$SERVICE_DIR/evoting.service"
 chown -R evoting:evoting "$SERVICE_DIR"
+
+echo "[*] Installing root RTC sync systemd service..."
+sudo cp "$PROJECT_DIR/evoting-rtc-sync.service" /etc/systemd/system/evoting-rtc-sync.service
+sudo systemctl daemon-reload
+sudo systemctl enable evoting-rtc-sync.service
 
 # Enable linger so the user bus starts at boot
 sudo loginctl enable-linger evoting
