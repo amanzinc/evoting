@@ -1,11 +1,12 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 import threading
 import queue
 import datetime
 import time
 import os
 import subprocess
+import json
 
 class VotingApp:
     def __init__(self, root, data_handler, printer_service, ballot_manager, rfid_service, db_path, votes_log, tokens_log, log_dir):
@@ -56,6 +57,9 @@ class VotingApp:
         self.session_complete_after_id = None
         self.clock_after_id = None
         self.clock_label = None
+        self.inactive_check_after_id = None
+        self.election_schedule = None
+        self.election_schedule_path = None
 
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
@@ -276,8 +280,8 @@ class VotingApp:
             except Exception as e:
                 print(f"Base candidate load failed (normal if generic): {e}")
 
-            # Proceed to RFID Screen
-            self.show_rfid_screen()
+            # Proceed to the correct idle screen based on election schedule.
+            self.show_idle_screen()
 
         except Exception as e:
             messagebox.showerror("System Security Error", f"Failed to initialize election data from USB: {e}")
@@ -293,8 +297,197 @@ class VotingApp:
             self.clock_after_id = None
         self.clock_label = None
 
+        if self.inactive_check_after_id:
+            try:
+                self.root.after_cancel(self.inactive_check_after_id)
+            except Exception:
+                pass
+            self.inactive_check_after_id = None
+
         for widget in self.main_container.winfo_children():
             widget.destroy()
+
+    def _schedule_file_path(self):
+        if self.election_schedule_path:
+            return self.election_schedule_path
+
+        base_dir = self.log_dir if self.log_dir and os.path.isdir(self.log_dir) else os.path.dirname(os.path.abspath(__file__))
+        self.election_schedule_path = os.path.join(base_dir, "election_schedule.json")
+        return self.election_schedule_path
+
+    def _default_election_schedule(self):
+        # enabled=False keeps legacy behavior (always active) until a window is configured.
+        return {
+            "enabled": False,
+            "start": "",
+            "end": "",
+        }
+
+    def _load_election_schedule(self):
+        if self.election_schedule is not None:
+            return self.election_schedule
+
+        path = self._schedule_file_path()
+        try:
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    merged = self._default_election_schedule()
+                    merged.update(loaded)
+                    self.election_schedule = merged
+                    return self.election_schedule
+        except Exception as e:
+            print(f"Schedule load warning: {e}")
+
+        self.election_schedule = self._default_election_schedule()
+        return self.election_schedule
+
+    def _save_election_schedule(self):
+        schedule = self._load_election_schedule()
+        path = self._schedule_file_path()
+        try:
+            parent = os.path.dirname(path)
+            if parent and not os.path.isdir(parent):
+                os.makedirs(parent, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(schedule, f, indent=2)
+            return True
+        except Exception as e:
+            messagebox.showerror("Schedule Save Failed", f"Could not save election schedule:\n{e}")
+            return False
+
+    def _parse_schedule_datetime(self, value):
+        text = str(value or "").strip()
+        if not text:
+            raise ValueError("Empty datetime value")
+
+        formats = [
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%d %H:%M:%S",
+            "%d-%m-%Y %H:%M",
+            "%d-%m-%Y %H:%M:%S",
+            "%Y-%m-%dT%H:%M",
+            "%Y-%m-%dT%H:%M:%S",
+        ]
+        for fmt in formats:
+            try:
+                return datetime.datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+
+        try:
+            return datetime.datetime.fromisoformat(text)
+        except Exception as exc:
+            raise ValueError(
+                "Invalid datetime format. Use 'YYYY-MM-DD HH:MM' (or ISO)."
+            ) from exc
+
+    def _get_schedule_window(self):
+        schedule = self._load_election_schedule()
+        if not schedule.get("enabled", False):
+            return None, None
+
+        start_text = str(schedule.get("start", "") or "").strip()
+        end_text = str(schedule.get("end", "") or "").strip()
+        if not start_text or not end_text:
+            return None, None
+
+        start_dt = self._parse_schedule_datetime(start_text)
+        end_dt = self._parse_schedule_datetime(end_text)
+        return start_dt, end_dt
+
+    def _is_election_active_now(self):
+        schedule = self._load_election_schedule()
+        if not schedule.get("enabled", False):
+            return True
+
+        try:
+            start_dt, end_dt = self._get_schedule_window()
+            if not start_dt or not end_dt:
+                return False
+            now = datetime.datetime.now()
+            return start_dt <= now <= end_dt
+        except Exception:
+            return False
+
+    def _current_schedule_text(self):
+        schedule = self._load_election_schedule()
+        if not schedule.get("enabled", False):
+            return "Schedule not set (always active)."
+        start = str(schedule.get("start", "") or "").strip() or "N/A"
+        end = str(schedule.get("end", "") or "").strip() or "N/A"
+        return f"Active window: {start} -> {end}"
+
+    def show_idle_screen(self):
+        if self._is_election_active_now():
+            self.show_rfid_screen()
+        else:
+            self.show_election_inactive_screen()
+
+    def show_election_inactive_screen(self):
+        self.clear_container()
+        frame = tk.Frame(self.main_container, bg="#FFF3E0")
+        frame.pack(expand=True, fill=tk.BOTH)
+
+        tk.Label(
+            frame,
+            text="Election is Inactive",
+            font=('Helvetica', 34, 'bold'),
+            bg="#FFF3E0",
+            fg="#E65100"
+        ).pack(pady=(140, 18))
+
+        tk.Label(
+            frame,
+            text="Voting is currently disabled outside the configured time window.",
+            font=('Helvetica', 20),
+            bg="#FFF3E0",
+            fg="#333"
+        ).pack(pady=8)
+
+        tk.Label(
+            frame,
+            text=self._current_schedule_text(),
+            font=('Helvetica', 16, 'italic'),
+            bg="#FFF3E0",
+            fg="#555"
+        ).pack(pady=(14, 6))
+
+        tk.Label(
+            frame,
+            text="Scan authorized Polling Officer RFID card to manage election timings.",
+            font=('Helvetica', 14, 'italic'),
+            bg="#FFF3E0",
+            fg="#666"
+        ).pack(pady=(8, 0))
+
+        self.clock_label = tk.Label(
+            frame,
+            text="",
+            font=('Helvetica', 16, 'bold'),
+            bg="#111",
+            fg="#FFFFFF",
+            padx=14,
+            pady=6,
+        )
+        self.clock_label.place(relx=0.985, rely=0.03, anchor='ne')
+        self._refresh_clock_label()
+
+        self.stop_scanning = False
+        self.officer_scan_queue = queue.Queue()
+        self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
+        self.officer_scan_thread.daemon = True
+        self.officer_scan_thread.start()
+        self.check_officer_scan_queue()
+
+        self._schedule_inactive_recheck()
+
+    def _schedule_inactive_recheck(self):
+        if self._is_election_active_now():
+            self.show_rfid_screen()
+            return
+        self.inactive_check_after_id = self.root.after(5000, self._schedule_inactive_recheck)
 
     def _refresh_clock_label(self):
         if not self.clock_label or not self.clock_label.winfo_exists():
@@ -567,7 +760,7 @@ class VotingApp:
             self.election_queue = []
             self.active_token = None
             self.current_election_id = None
-            self.show_rfid_screen()
+            self.show_idle_screen()
 
     def finish_voter_session(self, aborted=False):
         """Called when all eligible elections are completed."""
@@ -680,7 +873,7 @@ class VotingApp:
             
         self.active_token = None
         self.current_election_id = None
-        self.show_rfid_screen()
+        self.show_idle_screen()
 
     def _show_session_complete_screen(self):
         self.clear_container()
@@ -722,7 +915,7 @@ class VotingApp:
 
     def _return_home_after_complete(self):
         self.session_complete_after_id = None
-        self.show_rfid_screen()
+        self.show_idle_screen()
 
     def show_rfid_error(self, message):
         self.clear_container()
@@ -734,7 +927,7 @@ class VotingApp:
         
         # Auto-retry after 3 seconds
         tk.Label(frame, text="(Resetting in 3 seconds...)", font=('Helvetica', 16), bg="#FFEBEE", fg="#777").pack(pady=40)
-        self.root.after(3000, self.show_rfid_screen)
+        self.root.after(3000, self.show_idle_screen)
 
     def start_session(self, election_id=None):
         """Fetches a fresh ballot for the new session."""
@@ -1666,33 +1859,180 @@ class VotingApp:
 
         self.root.after(500, self.check_officer_scan_queue)
 
-    def _is_polling_officer_token(self, token_payload):
-        """Returns True if token payload indicates polling officer/admin authorization."""
-        if str(token_payload).strip() == self.polling_officer_phrase:
+    def _normalize_officer_command(self, raw_command):
+        cmd = str(raw_command or "").strip().upper().replace("-", "_").replace(" ", "_")
+        aliases = {
+            "END_ELECTION_AND_EXPORT": "END_ELECTION_EXPORT",
+            "END_ELECTION": "END_ELECTION_EXPORT",
+            "EXPORT": "END_ELECTION_EXPORT",
+            "STATUS": "SYSTEM_STATUS",
+            "PRINT_TOGGLE": "TOGGLE_PRINT",
+            "REPRINT_SLIP": "REPRINT_DEVICE_SLIP",
+            "REPRINT_DEVICE": "REPRINT_DEVICE_SLIP",
+            "UPDATE": "UPDATE_FIRMWARE",
+            "FIRMWARE_UPDATE": "UPDATE_FIRMWARE",
+            "RETURN_USB": "RETURN_USB_SCREEN",
+            "USB_SCREEN": "RETURN_USB_SCREEN",
+            "EXIT": "CLOSE_APPLICATION",
+            "CLOSE_APP": "CLOSE_APPLICATION",
+            "SET_ELECTION_WINDOW": "SET_WINDOW",
+            "EXTEND_END": "EXTEND_END_MINUTES",
+            "EXTEND": "EXTEND_END_MINUTES",
+            "EXTEND_END_TIME": "EXTEND_END_MINUTES",
+        }
+        return aliases.get(cmd, cmd)
+
+    def _parse_officer_command_line(self, command_line):
+        line = str(command_line or "").strip()
+        if not line:
+            return "", ""
+
+        if "=" in line and line.upper().startswith(("CMD=", "COMMAND=")):
+            line = line.split("=", 1)[1].strip()
+
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) == 1 and "," in line:
+            parts = [p.strip() for p in line.split(",")]
+
+        command = self._normalize_officer_command(parts[0])
+        args = "|".join(parts[1:]).strip() if len(parts) > 1 else ""
+        return command, args
+
+    def _has_polling_officer_phrase(self, token_payload):
+        phrase = self.polling_officer_phrase
+        text = str(token_payload or "").strip()
+
+        if text == phrase:
             return True
+
+        if text.upper().startswith(phrase.upper()):
+            remainder = text[len(phrase):]
+            if not remainder:
+                return True
+            if remainder[0] in " \t\r\n:;|,-":
+                return True
 
         try:
             import json
-            data = json.loads(token_payload)
-            role = str(data.get('role', '')).strip().lower()
-            token_type = str(data.get('token_type', '')).strip().lower()
-            is_admin = bool(data.get('is_admin', False))
-            if role in {'polling_officer', 'presiding_officer', 'officer', 'admin'}:
-                return True
-            if token_type in {'polling_officer', 'presiding_officer', 'admin'}:
-                return True
-            if is_admin:
-                return True
-            return False
+            data = json.loads(text)
+            if isinstance(data, dict):
+                embedded_phrase = str(data.get('phrase', '') or data.get('admin_phrase', '')).strip()
+                return embedded_phrase.upper() == phrase.upper()
         except Exception:
+            pass
+
+        return False
+
+    def _extract_polling_officer_command(self, token_payload):
+        """Extract optional command from phrase-authorized officer card payload."""
+        phrase = self.polling_officer_phrase
+        text = str(token_payload or "").strip()
+
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict):
+                embedded_phrase = str(data.get('phrase', '') or data.get('admin_phrase', '')).strip()
+                if embedded_phrase.upper() == phrase.upper():
+                    return self._parse_officer_command_line(data.get('command', ''))
+        except Exception:
+            pass
+
+        if not text.upper().startswith(phrase.upper()):
+            return "", ""
+
+        remainder = text[len(phrase):].strip()
+        while remainder and remainder[0] in ":;|,-":
+            remainder = remainder[1:].strip()
+
+        if not remainder:
+            return "", ""
+
+        lines = [ln.strip() for ln in remainder.splitlines() if ln.strip()]
+        if not lines:
+            return "", ""
+
+        command_line = lines[0]
+        if len(lines) > 1 and ("|" not in command_line and "," not in command_line):
+            command_line = command_line + "|" + "|".join(lines[1:])
+        return self._parse_officer_command_line(command_line)
+
+    def _accepted_officer_commands_text(self):
+        return (
+            "END_ELECTION_EXPORT\n"
+            "SYSTEM_STATUS\n"
+            "TOGGLE_PRINT\n"
+            "RESET_TOKEN_LOG\n"
+            "REPRINT_DEVICE_SLIP\n"
+            "UPDATE_FIRMWARE\n"
+            "RETURN_USB_SCREEN\n"
+            "CLOSE_APPLICATION\n"
+            "SET_WINDOW|YYYY-MM-DD HH:MM|YYYY-MM-DD HH:MM\n"
+            "EXTEND_END_MINUTES|X"
+        )
+
+    def _run_end_election_without_prompt(self):
+        self.stop_scanning = True
+        self.show_printing_modal(text="Ending election and exporting logs...")
+        threading.Thread(target=self._end_election_worker, daemon=True).start()
+
+    def _execute_officer_command(self, command, args=""):
+        handlers = {
+            "END_ELECTION_EXPORT": self._run_end_election_without_prompt,
+            "SYSTEM_STATUS": self._admin_system_status,
+            "TOGGLE_PRINT": self.toggle_printing,
+            "RESET_TOKEN_LOG": self.reset_token_log,
+            "REPRINT_DEVICE_SLIP": self._admin_reprint_device_slip,
+            "UPDATE_FIRMWARE": lambda: (
+                self.show_printing_modal(text="Updating firmware...\nRunning git pull"),
+                threading.Thread(target=self._admin_update_firmware_worker, daemon=True).start(),
+            ),
+            "RETURN_USB_SCREEN": self.show_usb_waiting_screen,
+            "CLOSE_APPLICATION": self.exit_app,
+        }
+
+        if command == "SET_WINDOW":
+            pieces = [p.strip() for p in str(args or "").split("|") if p.strip()]
+            if len(pieces) != 2:
+                messagebox.showerror(
+                    "Invalid SET_WINDOW Format",
+                    "Use: SET_WINDOW|YYYY-MM-DD HH:MM|YYYY-MM-DD HH:MM"
+                )
+                return False
+            self._admin_set_election_window(start_text=pieces[0], end_text=pieces[1], show_messages=True)
+            return True
+
+        if command == "EXTEND_END_MINUTES":
+            try:
+                minutes = int(str(args or "").strip())
+            except Exception:
+                messagebox.showerror("Invalid EXTEND_END_MINUTES", "Use: EXTEND_END_MINUTES|X")
+                return False
+            self._admin_extend_end_time(minutes, show_messages=True)
+            return True
+
+        handler = handlers.get(command)
+        if not handler:
+            messagebox.showerror(
+                "Unknown Officer Command",
+                "Card phrase matched, but command is not recognized.\n\n"
+                "Accepted commands:\n"
+                f"{self._accepted_officer_commands_text()}"
+            )
             return False
+
+        handler()
+        return True
+
+    def _is_polling_officer_token(self, token_payload):
+        """Only phrase-based cards are authorized for polling-officer actions."""
+        return self._has_polling_officer_phrase(token_payload)
 
     def on_officer_card_scanned(self, token_payload):
         if not self._is_polling_officer_token(token_payload):
             messagebox.showerror(
                 "Authorization Failed",
-                "This card is not authorized as Polling Officer.\n"
-                "Please scan a valid officer RFID card."
+                "This card is not authorized.\n"
+                "Use the configured phrase card for polling-officer access."
             )
             self.stop_scanning = False
             self.officer_scan_queue = queue.Queue()
@@ -1703,6 +2043,18 @@ class VotingApp:
             return
 
         self.stop_scanning = True
+        command, args = self._extract_polling_officer_command(token_payload)
+        if command:
+            ran = self._execute_officer_command(command, args)
+            if not ran:
+                self.stop_scanning = False
+                self.officer_scan_queue = queue.Queue()
+                self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
+                self.officer_scan_thread.daemon = True
+                self.officer_scan_thread.start()
+                self.check_officer_scan_queue()
+            return
+
         self.show_polling_officer_action_menu()
 
     def show_polling_officer_action_menu(self):
@@ -1756,7 +2108,7 @@ class VotingApp:
         grid.pack(expand=True, fill=tk.BOTH, padx=60)
         grid.grid_columnconfigure(0, weight=1)
         grid.grid_columnconfigure(1, weight=1)
-        for row_idx in range(7):
+        for row_idx in range(8):
             grid.grid_rowconfigure(row_idx, weight=1)
 
         def _btn(text, cmd, bg, fg="white", row=0, col=0, colspan=1):
@@ -1799,19 +2151,22 @@ class VotingApp:
         _btn("Re-Print Device Slip", self._admin_reprint_device_slip, "#2e7d32", row=2, col=0)
         _btn("Update Firmware", self._admin_update_firmware, "#1565c0", row=2, col=1)
 
-        _btn("DEV: Skip RFID Scan", self._admin_dev_skip, "#37474f", row=3, col=0)
-        _btn("DEV: Return to USB Screen", self._admin_dev_restart_usb, "#37474f", row=3, col=1)
+        _btn("Set Election Time Window", self._admin_set_election_window, "#00695c", row=3, col=0)
+        _btn("Extend End Time", self._admin_extend_end_time_prompt, "#00838f", row=3, col=1)
 
-        _btn("Reset and Re-Provision Device", self._admin_reset_device, "#e65100", row=4, col=0, colspan=2)
+        _btn("DEV: Skip RFID Scan", self._admin_dev_skip, "#37474f", row=4, col=0)
+        _btn("DEV: Return to USB Screen", self._admin_dev_restart_usb, "#37474f", row=4, col=1)
 
-        _btn("Close Application", self._admin_exit_app, "#c62828", row=5, col=0, colspan=2)
+        _btn("Reset and Re-Provision Device", self._admin_reset_device, "#e65100", row=5, col=0, colspan=2)
+
+        _btn("Close Application", self._admin_exit_app, "#c62828", row=6, col=0, colspan=2)
 
         _btn(
             "Close Polling Officer Menu",
             self._close_admin_menu,
             "#21262d",
             fg="#cdd9e5",
-            row=6,
+            row=7,
             col=0,
             colspan=2
         )
@@ -1993,9 +2348,100 @@ class VotingApp:
             + f"HW Binding    : {hw_status}\n"
             + f"Printer       : {printer_status}\n"
             + f"Print Mode    : {'ON' if self.print_enabled else 'OFF'}\n"
+            + f"Election Time : {self._current_schedule_text()}\n"
             + f"Log Dir       : {getattr(self, 'log_dir', 'N/A')}\n"
         )
         messagebox.showinfo("System Status", msg, parent=self._admin_overlay)
+
+    def _admin_set_election_window(self, start_text=None, end_text=None, show_messages=True):
+        if start_text is None:
+            start_text = simpledialog.askstring(
+                "Set Election Start",
+                "Enter start datetime (YYYY-MM-DD HH:MM):",
+                parent=self._admin_overlay,
+            )
+            if start_text is None:
+                return False
+
+        if end_text is None:
+            end_text = simpledialog.askstring(
+                "Set Election End",
+                "Enter end datetime (YYYY-MM-DD HH:MM):",
+                parent=self._admin_overlay,
+            )
+            if end_text is None:
+                return False
+
+        try:
+            start_dt = self._parse_schedule_datetime(start_text)
+            end_dt = self._parse_schedule_datetime(end_text)
+            if end_dt <= start_dt:
+                raise ValueError("End time must be after start time.")
+        except Exception as exc:
+            messagebox.showerror("Invalid Time Window", str(exc))
+            return False
+
+        schedule = self._load_election_schedule()
+        schedule["enabled"] = True
+        schedule["start"] = start_dt.strftime("%Y-%m-%d %H:%M:%S")
+        schedule["end"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+        if not self._save_election_schedule():
+            return False
+
+        if show_messages:
+            messagebox.showinfo("Election Window Set", self._current_schedule_text())
+
+        self._close_admin_menu()
+        self.show_idle_screen()
+        return True
+
+    def _admin_extend_end_time(self, minutes, show_messages=True):
+        try:
+            minutes = int(minutes)
+        except Exception:
+            messagebox.showerror("Invalid Minutes", "Minutes must be an integer.")
+            return False
+
+        if minutes <= 0:
+            messagebox.showerror("Invalid Minutes", "Minutes must be greater than zero.")
+            return False
+
+        schedule = self._load_election_schedule()
+        if not schedule.get("enabled", False):
+            messagebox.showerror("Schedule Not Set", "Set election window first, then extend end time.")
+            return False
+
+        try:
+            _, end_dt = self._get_schedule_window()
+            if not end_dt:
+                raise ValueError("Current end time is missing.")
+            end_dt = end_dt + datetime.timedelta(minutes=minutes)
+        except Exception as exc:
+            messagebox.showerror("Extend Failed", str(exc))
+            return False
+
+        schedule["end"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+        if not self._save_election_schedule():
+            return False
+
+        if show_messages:
+            messagebox.showinfo("Election End Extended", self._current_schedule_text())
+
+        self._close_admin_menu()
+        self.show_idle_screen()
+        return True
+
+    def _admin_extend_end_time_prompt(self):
+        minutes = simpledialog.askinteger(
+            "Extend Election End",
+            "Enter minutes to extend end time:",
+            parent=self._admin_overlay,
+            minvalue=1,
+            maxvalue=1440,
+        )
+        if minutes is None:
+            return
+        self._admin_extend_end_time(minutes, show_messages=True)
 
     def _admin_reset_device(self):
         """Wipe provisioning artifacts and relaunch into first-boot provisioning."""
