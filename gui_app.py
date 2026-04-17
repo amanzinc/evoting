@@ -2179,7 +2179,7 @@ class VotingApp:
         grid.pack(expand=True, fill=tk.BOTH, padx=grid_pad_x)
         grid.grid_columnconfigure(0, weight=1)
         grid.grid_columnconfigure(1, weight=1)
-        for row_idx in range(8):
+        for row_idx in range(7):
             grid.grid_rowconfigure(row_idx, weight=1)
 
         def _btn(text, cmd, bg, fg="white", row=0, col=0, colspan=1):
@@ -2222,22 +2222,19 @@ class VotingApp:
         _btn("Re-Print Device Slip", self._admin_reprint_device_slip, "#2e7d32", row=2, col=0)
         _btn("Update Firmware", self._admin_update_firmware, "#1565c0", row=2, col=1)
 
-        _btn("Set Election Time Window", self._admin_set_election_window, "#00695c", row=3, col=0)
-        _btn("Extend End Time", self._admin_extend_end_time_prompt, "#00838f", row=3, col=1)
+        _btn("DEV: Skip RFID Scan", self._admin_dev_skip, "#37474f", row=3, col=0)
+        _btn("DEV: Return to USB Screen", self._admin_dev_restart_usb, "#37474f", row=3, col=1)
 
-        _btn("DEV: Skip RFID Scan", self._admin_dev_skip, "#37474f", row=4, col=0)
-        _btn("DEV: Return to USB Screen", self._admin_dev_restart_usb, "#37474f", row=4, col=1)
+        _btn("Reset and Re-Provision Device", self._admin_reset_device, "#e65100", row=4, col=0, colspan=2)
 
-        _btn("Reset and Re-Provision Device", self._admin_reset_device, "#e65100", row=5, col=0, colspan=2)
-
-        _btn("Close Application", self._admin_exit_app, "#c62828", row=6, col=0, colspan=2)
+        _btn("Close Application", self._admin_exit_app, "#c62828", row=5, col=0, colspan=2)
 
         _btn(
             "Close Polling Officer Menu",
             self._close_admin_menu,
             "#21262d",
             fg="#cdd9e5",
-            row=7,
+            row=6,
             col=0,
             colspan=2
         )
