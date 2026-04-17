@@ -83,6 +83,60 @@ class RFIDService:
         sector_first_block, blocks_per_sector = self._sector_layout(sector_no)
         return block_no == (sector_first_block + blocks_per_sector - 1)
 
+    def _auth_block(self, uid, block_no):
+        try:
+            return self.pn532.mifare_classic_authenticate_block(
+                uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
+            )
+        except Exception:
+            return False
+
+    def _iter_data_blocks(self):
+        block_no = self.START_BLOCK
+        while block_no <= self.MAX_BLOCK_NO:
+            if not self.is_trailer_block(block_no):
+                yield block_no
+            block_no += 1
+
+    def write_plaintext_card_payload(self, payload_text, wait_seconds=20):
+        """Write plain text payload to card data blocks (null-terminated)."""
+        if not self.connected:
+            if not self.connect():
+                raise RuntimeError("RFID reader not connected")
+
+        deadline = time.time() + max(1, int(wait_seconds))
+        uid = None
+        while time.time() < deadline:
+            uid = self.pn532.read_passive_target(timeout=0.5)
+            if uid is not None:
+                break
+            time.sleep(0.1)
+
+        if uid is None:
+            raise RuntimeError("No RFID card detected for writing")
+
+        payload_bytes = (payload_text or "").encode("utf-8") + b"\x00"
+        chunks = []
+        for i in range(0, len(payload_bytes), 16):
+            chunk = payload_bytes[i:i + 16]
+            if len(chunk) < 16:
+                chunk = chunk + (b"\x00" * (16 - len(chunk)))
+            chunks.append(chunk)
+
+        data_blocks = list(self._iter_data_blocks())
+        if len(chunks) > len(data_blocks):
+            raise RuntimeError("Payload too large for RFID card")
+
+        for idx, block_no in enumerate(data_blocks[:len(chunks)]):
+            if not self._auth_block(uid, block_no):
+                raise RuntimeError(f"Auth failed for block {block_no}")
+
+            ok = self.pn532.mifare_classic_write_block(block_no, chunks[idx])
+            if not ok:
+                raise RuntimeError(f"Write failed for block {block_no}")
+
+        return uid.hex()
+
     def read_card(self):
         """
         Blocking call (with internal timeout loop) to read a card.
@@ -159,7 +213,8 @@ class RFIDService:
 
             try:
                 import base64
-                encrypted_bytes = base64.b64decode(raw_bytes.decode('utf-8'))
+                raw_text = raw_bytes.decode('utf-8').strip()
+                encrypted_bytes = base64.b64decode(raw_text)
                 
                 decrypted_bytes = self.private_key.decrypt(
                     encrypted_bytes,
@@ -172,6 +227,14 @@ class RFIDService:
                 decrypted = decrypted_bytes.decode("utf-8")
             except Exception as e:
                 print(f"Decryption failed: {e}")
+                # Allow controlled plaintext payload cards (e.g. admin trigger card).
+                try:
+                    plaintext = raw_bytes.decode("utf-8", errors="ignore").strip()
+                    if plaintext:
+                        print(f"✅ Card Read Success! Plain payload: {plaintext}")
+                        return (uid.hex(), plaintext)
+                except Exception:
+                    pass
                 return None
             
             try:
