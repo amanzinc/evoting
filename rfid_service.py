@@ -121,6 +121,32 @@ class RFIDService:
                 yield block_no
             block_no += 1
 
+    def _normalize_uid(self, uid):
+        if uid is None:
+            return None
+        if isinstance(uid, (bytes, bytearray)):
+            return bytes(uid)
+        if isinstance(uid, (list, tuple)):
+            try:
+                return bytes(uid)
+            except Exception:
+                return None
+        return None
+
+    def _normalize_block_data(self, data):
+        if data is None:
+            return None
+        if isinstance(data, bytes):
+            return data
+        if isinstance(data, bytearray):
+            return bytes(data)
+        if isinstance(data, (list, tuple)):
+            try:
+                return bytes(data)
+            except Exception:
+                return None
+        return None
+
     def write_plaintext_card_payload(self, payload_text, wait_seconds=20):
         """Write plain text payload to card data blocks (null-terminated)."""
         if not self.connected:
@@ -175,7 +201,8 @@ class RFIDService:
 
         try:
             # Check for card
-            uid = self.pn532.read_passive_target(timeout=0.5)
+            raw_uid = self.pn532.read_passive_target(timeout=0.5)
+            uid = self._normalize_uid(raw_uid)
             if uid is None:
                 return None
             
@@ -195,15 +222,25 @@ class RFIDService:
                 if block_no > self.MAX_BLOCK_NO:
                     break
                 
-                auth = self.pn532.mifare_classic_authenticate_block(
-                    uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
-                )
+                try:
+                    auth = self.pn532.mifare_classic_authenticate_block(
+                        uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
+                    )
+                except Exception:
+                    block_no += 1
+                    continue
                 
                 if not auth:
                     block_no += 1
                     continue
                     
-                data = self.pn532.mifare_classic_read_block(block_no)
+                try:
+                    raw_block = self.pn532.mifare_classic_read_block(block_no)
+                except Exception:
+                    block_no += 1
+                    continue
+
+                data = self._normalize_block_data(raw_block)
                 if data is None:
                     block_no += 1
                     continue
@@ -280,4 +317,8 @@ class RFIDService:
 
         except Exception as e:
             print(f"Error reading card: {e}")
+            # Recover from transient PN532/I2C glitches by forcing reconnect.
+            if "NoneType" in str(e):
+                self.connected = False
+                self.pn532 = None
             return None
