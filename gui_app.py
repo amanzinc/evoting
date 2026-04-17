@@ -2335,6 +2335,8 @@ class VotingApp:
                 stderr=subprocess.PIPE,
                 text=True,
                 check=False,
+                timeout=120,
+                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
             )
 
             output = (result.stdout or "").strip()
@@ -2345,6 +2347,8 @@ class VotingApp:
                 raise Exception(combined or "git pull failed")
 
             self.root.after(0, lambda out=combined: self._admin_update_firmware_done(out))
+        except subprocess.TimeoutExpired:
+            self.root.after(0, lambda: self._admin_update_firmware_failed("git pull timed out after 120s"))
         except Exception as e:
             self.root.after(0, lambda err=str(e): self._admin_update_firmware_failed(err))
 
@@ -2433,7 +2437,6 @@ class VotingApp:
         dlg = tk.Toplevel(parent)
         dlg.title(title)
         dlg.transient(parent)
-        dlg.grab_set()
 
         w, h = 760, 620
         x = (self.root.winfo_screenwidth() // 2) - (w // 2)
@@ -2561,7 +2564,6 @@ class VotingApp:
         dlg = tk.Toplevel(parent)
         dlg.title(title)
         dlg.transient(parent)
-        dlg.grab_set()
 
         w, h = 860, 640
         x = (self.root.winfo_screenwidth() // 2) - (w // 2)
@@ -2752,7 +2754,6 @@ class VotingApp:
             pop = tk.Toplevel(dlg)
             pop.title("Select Date")
             pop.transient(dlg)
-            pop.grab_set()
             pop.configure(bg="#ffffff")
             pop.geometry("430x380")
             cal_popup["win"] = pop
@@ -3002,7 +3003,8 @@ class VotingApp:
         y = (self.root.winfo_screenheight() // 2) - (h // 2)
         self.printing_overlay.geometry(f"{w}x{h}+{x}+{y}")
         self.printing_overlay.transient(self.root)
-        self.printing_overlay.grab_set()
+        self.printing_overlay.attributes('-topmost', True)
+        self.printing_overlay.lift()
         self.printing_overlay.overrideredirect(True)
         f = tk.Frame(self.printing_overlay, bg="#E3F2FD", bd=2, relief=tk.RAISED)
         f.pack(fill=tk.BOTH, expand=True)
@@ -3011,6 +3013,12 @@ class VotingApp:
 
     def close_printing_modal(self):
         if hasattr(self, 'printing_overlay') and self.printing_overlay:
+            try:
+                current_grab = self.root.grab_current()
+                if current_grab is self.printing_overlay:
+                    self.printing_overlay.grab_release()
+            except Exception:
+                pass
             self.printing_overlay.destroy()
             self.printing_overlay = None
 
