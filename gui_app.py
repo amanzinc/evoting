@@ -26,9 +26,14 @@ class VotingApp:
         self.active_token = None
         self.challenge_counts_by_election = {}
         self.max_challenges_per_election = 1
+        self._kiosk_enforcing = False
         
         self.root.title("Ballot Marking Device")
+        self.root.overrideredirect(True)
+        self.root.resizable(False, False)
         self.root.attributes('-fullscreen', True)
+        self._enforce_kiosk_mode()
+        self.root.bind("<Configure>", self._on_root_configure)
         self.root.bind("<Escape>", self.exit_app)
         self.root.bind("<Key>", self._on_key_press)
 
@@ -67,6 +72,25 @@ class VotingApp:
         
         # Start with USB Polling Screen
         self.show_usb_waiting_screen()
+
+    def _enforce_kiosk_mode(self):
+        if self._kiosk_enforcing:
+            return
+        self._kiosk_enforcing = True
+        try:
+            self.root.overrideredirect(True)
+            self.root.resizable(False, False)
+            self.root.attributes('-fullscreen', True)
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            self.root.geometry(f"{sw}x{sh}+0+0")
+        except Exception:
+            pass
+        finally:
+            self._kiosk_enforcing = False
+
+    def _on_root_configure(self, _event=None):
+        self._enforce_kiosk_mode()
 
     def show_usb_waiting_screen(self):
         self.clear_container()
@@ -1839,7 +1863,7 @@ class VotingApp:
                 continue
 
             # Officer/admin cards may carry short payloads; do not enforce full voter-card sector threshold here.
-            result = self.rfid_service.read_card(min_required_sectors=1)
+            result = self.rfid_service.read_card(min_required_sectors=1, min_required_blocks=2)
             if result:
                 self.officer_scan_queue.put(result)
                 break
@@ -2029,6 +2053,23 @@ class VotingApp:
         return self._has_polling_officer_phrase(token_payload)
 
     def on_officer_card_scanned(self, token_payload):
+        token_text = str(token_payload or "").strip()
+        phrase_upper = self.polling_officer_phrase.upper()
+        token_upper = token_text.upper()
+        if token_text and len(token_text) < len(self.polling_officer_phrase) and phrase_upper.startswith(token_upper):
+            messagebox.showerror(
+                "Incomplete Card Data",
+                "Polling officer card data appears incomplete.\n"
+                "Please scan again or rewrite the card payload."
+            )
+            self.stop_scanning = False
+            self.officer_scan_queue = queue.Queue()
+            self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
+            self.officer_scan_thread.daemon = True
+            self.officer_scan_thread.start()
+            self.check_officer_scan_queue()
+            return
+
         if not self._is_polling_officer_token(token_payload):
             messagebox.showerror(
                 "Authorization Failed",
@@ -2490,268 +2531,222 @@ class VotingApp:
         dlg.transient(parent)
         dlg.grab_set()
 
-        w, h = 1120, 700
+        w, h = 860, 640
         x = (self.root.winfo_screenwidth() // 2) - (w // 2)
         y = (self.root.winfo_screenheight() // 2) - (h // 2)
         dlg.geometry(f"{w}x{h}+{x}+{y}")
-        dlg.configure(bg="#0d1117")
+        dlg.configure(bg="#6FAFA8")
+        dlg.minsize(760, 560)
 
         tk.Label(
             dlg,
             text=title,
-            font=('Helvetica', 26, 'bold'),
-            bg="#0d1117",
-            fg="#f0f6fc",
-        ).pack(pady=(16, 6))
+            font=('Helvetica', 30, 'bold'),
+            bg="#6FAFA8",
+            fg="#1d2a2a",
+        ).pack(pady=(18, 8))
 
-        selected_part = tk.StringVar(value="year")
-        value_vars = {
-            "year": tk.IntVar(value=initial_dt.year),
-            "month": tk.IntVar(value=initial_dt.month),
-            "day": tk.IntVar(value=initial_dt.day),
-            "hour": tk.IntVar(value=initial_dt.hour),
-            "minute": tk.IntVar(value=initial_dt.minute),
-        }
+        card = tk.Frame(dlg, bg="#6FAFA8")
+        card.pack(expand=True, fill=tk.BOTH, padx=36, pady=10)
 
-        scales = {}
+        selected_date = datetime.date(initial_dt.year, initial_dt.month, initial_dt.day)
+        selected_time = datetime.time(initial_dt.hour, initial_dt.minute)
+
+        date_var = tk.StringVar(value=selected_date.strftime("%d %b %Y"))
         preview_var = tk.StringVar(value="")
-        result = {"value": None}
 
-        def max_day_for(year_val, month_val):
-            return calendar.monthrange(year_val, month_val)[1]
+        def _format_time_option(hour, minute):
+            return datetime.time(hour, minute).strftime("%I:%M%p").lstrip("0").lower()
 
-        def clamp_day():
-            y = value_vars["year"].get()
-            m = value_vars["month"].get()
-            md = max_day_for(y, m)
-            if value_vars["day"].get() > md:
-                value_vars["day"].set(md)
-            scales["day"].config(to=md)
+        time_options = [_format_time_option(h, m) for h in range(24) for m in (0, 30)]
+        nearest = min(time_options, key=lambda t: abs(
+            (datetime.datetime.combine(datetime.date.today(), datetime.datetime.strptime(t, "%I:%M%p").time())
+             - datetime.datetime.combine(datetime.date.today(), selected_time)).total_seconds()
+        ))
+        time_var = tk.StringVar(value=nearest)
+
+        cal_popup = {"win": None}
+        cal_year = tk.IntVar(value=selected_date.year)
+        cal_month = tk.IntVar(value=selected_date.month)
 
         def refresh_preview(*_):
-            try:
-                clamp_day()
-                dt = datetime.datetime(
-                    value_vars["year"].get(),
-                    value_vars["month"].get(),
-                    value_vars["day"].get(),
-                    value_vars["hour"].get(),
-                    value_vars["minute"].get(),
-                    0,
-                )
-                preview_var.set(dt.strftime("%Y-%m-%d %H:%M"))
-            except Exception:
-                preview_var.set("Invalid date/time")
-
-        content = tk.Frame(dlg, bg="#0d1117")
-        content.pack(expand=True, fill=tk.BOTH, padx=24, pady=8)
-        content.grid_columnconfigure(0, weight=3)
-        content.grid_columnconfigure(1, weight=2)
-        content.grid_rowconfigure(0, weight=1)
-
-        left = tk.Frame(content, bg="#0d1117")
-        left.grid(row=0, column=0, sticky='nsew', padx=(0, 14))
-        right = tk.Frame(content, bg="#161b22")
-        right.grid(row=0, column=1, sticky='nsew', padx=(14, 0))
+            preview_var.set(f"{date_var.get()}  {time_var.get()}")
 
         tk.Label(
-            left,
-            text="Use sliders or keypad to set values",
-            font=('Helvetica', 14),
-            bg="#0d1117",
-            fg="#9da7b3",
-        ).pack(anchor='w', pady=(0, 8))
+            card,
+            text="Select Date",
+            font=('Helvetica', 16, 'bold'),
+            bg="#6FAFA8",
+            fg="#1d2a2a",
+            anchor='w',
+        ).pack(fill=tk.X, pady=(8, 4))
 
-        slider_frame = tk.Frame(left, bg="#0d1117")
-        slider_frame.pack(expand=True, fill=tk.BOTH)
-
-        parts = [
-            ("year", "Year", 2020, 2100),
-            ("month", "Month", 1, 12),
-            ("day", "Day", 1, 31),
-            ("hour", "Hour", 0, 23),
-            ("minute", "Minute", 0, 59),
-        ]
-
-        for idx, (key, label, min_v, max_v) in enumerate(parts):
-            row = tk.Frame(slider_frame, bg="#0d1117")
-            row.pack(fill=tk.X, pady=6)
-
-            btn = tk.Button(
-                row,
-                text=label,
-                command=lambda k=key: selected_part.set(k),
-                font=('Helvetica', 13, 'bold'),
-                bg="#30363d",
-                fg="#f0f6fc",
-                relief=tk.FLAT,
-                bd=0,
-                width=9,
-            )
-            btn.pack(side=tk.LEFT, padx=(0, 8))
-
-            val_label = tk.Label(
-                row,
-                textvariable=value_vars[key],
-                font=('Helvetica', 13, 'bold'),
-                bg="#0d1117",
-                fg="#f0f6fc",
-                width=4,
-            )
-            val_label.pack(side=tk.RIGHT, padx=(8, 0))
-
-            sc = tk.Scale(
-                row,
-                from_=min_v,
-                to=max_v,
-                orient=tk.HORIZONTAL,
-                variable=value_vars[key],
-                showvalue=False,
-                resolution=1,
-                highlightthickness=0,
-                troughcolor="#30363d",
-                bg="#0d1117",
-                fg="#f0f6fc",
-                activebackground="#1f6feb",
-                sliderrelief=tk.FLAT,
-            )
-            sc.pack(side=tk.LEFT, fill=tk.X, expand=True)
-            sc.bind("<Button-1>", lambda _e, k=key: selected_part.set(k))
-            scales[key] = sc
+        date_btn = tk.Button(
+            card,
+            textvariable=date_var,
+            command=lambda: open_calendar_popup(),
+            font=('Helvetica', 24, 'bold'),
+            bg="#f7f7f7",
+            fg="#1f2933",
+            relief=tk.FLAT,
+            bd=0,
+            padx=16,
+            pady=12,
+            anchor='w',
+        )
+        date_btn.pack(fill=tk.X, pady=(0, 16))
 
         tk.Label(
-            left,
+            card,
+            text="Select Time",
+            font=('Helvetica', 16, 'bold'),
+            bg="#6FAFA8",
+            fg="#1d2a2a",
+            anchor='w',
+        ).pack(fill=tk.X, pady=(0, 4))
+
+        time_combo = ttk.Combobox(
+            card,
+            values=time_options,
+            textvariable=time_var,
+            state='readonly',
+            font=('Helvetica', 22),
+        )
+        time_combo.pack(fill=tk.X, ipady=10, pady=(0, 20))
+
+        tk.Label(
+            card,
             text="Selected DateTime",
-            font=('Helvetica', 13),
-            bg="#0d1117",
-            fg="#9da7b3",
-        ).pack(anchor='w', pady=(8, 4))
+            font=('Helvetica', 14),
+            bg="#6FAFA8",
+            fg="#2b3a3a",
+            anchor='w',
+        ).pack(fill=tk.X, pady=(0, 4))
 
         tk.Entry(
-            left,
+            card,
             textvariable=preview_var,
             state='readonly',
-            readonlybackground="#161b22",
-            fg="#f0f6fc",
-            font=('Helvetica', 20, 'bold'),
+            readonlybackground="#e8eef0",
+            fg="#1f2933",
+            font=('Helvetica', 24, 'bold'),
             bd=0,
             justify='center',
-        ).pack(fill=tk.X, ipady=10)
+        ).pack(fill=tk.X, ipady=12, pady=(0, 20))
 
-        tk.Label(
-            right,
-            text="Numeric Keypad",
-            font=('Helvetica', 16, 'bold'),
-            bg="#161b22",
-            fg="#f0f6fc",
-        ).pack(pady=(14, 6))
+        def render_calendar(container):
+            for wdg in container.winfo_children():
+                wdg.destroy()
 
-        tk.Label(
-            right,
-            text="Tap a field button first, then enter value",
-            font=('Helvetica', 11),
-            bg="#161b22",
-            fg="#9da7b3",
-        ).pack(pady=(0, 8))
+            title_row = tk.Frame(container, bg="#ffffff")
+            title_row.pack(fill=tk.X, pady=(6, 4))
 
-        buffer_var = tk.StringVar(value="")
-        tk.Entry(
-            right,
-            textvariable=buffer_var,
-            font=('Helvetica', 20, 'bold'),
-            justify='center',
-            bd=0,
-            relief=tk.FLAT,
-            bg="#0d1117",
-            fg="#f0f6fc",
-            insertbackground="#f0f6fc",
-        ).pack(fill=tk.X, padx=12, pady=(0, 10), ipady=8)
+            def prev_month():
+                y, m = cal_year.get(), cal_month.get() - 1
+                if m < 1:
+                    y -= 1
+                    m = 12
+                cal_year.set(y)
+                cal_month.set(m)
+                render_calendar(container)
 
-        keypad = tk.Frame(right, bg="#161b22")
-        keypad.pack(expand=True, fill=tk.BOTH, padx=10, pady=8)
+            def next_month():
+                y, m = cal_year.get(), cal_month.get() + 1
+                if m > 12:
+                    y += 1
+                    m = 1
+                cal_year.set(y)
+                cal_month.set(m)
+                render_calendar(container)
 
-        def push_digit(d):
-            buffer_var.set(buffer_var.get() + d)
+            tk.Button(title_row, text="<", command=prev_month, font=('Helvetica', 14, 'bold'), bg="#f1f5f9", relief=tk.FLAT).pack(side=tk.LEFT, padx=8)
+            tk.Label(
+                title_row,
+                text=f"{calendar.month_name[cal_month.get()]} {cal_year.get()}",
+                font=('Helvetica', 14, 'bold'),
+                bg="#ffffff",
+                fg="#111827",
+            ).pack(side=tk.LEFT, expand=True)
+            tk.Button(title_row, text=">", command=next_month, font=('Helvetica', 14, 'bold'), bg="#f1f5f9", relief=tk.FLAT).pack(side=tk.RIGHT, padx=8)
 
-        def backspace():
-            buffer_var.set(buffer_var.get()[:-1])
+            grid = tk.Frame(container, bg="#ffffff")
+            grid.pack(fill=tk.BOTH, expand=True, padx=8, pady=6)
 
-        def clear_buf():
-            buffer_var.set("")
+            for i, wd in enumerate(["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]):
+                tk.Label(grid, text=wd, font=('Helvetica', 11, 'bold'), bg="#ffffff", fg="#4b5563").grid(row=0, column=i, sticky='nsew', pady=(0, 4))
 
-        def apply_buffer():
-            text = buffer_var.get().strip()
-            if not text:
-                return
-            part = selected_part.get()
-            limits = {
-                "year": (2020, 2100),
-                "month": (1, 12),
-                "day": (1, max_day_for(value_vars["year"].get(), value_vars["month"].get())),
-                "hour": (0, 23),
-                "minute": (0, 59),
-            }
-            try:
-                n = int(text)
-                lo, hi = limits[part]
-                if n < lo:
-                    n = lo
-                if n > hi:
-                    n = hi
-                value_vars[part].set(n)
+            month_rows = calendar.monthcalendar(cal_year.get(), cal_month.get())
+
+            def choose_day(day):
+                nonlocal selected_date
+                selected_date = datetime.date(cal_year.get(), cal_month.get(), day)
+                date_var.set(selected_date.strftime("%d %b %Y"))
                 refresh_preview()
-                buffer_var.set("")
-            except Exception:
-                messagebox.showerror("Invalid Number", "Please enter a valid number.", parent=dlg)
+                if cal_popup["win"]:
+                    cal_popup["win"].destroy()
+                    cal_popup["win"] = None
 
-        btn_defs = [
-            ("1", lambda: push_digit("1")), ("2", lambda: push_digit("2")), ("3", lambda: push_digit("3")),
-            ("4", lambda: push_digit("4")), ("5", lambda: push_digit("5")), ("6", lambda: push_digit("6")),
-            ("7", lambda: push_digit("7")), ("8", lambda: push_digit("8")), ("9", lambda: push_digit("9")),
-            ("Clear", clear_buf), ("0", lambda: push_digit("0")), ("Back", backspace),
-        ]
+            for r, week in enumerate(month_rows, start=1):
+                for c, day in enumerate(week):
+                    if day == 0:
+                        tk.Label(grid, text="", bg="#ffffff").grid(row=r, column=c, sticky='nsew')
+                    else:
+                        is_selected = (
+                            selected_date.year == cal_year.get()
+                            and selected_date.month == cal_month.get()
+                            and selected_date.day == day
+                        )
+                        tk.Button(
+                            grid,
+                            text=str(day),
+                            command=lambda d=day: choose_day(d),
+                            font=('Helvetica', 11, 'bold') if is_selected else ('Helvetica', 11),
+                            bg="#2563eb" if is_selected else "#f8fafc",
+                            fg="white" if is_selected else "#111827",
+                            relief=tk.FLAT,
+                            bd=0,
+                        ).grid(row=r, column=c, sticky='nsew', padx=2, pady=2)
 
-        for idx, (label, cmd) in enumerate(btn_defs):
-            r, c = divmod(idx, 3)
-            tk.Button(
-                keypad,
-                text=label,
-                command=cmd,
-                font=('Helvetica', 18, 'bold'),
-                bg="#1f6feb" if label.isdigit() else "#30363d",
-                fg="#f0f6fc",
-                relief=tk.FLAT,
-                bd=0,
-            ).grid(row=r, column=c, sticky='nsew', padx=6, pady=6)
+            for i in range(7):
+                grid.grid_columnconfigure(i, weight=1)
+            for i in range(1, len(month_rows) + 1):
+                grid.grid_rowconfigure(i, weight=1)
 
-        tk.Button(
-            right,
-            text="Apply to Selected Field",
-            command=apply_buffer,
-            font=('Helvetica', 14, 'bold'),
-            bg="#238636",
-            fg="#f0f6fc",
-            relief=tk.FLAT,
-            bd=0,
-            padx=12,
-            pady=10,
-        ).pack(fill=tk.X, padx=12, pady=(4, 12))
+        def open_calendar_popup():
+            if cal_popup["win"] and cal_popup["win"].winfo_exists():
+                cal_popup["win"].lift()
+                return
 
-        for i in range(4):
-            keypad.grid_rowconfigure(i, weight=1)
-        for i in range(3):
-            keypad.grid_columnconfigure(i, weight=1)
+            pop = tk.Toplevel(dlg)
+            pop.title("Select Date")
+            pop.transient(dlg)
+            pop.grab_set()
+            pop.configure(bg="#ffffff")
+            pop.geometry("430x380")
+            cal_popup["win"] = pop
 
-        action = tk.Frame(dlg, bg="#0d1117")
-        action.pack(fill=tk.X, padx=24, pady=(0, 16))
+            wrap = tk.Frame(pop, bg="#ffffff")
+            wrap.pack(expand=True, fill=tk.BOTH, padx=8, pady=8)
+            render_calendar(wrap)
+
+            def close_popup():
+                if cal_popup["win"]:
+                    cal_popup["win"].destroy()
+                    cal_popup["win"] = None
+
+            pop.protocol("WM_DELETE_WINDOW", close_popup)
+
+        result = {"value": None}
+
+        action = tk.Frame(dlg, bg="#6FAFA8")
+        action.pack(fill=tk.X, padx=36, pady=(0, 18))
 
         def use_now():
             now = datetime.datetime.now()
-            value_vars["year"].set(now.year)
-            value_vars["month"].set(now.month)
-            value_vars["day"].set(now.day)
-            value_vars["hour"].set(now.hour)
-            value_vars["minute"].set(now.minute)
+            nonlocal selected_date
+            selected_date = now.date()
+            date_var.set(selected_date.strftime("%d %b %Y"))
+            time_var.set(_format_time_option(now.hour, 30 if now.minute >= 30 else 0))
             refresh_preview()
 
         def cancel():
@@ -2760,13 +2755,13 @@ class VotingApp:
 
         def save():
             try:
-                refresh_preview()
+                time_obj = datetime.datetime.strptime(time_var.get().upper(), "%I:%M%p").time()
                 dt = datetime.datetime(
-                    value_vars["year"].get(),
-                    value_vars["month"].get(),
-                    value_vars["day"].get(),
-                    value_vars["hour"].get(),
-                    value_vars["minute"].get(),
+                    selected_date.year,
+                    selected_date.month,
+                    selected_date.day,
+                    time_obj.hour,
+                    time_obj.minute,
                     0,
                 )
             except Exception as exc:
@@ -2780,8 +2775,8 @@ class VotingApp:
             text="Now",
             command=use_now,
             font=('Helvetica', 14, 'bold'),
-            bg="#1565c0",
-            fg="#f0f6fc",
+            bg="#2f6f69",
+            fg="#ffffff",
             relief=tk.FLAT,
             bd=0,
             padx=16,
@@ -2793,8 +2788,8 @@ class VotingApp:
             text="Cancel",
             command=cancel,
             font=('Helvetica', 14, 'bold'),
-            bg="#30363d",
-            fg="#f0f6fc",
+            bg="#4b5563",
+            fg="#ffffff",
             relief=tk.FLAT,
             bd=0,
             padx=16,
@@ -2806,16 +2801,15 @@ class VotingApp:
             text="Save",
             command=save,
             font=('Helvetica', 14, 'bold'),
-            bg="#238636",
-            fg="#f0f6fc",
+            bg="#f97316",
+            fg="#ffffff",
             relief=tk.FLAT,
             bd=0,
             padx=20,
             pady=10,
         ).pack(side=tk.RIGHT)
 
-        for var in value_vars.values():
-            var.trace_add("write", refresh_preview)
+        time_combo.bind("<<ComboboxSelected>>", refresh_preview)
         refresh_preview()
 
         dlg.protocol("WM_DELETE_WINDOW", cancel)

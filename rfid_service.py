@@ -30,7 +30,7 @@ class RFIDService:
         
         self.START_BLOCK = 4
         self.MAX_BLOCK_NO = 255
-        self.MIN_REQUIRED_SECTORS = 24
+        self.MIN_REQUIRED_SECTORS = 21
         self.KEY_DEFAULT = b'\xFF' * 6
 
     def _block_to_sector(self, block_no):
@@ -186,7 +186,7 @@ class RFIDService:
 
         return uid.hex()
 
-    def read_card(self, min_required_sectors=None):
+    def read_card(self, min_required_sectors=None, min_required_blocks=None):
         """
         Blocking call (with internal timeout loop) to read a card.
         Returns: (uid_string, decrypted_token_string) or None
@@ -198,6 +198,10 @@ class RFIDService:
         required_sectors = self.MIN_REQUIRED_SECTORS if min_required_sectors is None else int(min_required_sectors)
         if required_sectors < 1:
             required_sectors = 1
+
+        required_blocks = 1 if min_required_blocks is None else int(min_required_blocks)
+        if required_blocks < 1:
+            required_blocks = 1
 
         try:
             # Check for card
@@ -213,6 +217,7 @@ class RFIDService:
             block_no = self.START_BLOCK
             raw_bytes = bytearray()
             read_sectors = set()
+            read_blocks = 0
             payload_complete = False
 
             while block_no <= self.MAX_BLOCK_NO:
@@ -246,6 +251,7 @@ class RFIDService:
                     continue
 
                 read_sectors.add(self._block_to_sector(block_no))
+                read_blocks += 1
 
                 if not payload_complete:
                     if b'\x00' in data:
@@ -255,7 +261,7 @@ class RFIDService:
                         raw_bytes.extend(data)
 
                 # Enforce minimum number of sectors before allowing decrypt.
-                if payload_complete and len(read_sectors) >= required_sectors:
+                if payload_complete and len(read_sectors) >= required_sectors and read_blocks >= required_blocks:
                     break
 
                 block_no += 1
@@ -264,6 +270,13 @@ class RFIDService:
                 print(
                     f"Card read rejected: only {len(read_sectors)} sectors read; "
                     f"minimum required is {required_sectors}."
+                )
+                return None
+
+            if read_blocks < required_blocks:
+                print(
+                    f"Card read rejected: only {read_blocks} data blocks read; "
+                    f"minimum required is {required_blocks}."
                 )
                 return None
 
