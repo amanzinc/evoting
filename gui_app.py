@@ -78,6 +78,13 @@ class VotingApp:
             fg="#555"
         ).pack(pady=(16, 0))
 
+        # Ensure RFID is initialized on USB waiting screen too.
+        try:
+            self.rfid_service.load_key()
+            self.rfid_service.connect()
+        except Exception as e:
+            print(f"RFID init warning on USB wait screen: {e}")
+
         # USB waiting screen allows polling officer menu access only via RFID authorization.
         self.stop_scanning = False
         self.officer_scan_queue = queue.Queue()
@@ -1596,6 +1603,15 @@ class VotingApp:
 
     def officer_scan_loop(self):
         while not self.stop_scanning:
+            # Reconnect automatically if RFID wasn't initialized yet.
+            if not getattr(self.rfid_service, 'connected', False):
+                try:
+                    self.rfid_service.connect()
+                except Exception:
+                    pass
+                time.sleep(0.5)
+                continue
+
             result = self.rfid_service.read_card()
             if result:
                 self.officer_scan_queue.put(result)
