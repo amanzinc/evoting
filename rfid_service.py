@@ -23,6 +23,7 @@ except (ImportError, NotImplementedError, AttributeError):
 class RFIDService:
     def __init__(self, key_path="private.pem"):
         self.pn532 = None
+        self.i2c = None
         self.key_path = key_path
         self.private_key = None
         self.connected = False
@@ -60,23 +61,45 @@ class RFIDService:
             print(f"Error loading private key: {e}")
             return False
 
+    def _close_bus(self):
+        try:
+            if self.i2c and hasattr(self.i2c, "deinit"):
+                self.i2c.deinit()
+        except Exception:
+            pass
+        self.i2c = None
+        self.pn532 = None
+        self.connected = False
+
     def connect(self):
         """Attempts to connect to the PN532 reader."""
         if not HARDWARE_AVAILABLE:
             print("RFID Hardware libraries not available (Dev Mode).")
             return False
 
-        try:
-            # On RPi this uses board.SCL/SDA. On Windows this might fail.
-            i2c = busio.I2C(board.SCL, board.SDA)
-            self.pn532 = PN532_I2C(i2c, debug=False)
-            self.pn532.SAM_configuration()
-            self.connected = True
-            print("RFID Reader Connected Successfully.")
+        if self.connected and self.pn532 is not None:
             return True
-        except Exception as e:
-            print(f"RFID Connection Failed: {e}")
-            return False
+
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                self._close_bus()
+                # On RPi this uses board.SCL/SDA. On Windows this might fail.
+                self.i2c = busio.I2C(board.SCL, board.SDA)
+                time.sleep(0.15)
+                self.pn532 = PN532_I2C(self.i2c, debug=False)
+                time.sleep(0.15)
+                self.pn532.SAM_configuration()
+                self.connected = True
+                print("RFID Reader Connected Successfully.")
+                return True
+            except Exception as e:
+                last_error = e
+                self._close_bus()
+                time.sleep(0.3 * attempt)
+
+        print(f"RFID Connection Failed after retries: {last_error}")
+        return False
 
     def is_trailer_block(self, block_no):
         sector_no = self._block_to_sector(block_no)

@@ -28,6 +28,15 @@ def _is_linux() -> bool:
 
 
 def _run_date_set(dt: datetime.datetime) -> bool:
+    # Setting system time requires CAP_SYS_TIME/root on Linux.
+    geteuid = getattr(os, "geteuid", None)
+    if callable(geteuid) and geteuid() != 0:
+        print(
+            "[rtc] Skipping system clock update from RTC: insufficient permission "
+            "(requires root/CAP_SYS_TIME)."
+        )
+        return False
+
     cmd = ["date", "-s", dt.strftime("%Y-%m-%d %H:%M:%S")]
     try:
         proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
@@ -115,6 +124,7 @@ def sync_system_time_from_rtc(bus_number: int = 1, address: int = DS3231_I2C_ADD
         if rtc.is_oscillator_stopped():
             print("[rtc] DS3231 OSF bit set; RTC time may be invalid")
         dt = rtc.read_datetime()
+        print(f"[rtc] DS3231 read time: {dt.isoformat(sep=' ')}")
         ok = _run_date_set(dt)
         if ok:
             print(f"[rtc] System time set from DS3231: {dt.isoformat(sep=' ')}")
