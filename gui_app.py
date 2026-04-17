@@ -2313,15 +2313,17 @@ class VotingApp:
         messagebox.showerror("Reprint Failed", f"Could not print device slip:\n{error_message}")
 
     def _admin_update_firmware(self):
+        # Close admin overlay first so confirmation dialog is never hidden behind it.
+        self._close_admin_menu()
+
         if not messagebox.askyesno(
             "Update Firmware",
             "This will run 'git pull --ff-only' in the app directory.\n\nContinue?",
-            parent=self._admin_overlay,
             icon='question',
         ):
+            self.root.after(80, self.show_admin_menu)
             return
 
-        self._close_admin_menu()
         self.show_printing_modal(text="Updating firmware...\nRunning git pull")
         threading.Thread(target=self._admin_update_firmware_worker, daemon=True).start()
 
@@ -2437,12 +2439,15 @@ class VotingApp:
         dlg = tk.Toplevel(parent)
         dlg.title(title)
         dlg.transient(parent)
+        dlg.attributes('-topmost', True)
 
         w, h = 760, 620
         x = (self.root.winfo_screenwidth() // 2) - (w // 2)
         y = (self.root.winfo_screenheight() // 2) - (h // 2)
         dlg.geometry(f"{w}x{h}+{x}+{y}")
         dlg.configure(bg="#0d1117")
+        dlg.lift()
+        dlg.focus_force()
 
         tk.Label(
             dlg,
@@ -2564,6 +2569,7 @@ class VotingApp:
         dlg = tk.Toplevel(parent)
         dlg.title(title)
         dlg.transient(parent)
+        dlg.attributes('-topmost', True)
 
         w, h = 860, 640
         x = (self.root.winfo_screenwidth() // 2) - (w // 2)
@@ -2571,6 +2577,8 @@ class VotingApp:
         dlg.geometry(f"{w}x{h}+{x}+{y}")
         dlg.configure(bg="#6FAFA8")
         dlg.minsize(760, 560)
+        dlg.lift()
+        dlg.focus_force()
 
         tk.Label(
             dlg,
@@ -2754,9 +2762,12 @@ class VotingApp:
             pop = tk.Toplevel(dlg)
             pop.title("Select Date")
             pop.transient(dlg)
+            pop.attributes('-topmost', True)
             pop.configure(bg="#ffffff")
             pop.geometry("430x380")
             cal_popup["win"] = pop
+            pop.lift()
+            pop.focus_force()
 
             wrap = tk.Frame(pop, bg="#ffffff")
             wrap.pack(expand=True, fill=tk.BOTH, padx=8, pady=8)
@@ -2850,9 +2861,16 @@ class VotingApp:
         return result["value"]
 
     def _admin_set_election_window(self, start_text=None, end_text=None, show_messages=True):
+        had_admin_overlay = bool(self._admin_overlay and self._admin_overlay.winfo_exists())
+        if had_admin_overlay and (start_text is None or end_text is None):
+            # Ensure picker dialogs are shown above root and not hidden by fullscreen overlay.
+            self._close_admin_menu()
+
         if start_text is None:
             start_dt = self._show_datetime_picker_dialog("Set Election Start Time")
             if start_dt is None:
+                if had_admin_overlay:
+                    self.root.after(80, self.show_admin_menu)
                 return False
             start_text = start_dt.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -2866,6 +2884,8 @@ class VotingApp:
 
             end_dt = self._show_datetime_picker_dialog("Set Election End Time", initial_dt=suggested_end)
             if end_dt is None:
+                if had_admin_overlay:
+                    self.root.after(80, self.show_admin_menu)
                 return False
             end_text = end_dt.strftime("%Y-%m-%d %H:%M:%S")
 
