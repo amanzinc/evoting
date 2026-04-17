@@ -70,6 +70,17 @@ class VotingApp:
         tk.Label(frame, text="Please insert the Election Data USB Drive to start.", font=('Helvetica', 24), bg="#E8F5E9", fg="#333").pack(pady=20)
         tk.Label(frame, text="(Waiting for USB with 'ballot_<bmd_id>' folder)", font=('Helvetica', 14), bg="#E8F5E9", fg="#666").pack(pady=5)
 
+        tk.Button(
+            frame,
+            text="Polling Officer Menu",
+            font=('Helvetica', 14, 'bold'),
+            bg="#1565C0",
+            fg="white",
+            padx=18,
+            pady=8,
+            command=self.show_polling_officer_action_menu
+        ).pack(pady=(18, 0))
+
         self.check_usb_loop()
 
     def check_usb_loop(self):
