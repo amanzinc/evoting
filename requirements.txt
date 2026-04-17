@@ -15,3 +15,4 @@ cryptography
 RPi.GPIO; sys_platform == 'linux'
 adafruit-blinka; sys_platform == 'linux'
 adafruit-circuitpython-pn532; sys_platform == 'linux'
+smbus2; sys_platform == 'linux'

@@ -20,6 +20,32 @@ Python-based prototype for a Raspberry Pi Ballot Marking Device (BMD) with USB b
     - `[election_id, ballot_id, selected_commitment]`
 - Vote logs include `voter_id` and `token_id` from RFID payload.
 - Export uses stored AES key and writes encrypted-only output files.
+- DS3231 RTC support: system clock sync from I2C RTC at app startup.
+
+## DS3231 RTC Time Sync
+
+If a DS3231 is connected on I2C bus 1 (default address `0x68`), the app now attempts to
+sync system time from RTC during startup.
+
+Manual RTC set helper:
+
+```bash
+source venv/bin/activate
+python set_rtc_time.py
+```
+
+Set explicit RTC datetime:
+
+```bash
+python set_rtc_time.py --time "2026-04-17 14:35:00"
+```
+
+Optional flags:
+
+- `--bus 1` (default)
+- `--addr 0x68` (default)
+
+Note: Updating Linux system time may require elevated privileges depending on service/user capabilities.
 
 ## Main Files
 

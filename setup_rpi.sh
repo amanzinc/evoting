@@ -16,7 +16,7 @@ echo "[*] Updating package lists..."
 sudo apt-get update
 
 echo "[*] Installing dependencies..."
-sudo apt-get install -y python3-tk unclutter git python3-pip python3-venv libjpeg-dev zlib1g-dev libusb-1.0-0-dev python3-pil.imagetk
+sudo apt-get install -y python3-tk unclutter git python3-pip python3-venv libjpeg-dev zlib1g-dev libusb-1.0-0-dev python3-pil.imagetk i2c-tools python3-smbus
 
 # 2. Setup Virtual Environment and Install Python Packages
 PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

@@ -54,6 +54,8 @@ class VotingApp:
         self.print_status_after_id = None
         self.batch_print_status_after_id = None
         self.session_complete_after_id = None
+        self.clock_after_id = None
+        self.clock_label = None
 
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
@@ -283,8 +285,25 @@ class VotingApp:
             self.root.after(3000, self.show_usb_waiting_screen)
 
     def clear_container(self):
+        if self.clock_after_id:
+            try:
+                self.root.after_cancel(self.clock_after_id)
+            except Exception:
+                pass
+            self.clock_after_id = None
+        self.clock_label = None
+
         for widget in self.main_container.winfo_children():
             widget.destroy()
+
+    def _refresh_clock_label(self):
+        if not self.clock_label or not self.clock_label.winfo_exists():
+            self.clock_after_id = None
+            return
+
+        now_text = datetime.datetime.now().strftime("%d-%b-%Y  %I:%M:%S %p")
+        self.clock_label.config(text=now_text)
+        self.clock_after_id = self.root.after(1000, self._refresh_clock_label)
 
     def toggle_printing(self):
         """Toggle printing to avoid paper usage during testing."""
@@ -346,6 +365,19 @@ class VotingApp:
         # Overlay Status Label (Bottom Center)
         self.rfid_status_label = tk.Label(frame, text="Waiting for Card...", font=('Helvetica', 16, 'italic'), bg="#333", fg="#fff", padx=20, pady=5)
         self.rfid_status_label.place(relx=0.5, rely=0.9, anchor=tk.CENTER)
+
+        # Top-right live clock for polling staff visibility.
+        self.clock_label = tk.Label(
+            frame,
+            text="",
+            font=('Helvetica', 16, 'bold'),
+            bg="#111",
+            fg="#FFFFFF",
+            padx=14,
+            pady=6,
+        )
+        self.clock_label.place(relx=0.985, rely=0.03, anchor='ne')
+        self._refresh_clock_label()
         
         # Start Scanning Thread
         self.stop_scanning = False

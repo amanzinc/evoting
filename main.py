@@ -10,6 +10,7 @@ import shutil
 import time
 
 from rfid_service import RFIDService
+from rtc_ds3231 import sync_system_time_from_rtc
 
 PROVISIONED_FILENAME = ".provisioned"
 
@@ -190,6 +191,9 @@ def _setup_logging(log_dir):
 
 
 def main():
+    # Sync system clock from DS3231 RTC as early as possible.
+    sync_system_time_from_rtc()
+
     # ── Logging: must be first so every subsequent print is captured ──────────
     # Discover log dir early (before provisioning check) so logs persist.
     # Give mount services a short grace period during cold boot.
