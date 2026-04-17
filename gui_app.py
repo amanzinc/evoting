@@ -70,16 +70,21 @@ class VotingApp:
         tk.Label(frame, text="Please insert the Election Data USB Drive to start.", font=('Helvetica', 24), bg="#E8F5E9", fg="#333").pack(pady=20)
         tk.Label(frame, text="(Waiting for USB with 'ballot_<bmd_id>' folder)", font=('Helvetica', 14), bg="#E8F5E9", fg="#666").pack(pady=5)
 
-        tk.Button(
+        tk.Label(
             frame,
-            text="Polling Officer Menu",
-            font=('Helvetica', 14, 'bold'),
-            bg="#1565C0",
-            fg="white",
-            padx=18,
-            pady=8,
-            command=self.show_polling_officer_action_menu
-        ).pack(pady=(18, 0))
+            text="Scan authorized Polling Officer RFID card to open restricted menu.",
+            font=('Helvetica', 14, 'italic'),
+            bg="#E8F5E9",
+            fg="#555"
+        ).pack(pady=(16, 0))
+
+        # USB waiting screen allows polling officer menu access only via RFID authorization.
+        self.stop_scanning = False
+        self.officer_scan_queue = queue.Queue()
+        self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
+        self.officer_scan_thread.daemon = True
+        self.officer_scan_thread.start()
+        self.check_officer_scan_queue()
 
         self.check_usb_loop()
 
@@ -90,6 +95,7 @@ class VotingApp:
 
         if ballot_path and os.path.exists(ballot_path):
             # Found USB with encrypted ballot folder - trigger import
+            self.stop_scanning = True
             self.ballot_manager.usb_mount_point = usb_path
             self.import_encrypted_ballots(usb_path)
         else:
@@ -97,6 +103,7 @@ class VotingApp:
 
     def import_encrypted_ballots(self, usb_path):
         """Import encrypted ballots from USB and prepare for voting."""
+        self.stop_scanning = True
         self.clear_container()
         frame = tk.Frame(self.main_container, bg="#E8F5E9")
         frame.pack(expand=True, fill=tk.BOTH)
