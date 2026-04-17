@@ -1612,7 +1612,8 @@ class VotingApp:
                 time.sleep(0.5)
                 continue
 
-            result = self.rfid_service.read_card()
+            # Officer/admin cards may carry short payloads; do not enforce full voter-card sector threshold here.
+            result = self.rfid_service.read_card(min_required_sectors=1)
             if result:
                 self.officer_scan_queue.put(result)
                 break

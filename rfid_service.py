@@ -137,7 +137,7 @@ class RFIDService:
 
         return uid.hex()
 
-    def read_card(self):
+    def read_card(self, min_required_sectors=None):
         """
         Blocking call (with internal timeout loop) to read a card.
         Returns: (uid_string, decrypted_token_string) or None
@@ -145,6 +145,10 @@ class RFIDService:
         if not self.connected:
             # If not connected, we can't read.
             return None
+
+        required_sectors = self.MIN_REQUIRED_SECTORS if min_required_sectors is None else int(min_required_sectors)
+        if required_sectors < 1:
+            required_sectors = 1
 
         try:
             # Check for card
@@ -190,16 +194,16 @@ class RFIDService:
                     else:
                         raw_bytes.extend(data)
 
-                # Enforce reading at least N sectors before allowing decrypt.
-                if payload_complete and len(read_sectors) >= self.MIN_REQUIRED_SECTORS:
+                # Enforce minimum number of sectors before allowing decrypt.
+                if payload_complete and len(read_sectors) >= required_sectors:
                     break
 
                 block_no += 1
 
-            if len(read_sectors) < self.MIN_REQUIRED_SECTORS:
+            if len(read_sectors) < required_sectors:
                 print(
                     f"Card read rejected: only {len(read_sectors)} sectors read; "
-                    f"minimum required is {self.MIN_REQUIRED_SECTORS}."
+                    f"minimum required is {required_sectors}."
                 )
                 return None
 
