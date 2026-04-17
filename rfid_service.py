@@ -25,6 +25,7 @@ class RFIDService:
         self.pn532 = None
         self.i2c = None
         self.key_path = key_path
+        self.project_dir = os.path.dirname(os.path.abspath(__file__))
         self.private_key = None
         self.connected = False
         
@@ -45,17 +46,22 @@ class RFIDService:
         return 128 + (sector_no - 32) * 16, 16
 
     def load_key(self):
-        if not os.path.exists(self.key_path):
-            print(f"Key file {self.key_path} not found.")
+        key_path = self.key_path
+        if not os.path.isabs(key_path):
+            key_path = os.path.join(self.project_dir, key_path)
+
+        if not os.path.exists(key_path):
+            print(f"Key file {key_path} not found.")
             return False
             
         try:
             passphrase = hardware_crypto.get_hardware_passphrase()
-            with open(self.key_path, "rb") as kf:
+            with open(key_path, "rb") as kf:
                 self.private_key = serialization.load_pem_private_key(
                     kf.read(),
                     password=passphrase
                 )
+            self.key_path = key_path
             return True
         except Exception as e:
             print(f"Error loading private key: {e}")
