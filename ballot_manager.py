@@ -65,7 +65,6 @@ class BallotManager:
             f"/media/{user}", # Raspberry Pi OS Desktop default auto-mount
             "/media",         # Older OS mounts
             "/mnt",           # Manual mounts
-            os.path.dirname(os.path.abspath(__file__)) # Fallback to local project dir for testing
         ]
 
         for base_dir in search_dirs:

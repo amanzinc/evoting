@@ -67,6 +67,8 @@ class VotingApp:
         self.election_schedule = None
         self.election_schedule_path = None
         self._last_schedule_active = None
+        self.failed_usb_mount_path = None
+        self.last_usb_import_error = None
 
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
@@ -104,7 +106,7 @@ class VotingApp:
     def _on_root_configure(self, _event=None):
         self._enforce_kiosk_mode()
 
-    def show_usb_waiting_screen(self):
+    def show_usb_waiting_screen(self, error_message=None):
         self.clear_container()
         frame = tk.Frame(self.main_container, bg="#E8F5E9")
         frame.pack(expand=True, fill=tk.BOTH)
@@ -112,6 +114,18 @@ class VotingApp:
         tk.Label(frame, text="System Initialization", font=('Helvetica', 32, 'bold'), bg="#E8F5E9", fg="#2E7D32").pack(pady=(150, 20))
         tk.Label(frame, text="Please insert the Election Data USB Drive to start.", font=('Helvetica', 24), bg="#E8F5E9", fg="#333").pack(pady=20)
         tk.Label(frame, text="(Waiting for USB with 'ballot_<bmd_id>' folder)", font=('Helvetica', 14), bg="#E8F5E9", fg="#666").pack(pady=5)
+
+        message = error_message or self.last_usb_import_error
+        if message:
+            tk.Label(
+                frame,
+                text=message,
+                font=('Helvetica', 14),
+                bg="#E8F5E9",
+                fg="#C62828",
+                wraplength=900,
+                justify=tk.CENTER
+            ).pack(pady=(10, 0))
 
         tk.Label(
             frame,
@@ -143,12 +157,26 @@ class VotingApp:
         usb_path = self.ballot_manager._find_usb_drive(None)
         ballot_path = self.ballot_manager._find_ballot_folder(usb_path) if usb_path else None
 
+        # If last import failed for this same USB mount, wait for physical removal/reinsert
+        # before trying again to avoid an infinite decrypt-fail loop.
+        if usb_path and self.failed_usb_mount_path:
+            try:
+                same_mount = os.path.abspath(usb_path) == os.path.abspath(self.failed_usb_mount_path)
+            except Exception:
+                same_mount = usb_path == self.failed_usb_mount_path
+            if same_mount:
+                self.root.after(2000, self.check_usb_loop)
+                return
+
         if ballot_path and os.path.exists(ballot_path):
             # Found USB with encrypted ballot folder - trigger import
             self.stop_scanning = True
+            self.last_usb_import_error = None
             self.ballot_manager.usb_mount_point = usb_path
             self.import_encrypted_ballots(usb_path)
         else:
+            if self.failed_usb_mount_path:
+                self.failed_usb_mount_path = None
             self.root.after(2000, self.check_usb_loop)
 
     def import_encrypted_ballots(self, usb_path):
@@ -188,6 +216,8 @@ class VotingApp:
                 )
                 
                 if summary["status"] == "success":
+                    self.failed_usb_mount_path = None
+                    self.last_usb_import_error = None
                     os.environ["EVOTING_AES_KEY_PATH"] = os.path.join(ballot_path, "aes_key.dec")
                     status_label.config(
                         text=f"✓ Successfully imported {summary['total_ballots']} ballots\nProceeding to initialization...",
@@ -196,22 +226,20 @@ class VotingApp:
                     self.root.after(2000, self.initialize_core_services)
                 else:
                     error_msg = "\\n".join(summary["errors"])
-                    status_label.config(
-                        text=f"✗ Import failed:\\n{error_msg}",
-                        fg="#C62828"
+                    self.failed_usb_mount_path = usb_path
+                    self.last_usb_import_error = (
+                        f"Last import failed: {error_msg}\\n"
+                        "Remove this USB and insert a valid Election Data USB to retry."
                     )
-                    status_label.config(wraplength=600)
-                    # Retry after error
-                    self.root.after(5000, self.show_usb_waiting_screen)
+                    self.root.after(0, self.show_usb_waiting_screen)
                     
             except Exception as e:
-                status_label.config(
-                    text=f"✗ Error: {str(e)}",
-                    fg="#C62828",
-                    wraplength=600
+                self.failed_usb_mount_path = usb_path
+                self.last_usb_import_error = (
+                    f"Last import error: {str(e)}\\n"
+                    "Remove this USB and insert a valid Election Data USB to retry."
                 )
-                # Retry after error
-                self.root.after(5000, self.show_usb_waiting_screen)
+                self.root.after(0, self.show_usb_waiting_screen)
         
         # Run import in background thread to prevent UI freeze
         import_thread = threading.Thread(target=run_import, daemon=True)
