@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox
 import threading
 import queue
 import datetime
@@ -7,6 +7,7 @@ import time
 import os
 import subprocess
 import json
+import calendar
 
 class VotingApp:
     def __init__(self, root, data_handler, printer_service, ballot_manager, rfid_service, db_path, votes_log, tokens_log, log_dir):
@@ -2353,24 +2354,493 @@ class VotingApp:
         )
         messagebox.showinfo("System Status", msg, parent=self._admin_overlay)
 
+    def _show_numeric_keypad_dialog(self, title, prompt, initial_value=""):
+        parent = self._admin_overlay if self._admin_overlay and self._admin_overlay.winfo_exists() else self.root
+
+        dlg = tk.Toplevel(parent)
+        dlg.title(title)
+        dlg.transient(parent)
+        dlg.grab_set()
+
+        w, h = 760, 620
+        x = (self.root.winfo_screenwidth() // 2) - (w // 2)
+        y = (self.root.winfo_screenheight() // 2) - (h // 2)
+        dlg.geometry(f"{w}x{h}+{x}+{y}")
+        dlg.configure(bg="#0d1117")
+
+        tk.Label(
+            dlg,
+            text=title,
+            font=('Helvetica', 24, 'bold'),
+            bg="#0d1117",
+            fg="#f0f6fc",
+        ).pack(pady=(18, 6))
+
+        tk.Label(
+            dlg,
+            text=prompt,
+            font=('Helvetica', 14),
+            bg="#0d1117",
+            fg="#9da7b3",
+        ).pack(pady=(0, 10))
+
+        value_var = tk.StringVar(value=str(initial_value or ""))
+        entry = tk.Entry(
+            dlg,
+            textvariable=value_var,
+            font=('Helvetica', 26, 'bold'),
+            justify='center',
+            bd=0,
+            relief=tk.FLAT,
+            bg="#161b22",
+            fg="#f0f6fc",
+            insertbackground="#f0f6fc",
+        )
+        entry.pack(fill=tk.X, padx=30, pady=(0, 12), ipady=12)
+
+        pad = tk.Frame(dlg, bg="#0d1117")
+        pad.pack(expand=True, fill=tk.BOTH, padx=30, pady=8)
+
+        result = {"value": None}
+
+        def add_digit(d):
+            value_var.set(value_var.get() + d)
+
+        def backspace():
+            value_var.set(value_var.get()[:-1])
+
+        def clear_all():
+            value_var.set("")
+
+        def cancel():
+            result["value"] = None
+            dlg.destroy()
+
+        def save():
+            result["value"] = value_var.get().strip()
+            dlg.destroy()
+
+        buttons = [
+            ("1", lambda: add_digit("1")), ("2", lambda: add_digit("2")), ("3", lambda: add_digit("3")),
+            ("4", lambda: add_digit("4")), ("5", lambda: add_digit("5")), ("6", lambda: add_digit("6")),
+            ("7", lambda: add_digit("7")), ("8", lambda: add_digit("8")), ("9", lambda: add_digit("9")),
+            ("Clear", clear_all), ("0", lambda: add_digit("0")), ("Back", backspace),
+        ]
+
+        for idx, (label, cmd) in enumerate(buttons):
+            r, c = divmod(idx, 3)
+            tk.Button(
+                pad,
+                text=label,
+                command=cmd,
+                font=('Helvetica', 20, 'bold'),
+                bg="#1f6feb" if label.isdigit() else "#30363d",
+                fg="#f0f6fc",
+                activebackground="#1f6feb" if label.isdigit() else "#484f58",
+                relief=tk.FLAT,
+                bd=0,
+            ).grid(row=r, column=c, sticky='nsew', padx=8, pady=8)
+
+        for i in range(4):
+            pad.grid_rowconfigure(i, weight=1)
+        for i in range(3):
+            pad.grid_columnconfigure(i, weight=1)
+
+        action_row = tk.Frame(dlg, bg="#0d1117")
+        action_row.pack(fill=tk.X, padx=30, pady=(8, 18))
+
+        tk.Button(
+            action_row,
+            text="Cancel",
+            command=cancel,
+            font=('Helvetica', 16, 'bold'),
+            bg="#30363d",
+            fg="#f0f6fc",
+            relief=tk.FLAT,
+            bd=0,
+            padx=20,
+            pady=10,
+        ).pack(side=tk.LEFT)
+
+        tk.Button(
+            action_row,
+            text="Save",
+            command=save,
+            font=('Helvetica', 16, 'bold'),
+            bg="#238636",
+            fg="#f0f6fc",
+            relief=tk.FLAT,
+            bd=0,
+            padx=24,
+            pady=10,
+        ).pack(side=tk.RIGHT)
+
+        dlg.protocol("WM_DELETE_WINDOW", cancel)
+        entry.focus_set()
+        dlg.wait_window()
+        return result["value"]
+
+    def _show_datetime_picker_dialog(self, title, initial_dt=None):
+        parent = self._admin_overlay if self._admin_overlay and self._admin_overlay.winfo_exists() else self.root
+        if initial_dt is None:
+            initial_dt = datetime.datetime.now().replace(second=0, microsecond=0)
+
+        dlg = tk.Toplevel(parent)
+        dlg.title(title)
+        dlg.transient(parent)
+        dlg.grab_set()
+
+        w, h = 1120, 700
+        x = (self.root.winfo_screenwidth() // 2) - (w // 2)
+        y = (self.root.winfo_screenheight() // 2) - (h // 2)
+        dlg.geometry(f"{w}x{h}+{x}+{y}")
+        dlg.configure(bg="#0d1117")
+
+        tk.Label(
+            dlg,
+            text=title,
+            font=('Helvetica', 26, 'bold'),
+            bg="#0d1117",
+            fg="#f0f6fc",
+        ).pack(pady=(16, 6))
+
+        selected_part = tk.StringVar(value="year")
+        value_vars = {
+            "year": tk.IntVar(value=initial_dt.year),
+            "month": tk.IntVar(value=initial_dt.month),
+            "day": tk.IntVar(value=initial_dt.day),
+            "hour": tk.IntVar(value=initial_dt.hour),
+            "minute": tk.IntVar(value=initial_dt.minute),
+        }
+
+        scales = {}
+        preview_var = tk.StringVar(value="")
+        result = {"value": None}
+
+        def max_day_for(year_val, month_val):
+            return calendar.monthrange(year_val, month_val)[1]
+
+        def clamp_day():
+            y = value_vars["year"].get()
+            m = value_vars["month"].get()
+            md = max_day_for(y, m)
+            if value_vars["day"].get() > md:
+                value_vars["day"].set(md)
+            scales["day"].config(to=md)
+
+        def refresh_preview(*_):
+            try:
+                clamp_day()
+                dt = datetime.datetime(
+                    value_vars["year"].get(),
+                    value_vars["month"].get(),
+                    value_vars["day"].get(),
+                    value_vars["hour"].get(),
+                    value_vars["minute"].get(),
+                    0,
+                )
+                preview_var.set(dt.strftime("%Y-%m-%d %H:%M"))
+            except Exception:
+                preview_var.set("Invalid date/time")
+
+        content = tk.Frame(dlg, bg="#0d1117")
+        content.pack(expand=True, fill=tk.BOTH, padx=24, pady=8)
+        content.grid_columnconfigure(0, weight=3)
+        content.grid_columnconfigure(1, weight=2)
+        content.grid_rowconfigure(0, weight=1)
+
+        left = tk.Frame(content, bg="#0d1117")
+        left.grid(row=0, column=0, sticky='nsew', padx=(0, 14))
+        right = tk.Frame(content, bg="#161b22")
+        right.grid(row=0, column=1, sticky='nsew', padx=(14, 0))
+
+        tk.Label(
+            left,
+            text="Use sliders or keypad to set values",
+            font=('Helvetica', 14),
+            bg="#0d1117",
+            fg="#9da7b3",
+        ).pack(anchor='w', pady=(0, 8))
+
+        slider_frame = tk.Frame(left, bg="#0d1117")
+        slider_frame.pack(expand=True, fill=tk.BOTH)
+
+        parts = [
+            ("year", "Year", 2020, 2100),
+            ("month", "Month", 1, 12),
+            ("day", "Day", 1, 31),
+            ("hour", "Hour", 0, 23),
+            ("minute", "Minute", 0, 59),
+        ]
+
+        for idx, (key, label, min_v, max_v) in enumerate(parts):
+            row = tk.Frame(slider_frame, bg="#0d1117")
+            row.pack(fill=tk.X, pady=6)
+
+            btn = tk.Button(
+                row,
+                text=label,
+                command=lambda k=key: selected_part.set(k),
+                font=('Helvetica', 13, 'bold'),
+                bg="#30363d",
+                fg="#f0f6fc",
+                relief=tk.FLAT,
+                bd=0,
+                width=9,
+            )
+            btn.pack(side=tk.LEFT, padx=(0, 8))
+
+            val_label = tk.Label(
+                row,
+                textvariable=value_vars[key],
+                font=('Helvetica', 13, 'bold'),
+                bg="#0d1117",
+                fg="#f0f6fc",
+                width=4,
+            )
+            val_label.pack(side=tk.RIGHT, padx=(8, 0))
+
+            sc = tk.Scale(
+                row,
+                from_=min_v,
+                to=max_v,
+                orient=tk.HORIZONTAL,
+                variable=value_vars[key],
+                showvalue=False,
+                resolution=1,
+                highlightthickness=0,
+                troughcolor="#30363d",
+                bg="#0d1117",
+                fg="#f0f6fc",
+                activebackground="#1f6feb",
+                sliderrelief=tk.FLAT,
+            )
+            sc.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            sc.bind("<Button-1>", lambda _e, k=key: selected_part.set(k))
+            scales[key] = sc
+
+        tk.Label(
+            left,
+            text="Selected DateTime",
+            font=('Helvetica', 13),
+            bg="#0d1117",
+            fg="#9da7b3",
+        ).pack(anchor='w', pady=(8, 4))
+
+        tk.Entry(
+            left,
+            textvariable=preview_var,
+            state='readonly',
+            readonlybackground="#161b22",
+            fg="#f0f6fc",
+            font=('Helvetica', 20, 'bold'),
+            bd=0,
+            justify='center',
+        ).pack(fill=tk.X, ipady=10)
+
+        tk.Label(
+            right,
+            text="Numeric Keypad",
+            font=('Helvetica', 16, 'bold'),
+            bg="#161b22",
+            fg="#f0f6fc",
+        ).pack(pady=(14, 6))
+
+        tk.Label(
+            right,
+            text="Tap a field button first, then enter value",
+            font=('Helvetica', 11),
+            bg="#161b22",
+            fg="#9da7b3",
+        ).pack(pady=(0, 8))
+
+        buffer_var = tk.StringVar(value="")
+        tk.Entry(
+            right,
+            textvariable=buffer_var,
+            font=('Helvetica', 20, 'bold'),
+            justify='center',
+            bd=0,
+            relief=tk.FLAT,
+            bg="#0d1117",
+            fg="#f0f6fc",
+            insertbackground="#f0f6fc",
+        ).pack(fill=tk.X, padx=12, pady=(0, 10), ipady=8)
+
+        keypad = tk.Frame(right, bg="#161b22")
+        keypad.pack(expand=True, fill=tk.BOTH, padx=10, pady=8)
+
+        def push_digit(d):
+            buffer_var.set(buffer_var.get() + d)
+
+        def backspace():
+            buffer_var.set(buffer_var.get()[:-1])
+
+        def clear_buf():
+            buffer_var.set("")
+
+        def apply_buffer():
+            text = buffer_var.get().strip()
+            if not text:
+                return
+            part = selected_part.get()
+            limits = {
+                "year": (2020, 2100),
+                "month": (1, 12),
+                "day": (1, max_day_for(value_vars["year"].get(), value_vars["month"].get())),
+                "hour": (0, 23),
+                "minute": (0, 59),
+            }
+            try:
+                n = int(text)
+                lo, hi = limits[part]
+                if n < lo:
+                    n = lo
+                if n > hi:
+                    n = hi
+                value_vars[part].set(n)
+                refresh_preview()
+                buffer_var.set("")
+            except Exception:
+                messagebox.showerror("Invalid Number", "Please enter a valid number.", parent=dlg)
+
+        btn_defs = [
+            ("1", lambda: push_digit("1")), ("2", lambda: push_digit("2")), ("3", lambda: push_digit("3")),
+            ("4", lambda: push_digit("4")), ("5", lambda: push_digit("5")), ("6", lambda: push_digit("6")),
+            ("7", lambda: push_digit("7")), ("8", lambda: push_digit("8")), ("9", lambda: push_digit("9")),
+            ("Clear", clear_buf), ("0", lambda: push_digit("0")), ("Back", backspace),
+        ]
+
+        for idx, (label, cmd) in enumerate(btn_defs):
+            r, c = divmod(idx, 3)
+            tk.Button(
+                keypad,
+                text=label,
+                command=cmd,
+                font=('Helvetica', 18, 'bold'),
+                bg="#1f6feb" if label.isdigit() else "#30363d",
+                fg="#f0f6fc",
+                relief=tk.FLAT,
+                bd=0,
+            ).grid(row=r, column=c, sticky='nsew', padx=6, pady=6)
+
+        tk.Button(
+            right,
+            text="Apply to Selected Field",
+            command=apply_buffer,
+            font=('Helvetica', 14, 'bold'),
+            bg="#238636",
+            fg="#f0f6fc",
+            relief=tk.FLAT,
+            bd=0,
+            padx=12,
+            pady=10,
+        ).pack(fill=tk.X, padx=12, pady=(4, 12))
+
+        for i in range(4):
+            keypad.grid_rowconfigure(i, weight=1)
+        for i in range(3):
+            keypad.grid_columnconfigure(i, weight=1)
+
+        action = tk.Frame(dlg, bg="#0d1117")
+        action.pack(fill=tk.X, padx=24, pady=(0, 16))
+
+        def use_now():
+            now = datetime.datetime.now()
+            value_vars["year"].set(now.year)
+            value_vars["month"].set(now.month)
+            value_vars["day"].set(now.day)
+            value_vars["hour"].set(now.hour)
+            value_vars["minute"].set(now.minute)
+            refresh_preview()
+
+        def cancel():
+            result["value"] = None
+            dlg.destroy()
+
+        def save():
+            try:
+                refresh_preview()
+                dt = datetime.datetime(
+                    value_vars["year"].get(),
+                    value_vars["month"].get(),
+                    value_vars["day"].get(),
+                    value_vars["hour"].get(),
+                    value_vars["minute"].get(),
+                    0,
+                )
+            except Exception as exc:
+                messagebox.showerror("Invalid DateTime", str(exc), parent=dlg)
+                return
+            result["value"] = dt
+            dlg.destroy()
+
+        tk.Button(
+            action,
+            text="Now",
+            command=use_now,
+            font=('Helvetica', 14, 'bold'),
+            bg="#1565c0",
+            fg="#f0f6fc",
+            relief=tk.FLAT,
+            bd=0,
+            padx=16,
+            pady=10,
+        ).pack(side=tk.LEFT)
+
+        tk.Button(
+            action,
+            text="Cancel",
+            command=cancel,
+            font=('Helvetica', 14, 'bold'),
+            bg="#30363d",
+            fg="#f0f6fc",
+            relief=tk.FLAT,
+            bd=0,
+            padx=16,
+            pady=10,
+        ).pack(side=tk.RIGHT, padx=(10, 0))
+
+        tk.Button(
+            action,
+            text="Save",
+            command=save,
+            font=('Helvetica', 14, 'bold'),
+            bg="#238636",
+            fg="#f0f6fc",
+            relief=tk.FLAT,
+            bd=0,
+            padx=20,
+            pady=10,
+        ).pack(side=tk.RIGHT)
+
+        for var in value_vars.values():
+            var.trace_add("write", refresh_preview)
+        refresh_preview()
+
+        dlg.protocol("WM_DELETE_WINDOW", cancel)
+        dlg.wait_window()
+        return result["value"]
+
     def _admin_set_election_window(self, start_text=None, end_text=None, show_messages=True):
         if start_text is None:
-            start_text = simpledialog.askstring(
-                "Set Election Start",
-                "Enter start datetime (YYYY-MM-DD HH:MM):",
-                parent=self._admin_overlay,
-            )
-            if start_text is None:
+            start_dt = self._show_datetime_picker_dialog("Set Election Start Time")
+            if start_dt is None:
                 return False
+            start_text = start_dt.strftime("%Y-%m-%d %H:%M:%S")
 
         if end_text is None:
-            end_text = simpledialog.askstring(
-                "Set Election End",
-                "Enter end datetime (YYYY-MM-DD HH:MM):",
-                parent=self._admin_overlay,
-            )
-            if end_text is None:
+            suggested_end = None
+            try:
+                parsed_start = self._parse_schedule_datetime(start_text)
+                suggested_end = parsed_start + datetime.timedelta(hours=2)
+            except Exception:
+                suggested_end = datetime.datetime.now() + datetime.timedelta(hours=2)
+
+            end_dt = self._show_datetime_picker_dialog("Set Election End Time", initial_dt=suggested_end)
+            if end_dt is None:
                 return False
+            end_text = end_dt.strftime("%Y-%m-%d %H:%M:%S")
 
         try:
             start_dt = self._parse_schedule_datetime(start_text)
@@ -2432,14 +2902,17 @@ class VotingApp:
         return True
 
     def _admin_extend_end_time_prompt(self):
-        minutes = simpledialog.askinteger(
+        text_value = self._show_numeric_keypad_dialog(
             "Extend Election End",
-            "Enter minutes to extend end time:",
-            parent=self._admin_overlay,
-            minvalue=1,
-            maxvalue=1440,
+            "Enter minutes to extend election end time",
+            initial_value="30",
         )
-        if minutes is None:
+        if text_value is None:
+            return
+        try:
+            minutes = int(str(text_value).strip())
+        except Exception:
+            messagebox.showerror("Invalid Minutes", "Please enter a valid integer minutes value.")
             return
         self._admin_extend_end_time(minutes, show_messages=True)
 
