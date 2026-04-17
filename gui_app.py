@@ -2141,30 +2141,42 @@ class VotingApp:
         overlay.attributes('-topmost', True)
         overlay.configure(bg="#0d1117")
         overlay.transient(self.root)
-        overlay.grab_set()
         overlay.lift()
         overlay.focus_force()
         self._admin_overlay = overlay
 
-        header = tk.Frame(overlay, bg="#161b22", pady=22)
+        screen_h = self.root.winfo_screenheight()
+        compact_layout = screen_h < 900
+        header_pad_y = 12 if compact_layout else 22
+        header_title_font = ('Helvetica', 22, 'bold') if compact_layout else ('Helvetica', 28, 'bold')
+        header_sub_font = ('Helvetica', 12) if compact_layout else ('Helvetica', 14)
+        grid_pad_x = 34 if compact_layout else 60
+        grid_pad_y = 10 if compact_layout else 20
+        btn_font = ('Helvetica', 12, 'bold') if compact_layout else ('Helvetica', 15, 'bold')
+        btn_internal_pad_y = 9 if compact_layout else 20
+        btn_internal_pad_x = 12 if compact_layout else 16
+        btn_wrap = 280 if compact_layout else 340
+        btn_outer_pad_y = 5 if compact_layout else 8
+
+        header = tk.Frame(overlay, bg="#161b22", pady=header_pad_y)
         header.pack(fill=tk.X)
         tk.Label(
             header,
             text="POLLING OFFICER MENU",
-            font=('Helvetica', 28, 'bold'),
+            font=header_title_font,
             bg="#161b22",
             fg="#f0f6fc"
         ).pack()
         tk.Label(
             header,
             text="Restricted Access",
-            font=('Helvetica', 14),
+            font=header_sub_font,
             bg="#161b22",
             fg="#8b949e"
         ).pack(pady=(4, 0))
 
-        grid = tk.Frame(overlay, bg="#0d1117", pady=20)
-        grid.pack(expand=True, fill=tk.BOTH, padx=60)
+        grid = tk.Frame(overlay, bg="#0d1117", pady=grid_pad_y)
+        grid.pack(expand=True, fill=tk.BOTH, padx=grid_pad_x)
         grid.grid_columnconfigure(0, weight=1)
         grid.grid_columnconfigure(1, weight=1)
         for row_idx in range(8):
@@ -2175,22 +2187,22 @@ class VotingApp:
                 grid,
                 text=text,
                 command=cmd,
-                font=('Helvetica', 15, 'bold'),
+                font=btn_font,
                 bg=bg,
                 fg=fg,
                 activebackground=bg,
-                padx=16,
-                pady=20,
+                padx=btn_internal_pad_x,
+                pady=btn_internal_pad_y,
                 relief=tk.FLAT,
                 bd=0,
                 cursor='hand2',
-                wraplength=340
+                wraplength=btn_wrap
             ).grid(
                 row=row,
                 column=col,
                 columnspan=colspan,
                 padx=12,
-                pady=8,
+                pady=btn_outer_pad_y,
                 sticky='nsew'
             )
 
@@ -2233,7 +2245,9 @@ class VotingApp:
     def _close_admin_menu(self):
         if self._admin_overlay:
             try:
-                self._admin_overlay.grab_release()
+                current_grab = self.root.grab_current()
+                if current_grab is self._admin_overlay:
+                    self._admin_overlay.grab_release()
                 self._admin_overlay.destroy()
             except Exception:
                 pass
