@@ -249,6 +249,16 @@ class VotingApp:
         """Triggers secure export process without automatic shutdown."""
         if self._show_custom_confirm("Confirm End Election", "Are you sure you want to officially end the election?\nThis will export data to USB."):
             self.stop_scanning = True
+            
+            try:
+                schedule = self._load_election_schedule()
+                schedule["end_election_completed"] = True
+                self._save_election_schedule()
+            except Exception as exc:
+                print(f"[schedule] Warning: could not persist end-election completion flag early: {exc}")
+                
+            self.show_idle_screen()
+            
             self.show_printing_modal(text="Ending election and exporting logs...")
             threading.Thread(target=self._end_election_worker, daemon=True).start()
 
@@ -287,6 +297,7 @@ class VotingApp:
             "Export Successful",
             f"Election successfully ended.\nEncrypted logs safely exported to:\n{export_path}\n\nAutomatic shutdown is temporarily disabled."
         )
+        self.show_idle_screen()
 
     def _fail_end_election(self, error_message):
         self.close_printing_modal()
