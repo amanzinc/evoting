@@ -441,24 +441,10 @@ class RFIDService:
                 else:
                     raw_bytes.extend(data)
 
-            if payload_complete and len(read_sectors) >= required_sectors and read_blocks >= required_blocks:
+            if payload_complete:
                 break
 
             block_no += 1
-
-        if len(read_sectors) < required_sectors:
-            print(
-                f"Card read rejected: only {len(read_sectors)} sectors read; "
-                f"minimum required is {required_sectors}."
-            )
-            return None
-
-        if read_blocks < required_blocks:
-            print(
-                f"Card read rejected: only {read_blocks} data blocks read; "
-                f"minimum required is {required_blocks}."
-            )
-            return None
 
         if not raw_bytes:
             return None
