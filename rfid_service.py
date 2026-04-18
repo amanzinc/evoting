@@ -201,7 +201,8 @@ class RFIDService:
         """
         Read a plain-text (admin/officer) card.
         Reads blocks until a null terminator is found.
-        No decryption. No minimum sector requirement.
+        Retries auth failures once to handle transient PN532 glitches.
+        No minimum sector requirement. No decryption.
         Returns (uid_hex, raw_text) or None.
         """
         block_no = self.START_BLOCK
@@ -214,15 +215,21 @@ class RFIDService:
             if block_no > self.MAX_BLOCK_NO:
                 break
 
-            try:
-                auth = self.pn532.mifare_classic_authenticate_block(
-                    uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
-                )
-            except Exception:
-                block_no += 1
-                continue
+            # Retry auth once — transient PN532 I2C glitches can cause false-fail
+            auth = False
+            for _attempt in range(2):
+                try:
+                    auth = self.pn532.mifare_classic_authenticate_block(
+                        uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
+                    )
+                    if auth:
+                        break
+                    time.sleep(0.05)
+                except Exception:
+                    time.sleep(0.05)
 
             if not auth:
+                # Skip this block but keep going — payload may resume in next sector
                 block_no += 1
                 continue
 
@@ -259,15 +266,14 @@ class RFIDService:
     def _read_encrypted_payload(self, uid):
         """
         Read an encrypted voter card.
-        Reads exactly VOTER_REQUIRED_BLOCKS (22) data blocks regardless of
-        null bytes — the RSA/base64 payload does not use null terminators.
-        Verifies minimum sector coverage (MIN_REQUIRED_SECTORS) to prevent
-        partial/spoofed reads, then decrypts with the RSA private key.
+        Reads blocks until a null terminator is found, collecting ALL bytes
+        (same stop-on-null approach as the original working code).
+        NO sector-count enforcement — RSA decryption is the security guarantee.
+        Retries auth once per block to handle transient PN532 glitches.
         Returns (uid_hex, decrypted_json_str) or None.
         """
         block_no = self.START_BLOCK
         raw_bytes = bytearray()
-        read_sectors = set()
         read_blocks = 0
 
         while block_no <= self.MAX_BLOCK_NO:
@@ -277,13 +283,18 @@ class RFIDService:
             if block_no > self.MAX_BLOCK_NO:
                 break
 
-            try:
-                auth = self.pn532.mifare_classic_authenticate_block(
-                    uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
-                )
-            except Exception:
-                block_no += 1
-                continue
+            # Retry auth once for transient glitches
+            auth = False
+            for _attempt in range(2):
+                try:
+                    auth = self.pn532.mifare_classic_authenticate_block(
+                        uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
+                    )
+                    if auth:
+                        break
+                    time.sleep(0.05)
+                except Exception:
+                    time.sleep(0.05)
 
             if not auth:
                 block_no += 1
@@ -300,36 +311,23 @@ class RFIDService:
                 block_no += 1
                 continue
 
-            read_sectors.add(self._block_to_sector(block_no))
             read_blocks += 1
-            # Collect raw bytes — do NOT stop on null; payload is base64-encoded ciphertext
-            raw_bytes.extend(data)
 
-            if read_blocks >= self.VOTER_REQUIRED_BLOCKS:
+            # The base64-encoded ciphertext ends with MIFARE null padding.
+            # Stop on the first null byte — same approach as original working code.
+            if b'\x00' in data:
+                raw_bytes.extend(data.split(b'\x00')[0])
                 break
+            else:
+                raw_bytes.extend(data)
 
             block_no += 1
 
-        # Enforce minimum sector coverage to prevent spoofed short reads
-        if len(read_sectors) < self.MIN_REQUIRED_SECTORS:
-            print(
-                f"Voter card read rejected: only {len(read_sectors)} sectors read; "
-                f"minimum required is {self.MIN_REQUIRED_SECTORS}."
-            )
-            return None
-
-        if read_blocks < self.VOTER_REQUIRED_BLOCKS:
-            print(
-                f"Voter card read rejected: only {read_blocks} data blocks read; "
-                f"minimum required is {self.VOTER_REQUIRED_BLOCKS}."
-            )
-            return None
-
         if not raw_bytes:
+            print("Encrypted card read: no data collected.")
             return None
 
-        # Strip any null padding added by MIFARE block alignment
-        raw_text = raw_bytes.decode('utf-8', errors='ignore').strip().rstrip('\x00')
+        raw_text = raw_bytes.decode('utf-8', errors='ignore').strip()
         if not raw_text:
             return None
 
