@@ -3084,6 +3084,150 @@ class VotingApp:
         dlg.wait_window()
         return result["value"]
 
+    def _show_minutes_spinner_dialog(self, title, prompt, initial_value=30, min_val=5, max_val=480, step=5):
+        parent = self._admin_overlay if self._admin_overlay and self._admin_overlay.winfo_exists() else self.root
+
+        dlg = tk.Toplevel(parent)
+        dlg.title(title)
+        dlg.transient(parent)
+        dlg.attributes('-topmost', True)
+        dlg.overrideredirect(True)
+
+        w, h = 500, 480
+        x = (self.root.winfo_screenwidth() // 2) - (w // 2)
+        y = (self.root.winfo_screenheight() // 2) - (h // 2)
+        dlg.geometry(f"{w}x{h}+{x}+{y}")
+        dlg.configure(bg="#6FAFA8")
+        dlg.lift()
+        dlg.focus_force()
+
+        tk.Label(
+            dlg,
+            text=title,
+            font=('Helvetica', 22, 'bold'),
+            bg="#6FAFA8",
+            fg="#1d2a2a",
+        ).pack(pady=(24, 8))
+
+        tk.Label(
+            dlg,
+            text=prompt,
+            font=('Helvetica', 14),
+            bg="#6FAFA8",
+            fg="#1d2a2a",
+            wraplength=400,
+            justify='center'
+        ).pack(pady=(0, 20))
+
+        card = tk.Frame(dlg, bg="#6FAFA8")
+        card.pack(expand=True, fill=tk.BOTH, padx=40)
+
+        value_var = tk.IntVar(value=initial_value)
+
+        def inc():
+            v = value_var.get() + step
+            if v > max_val: v = min_val
+            value_var.set(v)
+
+        def dec():
+            v = value_var.get() - step
+            if v < min_val: v = max_val
+            value_var.set(v)
+
+        spinner_frame = tk.Frame(card, bg="#6FAFA8")
+        spinner_frame.pack(pady=10)
+
+        tk.Button(
+            spinner_frame,
+            text="▲",
+            command=inc,
+            font=('Helvetica', 20, 'bold'),
+            bg="#2f6f69",
+            fg="white",
+            relief=tk.FLAT,
+            bd=0,
+            padx=20,
+            pady=10
+        ).pack(fill=tk.X, pady=(0, 5))
+
+        tk.Label(
+            spinner_frame,
+            textvariable=value_var,
+            font=('Helvetica', 42, 'bold'),
+            bg="#f7f7f7",
+            fg="#1f2933",
+            pady=15,
+            width=4,
+            anchor='center'
+        ).pack(fill=tk.X)
+
+        tk.Label(
+            spinner_frame,
+            text="minutes",
+            font=('Helvetica', 12, 'bold'),
+            bg="#f7f7f7",
+            fg="#555",
+        ).place(relx=0.5, rely=0.85, anchor='center')
+
+        tk.Button(
+            spinner_frame,
+            text="▼",
+            command=dec,
+            font=('Helvetica', 20, 'bold'),
+            bg="#2f6f69",
+            fg="white",
+            relief=tk.FLAT,
+            bd=0,
+            padx=20,
+            pady=10
+        ).pack(fill=tk.X, pady=(5, 0))
+
+        result = {"value": None}
+
+        def cancel():
+            result["value"] = None
+            dlg.destroy()
+
+        def save():
+            result["value"] = value_var.get()
+            dlg.destroy()
+
+        action_row = tk.Frame(dlg, bg="#6FAFA8")
+        action_row.pack(fill=tk.X, padx=40, pady=(20, 30))
+
+        tk.Button(
+            action_row,
+            text="Cancel",
+            command=cancel,
+            font=('Helvetica', 16, 'bold'),
+            bg="#4a6e6a",
+            fg="white",
+            relief=tk.FLAT,
+            bd=0,
+            padx=25,
+            pady=10,
+            cursor="hand2"
+        ).pack(side=tk.LEFT)
+
+        tk.Button(
+            action_row,
+            text="Save",
+            command=save,
+            font=('Helvetica', 16, 'bold'),
+            bg="#1d2a2a",
+            fg="white",
+            relief=tk.FLAT,
+            bd=0,
+            padx=35,
+            pady=10,
+            cursor="hand2"
+        ).pack(side=tk.RIGHT)
+
+        dlg.protocol("WM_DELETE_WINDOW", cancel)
+        dlg.grab_set()
+        dlg.wait_window()
+        return result["value"]
+
     def _admin_set_election_window(self, start_text=None, end_text=None, show_messages=True):
         had_admin_overlay = bool(self._admin_overlay and self._admin_overlay.winfo_exists())
 
@@ -3169,18 +3313,15 @@ class VotingApp:
         return True
 
     def _admin_extend_end_time_prompt(self):
-        text_value = self._show_numeric_keypad_dialog(
+        minutes = self._show_minutes_spinner_dialog(
             "Extend Election End",
-            "Enter minutes to extend election end time",
-            initial_value="30",
+            "Select minutes to extend the election end time",
+            initial_value=30,
+            step=15
         )
-        if text_value is None:
+        if minutes is None:
             return
-        try:
-            minutes = int(str(text_value).strip())
-        except Exception:
-            self._show_custom_messagebox("Invalid Minutes", "Please enter a valid integer minutes value.", alert_type='error')
-            return
+        
         self._admin_extend_end_time(minutes, show_messages=True)
 
     def _admin_reset_device(self):
