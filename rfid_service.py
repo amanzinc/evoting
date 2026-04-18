@@ -31,7 +31,8 @@ class RFIDService:
         
         self.START_BLOCK = 4
         self.MAX_BLOCK_NO = 255
-        self.MIN_REQUIRED_SECTORS = 21
+        self.MIN_REQUIRED_SECTORS = 21   # Voter card spans at least 21 sectors
+        self.VOTER_REQUIRED_BLOCKS = 22  # Voter payload is exactly 22 data blocks
         self.KEY_DEFAULT = b'\xFF' * 6
 
     def _block_to_sector(self, block_no):
@@ -192,163 +193,359 @@ class RFIDService:
 
         return uid.hex()
 
-    def read_card(self, min_required_sectors=None, min_required_blocks=None):
+    # ─────────────────────────────────────────────────────────────
+    # Internal block-reading helpers
+    # ─────────────────────────────────────────────────────────────
+
+    def _read_plain_payload(self, uid):
         """
-        Blocking call (with internal timeout loop) to read a card.
-        Returns: (uid_string, decrypted_token_string) or None
+        Read a plain-text (admin/officer) card.
+        Reads blocks until a null terminator is found.
+        No decryption. No minimum sector requirement.
+        Returns (uid_hex, raw_text) or None.
         """
-        if not self.connected:
-            # If not connected, we can't read.
+        block_no = self.START_BLOCK
+        raw_bytes = bytearray()
+
+        while block_no <= self.MAX_BLOCK_NO:
+            # Skip trailer blocks
+            while self.is_trailer_block(block_no):
+                block_no += 1
+            if block_no > self.MAX_BLOCK_NO:
+                break
+
+            try:
+                auth = self.pn532.mifare_classic_authenticate_block(
+                    uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
+                )
+            except Exception:
+                block_no += 1
+                continue
+
+            if not auth:
+                block_no += 1
+                continue
+
+            try:
+                raw_block = self.pn532.mifare_classic_read_block(block_no)
+            except Exception:
+                block_no += 1
+                continue
+
+            data = self._normalize_block_data(raw_block)
+            if data is None:
+                block_no += 1
+                continue
+
+            # Stop at null terminator — plain payloads are null-terminated
+            if b'\x00' in data:
+                raw_bytes.extend(data.split(b'\x00')[0])
+                break
+            else:
+                raw_bytes.extend(data)
+
+            block_no += 1
+
+        if not raw_bytes:
             return None
 
+        raw_text = raw_bytes.decode('utf-8', errors='ignore').strip()
+        if not raw_text:
+            return None
+
+        print(f"✅ Plain card read success: {raw_text}")
+        return (uid.hex(), raw_text)
+
+    def _read_encrypted_payload(self, uid):
+        """
+        Read an encrypted voter card.
+        Reads exactly VOTER_REQUIRED_BLOCKS (22) data blocks regardless of
+        null bytes — the RSA/base64 payload does not use null terminators.
+        Verifies minimum sector coverage (MIN_REQUIRED_SECTORS) to prevent
+        partial/spoofed reads, then decrypts with the RSA private key.
+        Returns (uid_hex, decrypted_json_str) or None.
+        """
+        block_no = self.START_BLOCK
+        raw_bytes = bytearray()
+        read_sectors = set()
+        read_blocks = 0
+
+        while block_no <= self.MAX_BLOCK_NO:
+            # Skip trailer blocks
+            while self.is_trailer_block(block_no):
+                block_no += 1
+            if block_no > self.MAX_BLOCK_NO:
+                break
+
+            try:
+                auth = self.pn532.mifare_classic_authenticate_block(
+                    uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
+                )
+            except Exception:
+                block_no += 1
+                continue
+
+            if not auth:
+                block_no += 1
+                continue
+
+            try:
+                raw_block = self.pn532.mifare_classic_read_block(block_no)
+            except Exception:
+                block_no += 1
+                continue
+
+            data = self._normalize_block_data(raw_block)
+            if data is None:
+                block_no += 1
+                continue
+
+            read_sectors.add(self._block_to_sector(block_no))
+            read_blocks += 1
+            # Collect raw bytes — do NOT stop on null; payload is base64-encoded ciphertext
+            raw_bytes.extend(data)
+
+            if read_blocks >= self.VOTER_REQUIRED_BLOCKS:
+                break
+
+            block_no += 1
+
+        # Enforce minimum sector coverage to prevent spoofed short reads
+        if len(read_sectors) < self.MIN_REQUIRED_SECTORS:
+            print(
+                f"Voter card read rejected: only {len(read_sectors)} sectors read; "
+                f"minimum required is {self.MIN_REQUIRED_SECTORS}."
+            )
+            return None
+
+        if read_blocks < self.VOTER_REQUIRED_BLOCKS:
+            print(
+                f"Voter card read rejected: only {read_blocks} data blocks read; "
+                f"minimum required is {self.VOTER_REQUIRED_BLOCKS}."
+            )
+            return None
+
+        if not raw_bytes:
+            return None
+
+        # Strip any null padding added by MIFARE block alignment
+        raw_text = raw_bytes.decode('utf-8', errors='ignore').strip().rstrip('\x00')
+        if not raw_text:
+            return None
+
+        # Load private key if not already loaded
+        if not self.private_key:
+            if not self.load_key():
+                print("Voter card decryption failed: private key not available.")
+                return None
+
+        try:
+            import base64
+            compact = "".join(raw_text.split())
+            encrypted_bytes = base64.b64decode(compact)
+            decrypted_bytes = self.private_key.decrypt(
+                encrypted_bytes,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None
+                )
+            )
+            decrypted = decrypted_bytes.decode("utf-8")
+        except Exception as e:
+            print(f"Voter card decryption failed: {e}")
+            return None
+
+        try:
+            import json
+            token_data = json.loads(decrypted)
+            print("\n✅ Voter card read success! Data:")
+            print("-----------------------------")
+            for k, v in token_data.items():
+                print(f"{k}: {v}")
+            print("-----------------------------\n")
+        except Exception:
+            print(f"✅ Voter card read success (raw): {decrypted}")
+
+        return (uid.hex(), decrypted)
+
+    def _read_auto_payload(self, uid, min_required_sectors, min_required_blocks):
+        """
+        Legacy auto-detect mode: reads blocks, then decides between plain and
+        encrypted via a base64 heuristic. Kept for backward compatibility only.
+        """
         required_sectors = self.MIN_REQUIRED_SECTORS if min_required_sectors is None else int(min_required_sectors)
+        required_blocks = 1 if min_required_blocks is None else int(min_required_blocks)
         if required_sectors < 1:
             required_sectors = 1
-
-        required_blocks = 1 if min_required_blocks is None else int(min_required_blocks)
         if required_blocks < 1:
             required_blocks = 1
 
+        block_no = self.START_BLOCK
+        raw_bytes = bytearray()
+        read_sectors = set()
+        read_blocks = 0
+        payload_complete = False
+
+        while block_no <= self.MAX_BLOCK_NO:
+            while self.is_trailer_block(block_no):
+                block_no += 1
+            if block_no > self.MAX_BLOCK_NO:
+                break
+
+            try:
+                auth = self.pn532.mifare_classic_authenticate_block(
+                    uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
+                )
+            except Exception:
+                block_no += 1
+                continue
+
+            if not auth:
+                block_no += 1
+                continue
+
+            try:
+                raw_block = self.pn532.mifare_classic_read_block(block_no)
+            except Exception:
+                block_no += 1
+                continue
+
+            data = self._normalize_block_data(raw_block)
+            if data is None:
+                block_no += 1
+                continue
+
+            read_sectors.add(self._block_to_sector(block_no))
+            read_blocks += 1
+
+            if not payload_complete:
+                if b'\x00' in data:
+                    raw_bytes.extend(data.split(b'\x00')[0])
+                    payload_complete = True
+                else:
+                    raw_bytes.extend(data)
+
+            if payload_complete and len(read_sectors) >= required_sectors and read_blocks >= required_blocks:
+                break
+
+            block_no += 1
+
+        if len(read_sectors) < required_sectors:
+            print(
+                f"Card read rejected: only {len(read_sectors)} sectors read; "
+                f"minimum required is {required_sectors}."
+            )
+            return None
+
+        if read_blocks < required_blocks:
+            print(
+                f"Card read rejected: only {read_blocks} data blocks read; "
+                f"minimum required is {required_blocks}."
+            )
+            return None
+
+        if not raw_bytes:
+            return None
+
+        raw_text = raw_bytes.decode('utf-8', errors='ignore').strip()
+        if not raw_text:
+            return None
+
+        # Heuristic: if it looks like base64 ciphertext → try to decrypt
+        compact = "".join(raw_text.split())
+        base64_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+        looks_like_base64_ciphertext = (
+            len(compact) >= 128
+            and len(compact) % 4 == 0
+            and all(ch in base64_chars for ch in compact)
+        )
+
+        if not looks_like_base64_ciphertext:
+            print(f"✅ Card Read Success! Plain payload: {raw_text}")
+            return (uid.hex(), raw_text)
+
+        if not self.private_key:
+            if not self.load_key():
+                return None
+
         try:
-            # Check for card
+            import base64
+            encrypted_bytes = base64.b64decode(compact)
+            decrypted_bytes = self.private_key.decrypt(
+                encrypted_bytes,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None
+                )
+            )
+            decrypted = decrypted_bytes.decode("utf-8")
+        except Exception as e:
+            print(f"Decryption failed: {e}")
+            # Fallback: return as plain text
+            try:
+                if raw_text:
+                    print(f"✅ Card Read Success! Plain payload (fallback): {raw_text}")
+                    return (uid.hex(), raw_text)
+            except Exception:
+                pass
+            return None
+
+        try:
+            import json
+            token_data = json.loads(decrypted)
+            print("\n✅ Card Read Success! Data:")
+            print("-----------------------------")
+            for k, v in token_data.items():
+                print(f"{k}: {v}")
+            print("-----------------------------\n")
+        except Exception:
+            print(f"✅ Card Read Success! Token Payload (String): {decrypted}")
+
+        return (uid.hex(), decrypted)
+
+    # ─────────────────────────────────────────────────────────────
+    # Public API
+    # ─────────────────────────────────────────────────────────────
+
+    def read_card(self, mode='auto', min_required_sectors=None, min_required_blocks=None):
+        """
+        Read an RFID card and return its payload.
+
+        Parameters
+        ----------
+        mode : str
+            'plain'     – Admin/officer card. Plain-text payload, no decryption.
+                          Reads until null terminator; no minimum sector requirement.
+            'encrypted' – Voter card. RSA-encrypted payload across 22 data blocks.
+                          Enforces MIN_REQUIRED_SECTORS and VOTER_REQUIRED_BLOCKS,
+                          then decrypts with the hardware-bound private key.
+            'auto'      – Legacy heuristic: auto-detect by base64 inspection.
+                          Use explicit modes for new callers.
+
+        Returns
+        -------
+        (uid_hex, payload_str) on success, or None on failure / card not present.
+        """
+        if not self.connected:
+            return None
+
+        try:
             raw_uid = self.pn532.read_passive_target(timeout=0.5)
             uid = self._normalize_uid(raw_uid)
             if uid is None:
                 return None
-            
-            # Card Found
+
             print(f"Card Detected: {list(uid)}")
-            
-            # Read Data
-            block_no = self.START_BLOCK
-            raw_bytes = bytearray()
-            read_sectors = set()
-            read_blocks = 0
-            payload_complete = False
 
-            while block_no <= self.MAX_BLOCK_NO:
-                while self.is_trailer_block(block_no):
-                    block_no += 1
-
-                if block_no > self.MAX_BLOCK_NO:
-                    break
-                
-                try:
-                    auth = self.pn532.mifare_classic_authenticate_block(
-                        uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
-                    )
-                except Exception:
-                    block_no += 1
-                    continue
-                
-                if not auth:
-                    block_no += 1
-                    continue
-                    
-                try:
-                    raw_block = self.pn532.mifare_classic_read_block(block_no)
-                except Exception:
-                    block_no += 1
-                    continue
-
-                data = self._normalize_block_data(raw_block)
-                if data is None:
-                    block_no += 1
-                    continue
-
-                read_sectors.add(self._block_to_sector(block_no))
-                read_blocks += 1
-
-                if not payload_complete:
-                    if b'\x00' in data:
-                        raw_bytes.extend(data.split(b'\x00')[0])
-                        payload_complete = True
-                    else:
-                        raw_bytes.extend(data)
-
-                # Enforce minimum number of sectors before allowing decrypt.
-                if payload_complete and len(read_sectors) >= required_sectors and read_blocks >= required_blocks:
-                    break
-
-                block_no += 1
-
-            if len(read_sectors) < required_sectors:
-                print(
-                    f"Card read rejected: only {len(read_sectors)} sectors read; "
-                    f"minimum required is {required_sectors}."
-                )
-                return None
-
-            if read_blocks < required_blocks:
-                print(
-                    f"Card read rejected: only {read_blocks} data blocks read; "
-                    f"minimum required is {required_blocks}."
-                )
-                return None
-
-            if not raw_bytes:
-                return None
-
-            raw_text = raw_bytes.decode('utf-8', errors='ignore').strip()
-            if not raw_text:
-                return None
-
-            # Plain officer/admin payloads are small strings. Check them first,
-            # then attempt RSA decrypt only for data that looks like ciphertext.
-            compact = "".join(raw_text.split())
-            base64_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
-            looks_like_base64_ciphertext = (
-                len(compact) >= 128
-                and len(compact) % 4 == 0
-                and all(ch in base64_chars for ch in compact)
-            )
-
-            if not looks_like_base64_ciphertext:
-                print(f"✅ Card Read Success! Plain payload: {raw_text}")
-                return (uid.hex(), raw_text)
-
-            # Decrypt
-            if not self.private_key:
-                if not self.load_key():
-                    return None
-
-            try:
-                import base64
-                encrypted_bytes = base64.b64decode(compact)
-                
-                decrypted_bytes = self.private_key.decrypt(
-                    encrypted_bytes,
-                    padding.OAEP(
-                        mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                        algorithm=hashes.SHA256(),
-                        label=None
-                    )
-                )
-                decrypted = decrypted_bytes.decode("utf-8")
-            except Exception as e:
-                print(f"Decryption failed: {e}")
-                # Allow controlled plaintext payload cards (e.g. admin trigger card).
-                try:
-                    if raw_text:
-                        print(f"✅ Card Read Success! Plain payload: {raw_text}")
-                        return (uid.hex(), raw_text)
-                except Exception:
-                    pass
-                return None
-            
-            try:
-                import json
-                token_data = json.loads(decrypted)
-                print("\n✅ Card Read Success! Data:")
-                print("-----------------------------")
-                for k, v in token_data.items():
-                    print(f"{k}: {v}")
-                print("-----------------------------\n")
-            except Exception:
-                # Fallback for non-JSON data
-                print(f"✅ Card Read Success! Token Payload (String): {decrypted}")
-
-            return (uid.hex(), decrypted)
+            if mode == 'plain':
+                return self._read_plain_payload(uid)
+            elif mode == 'encrypted':
+                return self._read_encrypted_payload(uid)
+            else:
+                # 'auto' — legacy backward-compat path
+                return self._read_auto_payload(uid, min_required_sectors, min_required_blocks)
 
         except Exception as e:
             print(f"Error reading card: {e}")

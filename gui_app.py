@@ -738,14 +738,13 @@ class VotingApp:
 
     def rfid_scan_loop(self):
         while not self.stop_scanning:
-            # Blocking read (or semi-active loop)
-            # Allow min_required_sectors=1 to let polling officer cards through.
-            result = self.rfid_service.read_card(min_required_sectors=1) 
+            # Voter cards are RSA-encrypted across 22 blocks — use explicit encrypted mode.
+            result = self.rfid_service.read_card(mode='encrypted')
             if result:
                 # uid, token
                 self.scan_queue.put(result)
                 break
-            time.sleep(0.5) 
+            time.sleep(0.5)
 
     def check_scan_queue(self):
         try:
@@ -2004,8 +2003,8 @@ class VotingApp:
                 time.sleep(0.5)
                 continue
 
-            # Officer/admin cards may carry short payloads; do not enforce full voter-card sector threshold here.
-            result = self.rfid_service.read_card(min_required_sectors=1, min_required_blocks=2)
+            # Admin/officer cards carry a plain-text phrase — use explicit plain mode.
+            result = self.rfid_service.read_card(mode='plain')
             if result:
                 self.officer_scan_queue.put(result)
                 break
