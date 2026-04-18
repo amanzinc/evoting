@@ -2741,12 +2741,12 @@ class VotingApp:
         dlg.attributes('-topmost', True)
         dlg.overrideredirect(True)
 
-        w, h = 600, 480
+        w, h = 600, 600
         x = (self.root.winfo_screenwidth() // 2) - (w // 2)
         y = (self.root.winfo_screenheight() // 2) - (h // 2)
         dlg.geometry(f"{w}x{h}+{x}+{y}")
         dlg.configure(bg="#6FAFA8")
-        dlg.minsize(580, 460)
+        dlg.minsize(580, 600)
         dlg.lift()
         dlg.focus_force()
 
@@ -3054,7 +3054,7 @@ class VotingApp:
 
         tk.Button(
             action,
-            text="Save",
+            text="Confirm & Next" if "Start" in title else "Save",
             command=save,
             font=('Helvetica', 14, 'bold'),
             bg="#f97316",
