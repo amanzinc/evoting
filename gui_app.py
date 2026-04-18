@@ -719,7 +719,8 @@ class VotingApp:
     def rfid_scan_loop(self):
         while not self.stop_scanning:
             # Blocking read (or semi-active loop)
-            result = self.rfid_service.read_card() 
+            # Allow min_required_sectors=1 to let polling officer cards through.
+            result = self.rfid_service.read_card(min_required_sectors=1) 
             if result:
                 # uid, token
                 self.scan_queue.put(result)
@@ -779,6 +780,11 @@ class VotingApp:
         return eid
 
     def on_card_scanned(self, token_payload):
+        # Intercept Polling Officer Cards early
+        if self._is_polling_officer_token(token_payload):
+            self.on_officer_card_scanned(token_payload)
+            return
+
         # 0. Check Printer Status First
         if hasattr(self.printer_service, 'is_printer_connected') and not self.printer_service.is_printer_connected():
             print("❌ Printer not connected. Rejecting voter session.")
@@ -2719,19 +2725,19 @@ class VotingApp:
         dlg.attributes('-topmost', True)
         dlg.overrideredirect(True)
 
-        w, h = 860, 640
+        w, h = 600, 480
         x = (self.root.winfo_screenwidth() // 2) - (w // 2)
         y = (self.root.winfo_screenheight() // 2) - (h // 2)
         dlg.geometry(f"{w}x{h}+{x}+{y}")
         dlg.configure(bg="#6FAFA8")
-        dlg.minsize(760, 560)
+        dlg.minsize(580, 460)
         dlg.lift()
         dlg.focus_force()
 
         tk.Label(
             dlg,
             text=title,
-            font=('Helvetica', 30, 'bold'),
+            font=('Helvetica', 22, 'bold'),
             bg="#6FAFA8",
             fg="#1d2a2a",
         ).pack(pady=(18, 8))
@@ -2765,7 +2771,7 @@ class VotingApp:
         tk.Label(
             card,
             text="Select Date",
-            font=('Helvetica', 16, 'bold'),
+            font=('Helvetica', 14, 'bold'),
             bg="#6FAFA8",
             fg="#1d2a2a",
             anchor='w',
@@ -2775,13 +2781,13 @@ class VotingApp:
             card,
             textvariable=date_var,
             command=lambda: open_calendar_popup(),
-            font=('Helvetica', 24, 'bold'),
+            font=('Helvetica', 18, 'bold'),
             bg="#f7f7f7",
             fg="#1f2933",
             relief=tk.FLAT,
             bd=0,
-            padx=16,
-            pady=12,
+            padx=12,
+            pady=8,
             anchor='w',
         )
         date_btn.pack(fill=tk.X, pady=(0, 16))
@@ -2789,39 +2795,39 @@ class VotingApp:
         tk.Label(
             card,
             text="Select Time",
-            font=('Helvetica', 16, 'bold'),
+            font=('Helvetica', 12, 'bold'),
             bg="#6FAFA8",
             fg="#1d2a2a",
             anchor='w',
-        ).pack(fill=tk.X, pady=(0, 4))
+        ).pack(fill=tk.X, pady=(0, 2))
 
         time_combo = ttk.Combobox(
             card,
             values=time_options,
             textvariable=time_var,
             state='readonly',
-            font=('Helvetica', 22),
+            font=('Helvetica', 18, 'bold'),
+            width=10,
         )
-        time_combo.pack(fill=tk.X, ipady=10, pady=(0, 20))
+        time_combo.pack(fill=tk.X, ipady=8, pady=(0, 15))
 
         tk.Label(
             card,
             text="Selected DateTime",
-            font=('Helvetica', 14),
+            font=('Helvetica', 12),
             bg="#6FAFA8",
             fg="#2b3a3a",
             anchor='w',
-        ).pack(fill=tk.X, pady=(0, 4))
+        ).pack(fill=tk.X, pady=(0, 2))
 
-        tk.Entry(
+        tk.Label(
             card,
             textvariable=preview_var,
-            state='readonly',
-            readonlybackground="#e8eef0",
+            font=('Consolas', 16, 'bold'),
+            bg="#e8eef0",
             fg="#1f2933",
-            font=('Helvetica', 24, 'bold'),
-            bd=0,
-            justify='center',
+            padx=16,
+            pady=12,
         ).pack(fill=tk.X, ipady=12, pady=(0, 20))
 
         def render_calendar(container):
