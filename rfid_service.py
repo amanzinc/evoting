@@ -325,6 +325,10 @@ class RFIDService:
 
             block_no += 1
 
+        if read_blocks < 21:
+            print(f"Encrypted card read rejected: Expected at least 21 blocks, got {read_blocks}.")
+            return None
+
         if not raw_bytes:
             print("Encrypted card read: no data collected.")
             return None
