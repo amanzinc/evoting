@@ -740,16 +740,17 @@ class VotingApp:
              self.root.after(500, self.check_scan_queue)
 
     def reset_token_log(self):
+        parent = getattr(self, '_admin_overlay', None) or self.root
         try:
             import os
             token_log = getattr(self.data_handler, 'token_log_file', "tokens.log")
             if os.path.exists(token_log):
                 os.remove(token_log)
-                messagebox.showinfo("Dev Tool", "Token Log Cleared!\nAll cards can be used again.")
+                messagebox.showinfo("Dev Tool", "Token Log Cleared!\nAll cards can be used again.", parent=parent)
             else:
-                messagebox.showinfo("Dev Tool", "Token Log is already empty.")
+                messagebox.showinfo("Dev Tool", "Token Log is already empty.", parent=parent)
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to reset log: {e}")
+            messagebox.showerror("Error", f"Failed to reset log: {e}", parent=parent)
 
     def skip_rfid_check(self):
         self.stop_scanning = True
@@ -2348,7 +2349,7 @@ class VotingApp:
             except Exception:
                 pass
             self._admin_overlay = None
-        self.root.after(40, self._enforce_kiosk_mode)
+        self._enforce_kiosk_mode()
 
     def _admin_end_election(self):
         self._close_admin_menu()
