@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
 import threading
 import queue
 import datetime
@@ -247,7 +247,7 @@ class VotingApp:
 
     def end_election(self):
         """Triggers secure export process without automatic shutdown."""
-        if messagebox.askyesno("Confirm End Election", "Are you sure you want to officially end the election?\nThis will export data to USB.", icon='warning'):
+        if self._show_custom_confirm("Confirm End Election", "Are you sure you want to officially end the election?\nThis will export data to USB."):
             self.stop_scanning = True
             self.show_printing_modal(text="Ending election and exporting logs...")
             threading.Thread(target=self._end_election_worker, daemon=True).start()
@@ -283,14 +283,14 @@ class VotingApp:
             print(f"[schedule] Warning: could not persist end-election completion flag: {exc}")
 
         self.close_printing_modal()
-        messagebox.showinfo(
+        self._show_custom_messagebox(
             "Export Successful",
             f"Election successfully ended.\nEncrypted logs safely exported to:\n{export_path}\n\nAutomatic shutdown is temporarily disabled."
         )
 
     def _fail_end_election(self, error_message):
         self.close_printing_modal()
-        messagebox.showerror("Export Error", f"A critical error occurred during export:\n{error_message}")
+        self._show_custom_messagebox("Export Error", f"A critical error occurred during export:\n{error_message}", alert_type='error')
 
     def initialize_core_services(self):
         try:
@@ -324,7 +324,7 @@ class VotingApp:
             
             # Perform an initial cut to clear the printer roll on startup
             if not self.printer_service.is_printer_connected():
-                messagebox.showerror("Printer Error", "No USB thermal printer detected! Cannot safely run election. Please connect printer and restart system.")
+                self._show_custom_messagebox("Printer Error", "No USB thermal printer detected! Cannot safely run election. Please connect printer and restart system.", alert_type='error')
                 return
 
             try:
@@ -339,7 +339,7 @@ class VotingApp:
                     self.printer_service.printer.cut()
                     print("Printer connected and initialized with a startup cut.")
             except Exception as e:
-                messagebox.showerror("Printer Error", f"Startup print failed, printer may be jammed: {e}")
+                self._show_custom_messagebox("Printer Error", f"Startup print failed, printer may be jammed: {e}", alert_type='error')
                 return
                     
             # Initialize RFID
@@ -356,7 +356,7 @@ class VotingApp:
             self.show_idle_screen()
 
         except Exception as e:
-            messagebox.showerror("System Security Error", f"Failed to initialize election data from USB: {e}")
+            self._show_custom_messagebox("System Security Error", f"Failed to initialize election data from USB: {e}", alert_type='error')
             # Keep polling in case they inserted the wrong USB
             self.root.after(3000, self.show_usb_waiting_screen)
 
@@ -428,7 +428,7 @@ class VotingApp:
                 json.dump(schedule, f, indent=2)
             return True
         except Exception as e:
-            messagebox.showerror("Schedule Save Failed", f"Could not save election schedule:\n{e}")
+            self._show_custom_messagebox("Schedule Save Failed", f"Could not save election schedule:\n{e}", alert_type='error')
             return False
 
     def _parse_schedule_datetime(self, value):
@@ -740,17 +740,16 @@ class VotingApp:
              self.root.after(500, self.check_scan_queue)
 
     def reset_token_log(self):
-        parent = getattr(self, '_admin_overlay', None) or self.root
         try:
             import os
             token_log = getattr(self.data_handler, 'token_log_file', "tokens.log")
             if os.path.exists(token_log):
                 os.remove(token_log)
-                messagebox.showinfo("Dev Tool", "Token Log Cleared!\nAll cards can be used again.", parent=parent)
+                self._show_custom_messagebox("Dev Tool", "Token Log Cleared!\nAll cards can be used again.")
             else:
-                messagebox.showinfo("Dev Tool", "Token Log is already empty.", parent=parent)
+                self._show_custom_messagebox("Dev Tool", "Token Log is already empty.")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to reset log: {e}", parent=parent)
+            self._show_custom_messagebox("Error", f"Failed to reset log: {e}", alert_type='error')
 
     def skip_rfid_check(self):
         self.stop_scanning = True
@@ -969,8 +968,7 @@ class VotingApp:
                 self._finalize_session(aborted)
             else:
                 print(f"Batch print error: {result}")
-                retry = messagebox.askretrycancel("Printer Error", f"Failed to print session receipt: {result}\n\nRetry?")
-                if retry:
+                if self._show_custom_confirm("Printer Error", f"Failed to print session receipt: {result}\n\nRetry?", yes_text="Retry", no_text="Cancel"):
                     self.finish_voter_session(aborted)
                 else:
                     self.receipt_buffer = []
@@ -981,16 +979,15 @@ class VotingApp:
         except queue.Empty:
             pass
 
-        elapsed = (datetime.datetime.now() - self.batch_print_start_time).total_seconds()
-        if elapsed > 60:
-            self.close_printing_modal()
-            retry = messagebox.askretrycancel("Printer Timeout", "Printer is taking too long.\n\nRetry?")
-            if retry:
-                self.finish_voter_session(aborted)
-            else:
-                self.receipt_buffer = []
-                self._finalize_session(True)
-            return
+            elapsed = (datetime.datetime.now() - self.batch_print_start_time).total_seconds()
+            if elapsed > 60:
+                self.close_printing_modal()
+                if self._show_custom_confirm("Printer Timeout", "Printer is taking too long.\n\nRetry?"):
+                    self.finish_voter_session(aborted)
+                else:
+                    self.receipt_buffer = []
+                    self._finalize_session(True)
+                return
 
         self.batch_print_status_after_id = self.root.after(500, self.check_batch_print_status, aborted)
 
@@ -1005,7 +1002,7 @@ class VotingApp:
             self._show_session_complete_screen()
             return
         else:
-            messagebox.showinfo("Session Aborted", "Your session has been cancelled.")
+            self._show_custom_messagebox("Session Aborted", "Your session has been cancelled.")
             
         self.active_token = None
         self.current_election_id = None
@@ -1074,7 +1071,7 @@ class VotingApp:
             return True
         except Exception as e:
             print(f"Failed to load new ballot: {e}")
-            messagebox.showerror("Ballot Error", f"Could not load new ballot for {election_id}: {e}")
+            self._show_custom_messagebox("Ballot Error", f"Could not load new ballot for {election_id}: {e}", alert_type='error')
             return False
 
     # --- Voting Modes ---
@@ -1261,7 +1258,7 @@ class VotingApp:
         if self.voting_mode == 'block':
             selected_ids = sorted([cid for cid, var in self.block_selection_vars.items() if var.get() == 1])
             if len(selected_ids) != self.max_ranks:
-                messagebox.showwarning("Selection Required", f"Please select exactly {self.max_ranks} candidates to proceed.")
+                self._show_custom_messagebox("Selection Required", f"Please select exactly {self.max_ranks} candidates to proceed.")
                 return
 
             self.selections = {idx + 1: cid for idx, cid in enumerate(selected_ids)}
@@ -1270,7 +1267,7 @@ class VotingApp:
 
         selection = self.current_selection_var.get()
         if selection == -1:
-            messagebox.showwarning("No Selection", "Please make a selection to proceed.")
+            self._show_custom_messagebox("No Selection", "Please make a selection to proceed.")
             return
 
         if selection != 0:
@@ -1651,6 +1648,8 @@ class VotingApp:
             command=lambda: choose(False)
         ).pack(side=tk.LEFT, padx=18)
 
+        dlg.attributes('-topmost', True)
+        dlg.overrideredirect(True)
         dlg.protocol("WM_DELETE_WINDOW", lambda: choose(False))
         dlg.wait_window()
         return result["value"]
@@ -1715,11 +1714,11 @@ class VotingApp:
             self.pending_print_job = None
 
             if not self.merge_receipts:
-                messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
+                self._show_custom_messagebox("Vote Cast", "Your vote has been verified and recorded successfully!")
 
             self.start_next_election()
         except Exception as e:
-            messagebox.showerror("System Error", f"Vote recorded but processing failed: {e}")
+            self._show_custom_messagebox("System Error", f"Vote recorded but processing failed: {e}", alert_type='error')
 
     def _complete_batch_after_vvpat(self):
         self.close_vvpat_confirmation_modal()
@@ -1743,7 +1742,7 @@ class VotingApp:
             self.pending_batch_receipts = None
             self._finalize_session(False)
         except Exception as e:
-            messagebox.showerror("System Error", f"Vote recorded but processing failed: {e}")
+            self._show_custom_messagebox("System Error", f"Vote recorded but processing failed: {e}", alert_type='error')
 
     def challenge_vote(self):
         """Voter challenges the ballot: print a challenge receipt (no VVPAT, no vote recorded).
@@ -1754,7 +1753,7 @@ class VotingApp:
         """
         current_challenges = self.challenge_counts_by_election.get(self.current_election_id, 0)
         if current_challenges >= self.max_challenges_per_election:
-            messagebox.showwarning(
+            self._show_custom_messagebox(
                 "Challenge Limit Reached",
                 "You have already used your one allowed challenge in this election.\n"
                 "Please cast your vote."
@@ -1844,7 +1843,7 @@ class VotingApp:
                     )
                 except Exception as e:
                     print(f"Error marking ballot as challenged: {e}")
-                messagebox.showinfo(
+                self._show_custom_messagebox(
                     "Ballot Challenged",
                     (
                         "Your challenge receipt has been printed.\n"
@@ -1880,22 +1879,21 @@ class VotingApp:
                     self.show_temporarily_down_screen()
             else:
                 self.close_printing_modal()
-                retry = messagebox.askretrycancel("Printer Error", f"Printing Failed: {result}\n\nRetry?")
-                if retry:
+                if self._show_custom_confirm("Printer Error", f"Printing Failed: {result}\n\nRetry?", yes_text="Retry", no_text="Cancel"):
                     self.challenge_vote()
             return
         except queue.Empty:
             elapsed = (datetime.datetime.now() - self.print_start_time).total_seconds()
             if elapsed > 30:
                 self.close_printing_modal()
-                messagebox.showerror("Timeout", "Challenge receipt print timed out.")
+                self._show_custom_messagebox("Timeout", "Challenge receipt print timed out.", alert_type='error')
                 return
             self.root.after(200, self._check_challenge_print_status)
 
     def restart_current_election_after_challenge(self):
         """Load a fresh ballot and restart the same election after a successful challenge."""
         if not self.current_election_id:
-            messagebox.showerror("Session Error", "No active election context found.")
+            self._show_custom_messagebox("Session Error", "No active election context found.", alert_type='error')
             self.finish_voter_session(aborted=True)
             return
 
@@ -2128,32 +2126,26 @@ class VotingApp:
 
         if command == "SET_WINDOW":
             pieces = [p.strip() for p in str(args or "").split("|") if p.strip()]
-            if len(pieces) != 2:
-                messagebox.showerror(
-                    "Invalid SET_WINDOW Format",
-                    "Use: SET_WINDOW|YYYY-MM-DD HH:MM|YYYY-MM-DD HH:MM"
-                )
-                return False
+            if len(pieces) < 2:
+                self._show_custom_messagebox("Invalid COMMAND", "SET_ELECTION_WINDOW|YYYY-MM-DD HH:MM:SS|YYYY-MM-DD HH:MM:SS", alert_type='error')
+                return
             self._admin_set_election_window(start_text=pieces[0], end_text=pieces[1], show_messages=True)
             return True
 
         if command == "EXTEND_END_MINUTES":
+            pieces = [p.strip() for p in str(args or "").split("|") if p.strip()]
+            if len(pieces) < 1:
+                self._show_custom_messagebox("Invalid EXTEND_END_MINUTES", "Use: EXTEND_END_MINUTES|X", alert_type='error')
+                return
             try:
-                minutes = int(str(args or "").strip())
+                self._admin_extend_end_time(int(pieces[0]))
             except Exception:
-                messagebox.showerror("Invalid EXTEND_END_MINUTES", "Use: EXTEND_END_MINUTES|X")
-                return False
-            self._admin_extend_end_time(minutes, show_messages=True)
+                self._show_custom_messagebox("Invalid Minutes", "Please provide numeric minutes.", alert_type='error')
             return True
 
         handler = handlers.get(command)
         if not handler:
-            messagebox.showerror(
-                "Unknown Officer Command",
-                "Card phrase matched, but command is not recognized.\n\n"
-                "Accepted commands:\n"
-                f"{self._accepted_officer_commands_text()}"
-            )
+            self._show_custom_messagebox("Invalid Command", f"Unknown command: {command}", alert_type='error')
             return False
 
         handler()
@@ -2168,11 +2160,7 @@ class VotingApp:
         phrase_upper = self.polling_officer_phrase.upper()
         token_upper = token_text.upper()
         if token_text and len(token_text) < len(self.polling_officer_phrase) and phrase_upper.startswith(token_upper):
-            messagebox.showerror(
-                "Incomplete Card Data",
-                "Polling officer card data appears incomplete.\n"
-                "Please scan again or rewrite the card payload."
-            )
+            self._show_custom_messagebox("Incomplete Card Data", "Polling officer card data appears incomplete.\nPlease scan again or rewrite the card payload.", alert_type='error')
             self.stop_scanning = False
             self.officer_scan_queue = queue.Queue()
             self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
@@ -2182,11 +2170,7 @@ class VotingApp:
             return
 
         if not self._is_polling_officer_token(token_payload):
-            messagebox.showerror(
-                "Authorization Failed",
-                "This card is not authorized.\n"
-                "Use the configured phrase card for polling-officer access."
-            )
+            self._show_custom_messagebox("Authorization Failed", "This card is not authorized.\nUse the configured phrase card for polling-officer access.", alert_type='error')
             self.stop_scanning = False
             self.officer_scan_queue = queue.Queue()
             self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
@@ -2403,20 +2387,19 @@ class VotingApp:
 
     def _admin_reprint_device_slip_done(self):
         self.close_printing_modal()
-        messagebox.showinfo("Reprint Complete", "Device slip was printed successfully.")
+        self._show_custom_messagebox("Reprint Complete", "Device slip was printed successfully.")
 
     def _admin_reprint_device_slip_failed(self, error_message):
         self.close_printing_modal()
-        messagebox.showerror("Reprint Failed", f"Could not print device slip:\n{error_message}")
+        self._show_custom_messagebox("Reprint Failed", f"Could not print device slip:\n{error_message}", alert_type='error')
 
     def _admin_update_firmware(self):
         # Close admin overlay first so confirmation dialog is never hidden behind it.
         self._close_admin_menu()
 
-        if not messagebox.askyesno(
+        if not self._show_custom_confirm(
             "Update Firmware",
-            "This will run 'git pull --ff-only' in the app directory.\n\nContinue?",
-            icon='question',
+            "This will run 'git pull --ff-only' in the app directory.\n\nContinue?"
         ):
             self.root.after(80, self.show_admin_menu)
             return
@@ -2452,9 +2435,8 @@ class VotingApp:
             self.root.after(0, lambda err=str(e): self._admin_update_firmware_failed(err))
 
     def _admin_update_firmware_done(self, output_text):
-        self.close_printing_modal()
         detail = output_text if output_text else "Already up to date."
-        messagebox.showinfo(
+        self._show_custom_messagebox(
             "Firmware Update Complete",
             f"{detail}\n\nRestarting application to apply updates."
         )
@@ -2463,9 +2445,8 @@ class VotingApp:
         self.root.destroy()
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
-    def _admin_update_firmware_failed(self, error_message):
         self.close_printing_modal()
-        messagebox.showerror("Firmware Update Failed", error_message)
+        self._show_custom_messagebox("Firmware Update Failed", error_message, alert_type='error')
 
     def _admin_toggle_print(self):
         self._close_admin_menu()
@@ -2528,7 +2509,72 @@ class VotingApp:
             + f"Election Time : {self._current_schedule_text()}\n"
             + f"Log Dir       : {getattr(self, 'log_dir', 'N/A')}\n"
         )
-        messagebox.showinfo("System Status", msg, parent=self._admin_overlay)
+        self._show_custom_messagebox("System Status", msg)
+
+    def _show_custom_messagebox(self, title, message, alert_type='info'):
+        parent = getattr(self, '_admin_overlay', None) or self.root
+        dlg = tk.Toplevel(parent)
+        dlg.title(title)
+        dlg.transient(parent)
+        dlg.attributes('-topmost', True)
+        dlg.overrideredirect(True)
+        
+        w, h = 600, 380
+        x = (self.root.winfo_screenwidth() // 2) - (w // 2)
+        y = (self.root.winfo_screenheight() // 2) - (h // 2)
+        dlg.geometry(f"{w}x{h}+{x}+{y}")
+        dlg.configure(bg="#0d1117")
+        
+        frame = tk.Frame(dlg, bg="#0d1117", bd=2, relief=tk.RAISED, highlightbackground="#30363d", highlightthickness=1)
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        tk.Label(frame, text=title, font=('Helvetica', 18, 'bold'), bg="#0d1117", fg="#f0f6fc").pack(pady=(30, 10))
+        tk.Label(frame, text=message, font=('Helvetica', 14), bg="#0d1117", fg="#c9d1d9", wraplength=540, justify=tk.CENTER).pack(pady=20, padx=20, expand=True)
+        
+        btn_bg = "#238636" if alert_type == 'info' else "#da3633"
+        tk.Button(frame, text="OK", font=('Helvetica', 14, 'bold'), bg=btn_bg, fg="white", 
+                  activebackground=btn_bg, bd=0, padx=40, pady=10, cursor="hand2", command=dlg.destroy).pack(pady=(0, 30))
+        
+        dlg.grab_set()
+        self.root.wait_window(dlg)
+
+    def _show_custom_confirm(self, title, message, yes_text="Confirm", no_text="Cancel"):
+        parent = getattr(self, '_admin_overlay', None) or self.root
+        dlg = tk.Toplevel(parent)
+        dlg.title(title)
+        dlg.transient(parent)
+        dlg.attributes('-topmost', True)
+        dlg.overrideredirect(True)
+        
+        w, h = 650, 420
+        x = (self.root.winfo_screenwidth() // 2) - (w // 2)
+        y = (self.root.winfo_screenheight() // 2) - (h // 2)
+        dlg.geometry(f"{w}x{h}+{x}+{y}")
+        dlg.configure(bg="#0d1117")
+        
+        result = {"value": False}
+        def choose(val):
+            result["value"] = val
+            dlg.destroy()
+            
+        frame = tk.Frame(dlg, bg="#0d1117", bd=2, relief=tk.RAISED, highlightbackground="#30363d", highlightthickness=1)
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        tk.Label(frame, text=title, font=('Helvetica', 20, 'bold'), bg="#0d1117", fg="#f0f6fc").pack(pady=(30, 10))
+        tk.Label(frame, text=message, font=('Helvetica', 14), bg="#0d1117", fg="#c9d1d9", wraplength=600, justify=tk.CENTER).pack(pady=20, padx=20, expand=True)
+        
+        btn_row = tk.Frame(frame, bg="#0d1117")
+        btn_row.pack(pady=(0, 35))
+        
+        tk.Button(btn_row, text=yes_text, font=('Helvetica', 14, 'bold'), bg="#238636", fg="white", 
+                  activebackground="#2ea043", bd=0, padx=30, pady=10, cursor="hand2", command=lambda: choose(True)).pack(side=tk.LEFT, padx=15)
+        
+        tk.Button(btn_row, text=no_text, font=('Helvetica', 14, 'bold'), bg="#30363d", fg="#f0f6fc", 
+                  activebackground="#3c444d", bd=0, padx=30, pady=10, cursor="hand2", command=lambda: choose(False)).pack(side=tk.LEFT, padx=15)
+        
+        dlg.grab_set()
+        self.root.wait_window(dlg)
+        return result["value"]
 
     def _show_numeric_keypad_dialog(self, title, prompt, initial_value=""):
         parent = self._admin_overlay if self._admin_overlay and self._admin_overlay.winfo_exists() else self.root
@@ -2906,7 +2952,7 @@ class VotingApp:
                     0,
                 )
             except Exception as exc:
-                messagebox.showerror("Invalid DateTime", str(exc), parent=dlg)
+                self._show_custom_messagebox("Invalid DateTime", str(exc), alert_type='error')
                 return
             result["value"] = dt
             dlg.destroy()
@@ -2992,7 +3038,7 @@ class VotingApp:
             if end_dt <= start_dt:
                 raise ValueError("End time must be after start time.")
         except Exception as exc:
-            messagebox.showerror("Invalid Time Window", str(exc))
+            self._show_custom_messagebox("Invalid Time Window", str(exc), alert_type='error')
             return False
 
         schedule = self._load_election_schedule()
@@ -3005,7 +3051,7 @@ class VotingApp:
             return False
 
         if show_messages:
-            messagebox.showinfo("Election Window Set", self._current_schedule_text())
+            self._show_custom_messagebox("Election Window Set", self._current_schedule_text())
 
         self._close_admin_menu()
         self.show_idle_screen()
@@ -3015,16 +3061,16 @@ class VotingApp:
         try:
             minutes = int(minutes)
         except Exception:
-            messagebox.showerror("Invalid Minutes", "Minutes must be an integer.")
+            self._show_custom_messagebox("Invalid Minutes", "Minutes must be an integer.", alert_type='error')
             return False
 
         if minutes <= 0:
-            messagebox.showerror("Invalid Minutes", "Minutes must be greater than zero.")
+            self._show_custom_messagebox("Invalid Minutes", "Minutes must be greater than zero.", alert_type='error')
             return False
 
         schedule = self._load_election_schedule()
         if not schedule.get("enabled", False):
-            messagebox.showerror("Schedule Not Set", "Set election window first, then extend end time.")
+            self._show_custom_messagebox("Schedule Not Set", "Set election window first, then extend end time.", alert_type='error')
             return False
 
         try:
@@ -3033,7 +3079,7 @@ class VotingApp:
                 raise ValueError("Current end time is missing.")
             end_dt = end_dt + datetime.timedelta(minutes=minutes)
         except Exception as exc:
-            messagebox.showerror("Extend Failed", str(exc))
+            self._show_custom_messagebox("Extend Failed", str(exc), alert_type='error')
             return False
 
         schedule["end"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -3042,7 +3088,7 @@ class VotingApp:
             return False
 
         if show_messages:
-            messagebox.showinfo("Election End Extended", self._current_schedule_text())
+            self._show_custom_messagebox("Election End Extended", self._current_schedule_text())
 
         self._close_admin_menu()
         self.show_idle_screen()
@@ -3059,13 +3105,13 @@ class VotingApp:
         try:
             minutes = int(str(text_value).strip())
         except Exception:
-            messagebox.showerror("Invalid Minutes", "Please enter a valid integer minutes value.")
+            self._show_custom_messagebox("Invalid Minutes", "Please enter a valid integer minutes value.", alert_type='error')
             return
         self._admin_extend_end_time(minutes, show_messages=True)
 
     def _admin_reset_device(self):
         """Wipe provisioning artifacts and relaunch into first-boot provisioning."""
-        if not messagebox.askyesno(
+        if not self._show_custom_confirm(
             "Reset Device",
             "WARNING: This will permanently delete:\n\n"
             "  - private.pem (signing key)\n"
@@ -3074,21 +3120,17 @@ class VotingApp:
             "  - .provisioned flag\n\n"
             "The device will restart into the first provisioning menu.\n"
             "A new BMD ID and key pair must be assigned.\n\n"
-            "Continue?",
-            parent=self._admin_overlay,
-            icon='warning',
+            "Continue?"
         ):
             return
 
-        if not messagebox.askyesno(
+        if not self._show_custom_confirm(
             "Final Confirmation",
             "This action cannot be undone.\n\n"
             "All existing keys will be destroyed.\n"
             "Any ballots encrypted with the current public key\n"
             "will no longer be decryptable on this device.\n\n"
-            "Are you absolutely sure?",
-            parent=self._admin_overlay,
-            icon='warning',
+            "Are you absolutely sure?"
         ):
             return
 
@@ -3182,7 +3224,7 @@ class VotingApp:
                     )
                     
                     if not self.merge_receipts:
-                        messagebox.showinfo("Vote Cast", "Your vote has been verified and recorded successfully!")
+                        self._show_custom_messagebox("Vote Cast", "Your vote has been verified and recorded successfully!")
 
                     self.pending_print_job = None
                     self._cancel_pending_print_polling()
@@ -3190,22 +3232,20 @@ class VotingApp:
                     # Proceed to Next Election in Queue (or Finish)
                     self.start_next_election()
                     
-                except Exception as e:
-                    messagebox.showerror("System Error", f"Vote recorded but processing failed: {e}")
-            else:
-                print(f"Async print error: {result}")
-                retry = messagebox.askretrycancel("Printer Error", f"Printing Failed: {result}\n\nRetry?")
-                if retry:
-                    self.cast_vote()
-            return
+        except Exception as e:
+            self._show_custom_messagebox("System Error", f"Vote recorded but processing failed: {e}", alert_type='error')
+        else:
+            print(f"Async print error: {result}")
+            if self._show_custom_confirm("Printer Error", f"Printing Failed: {result}\n\nRetry?", yes_text="Retry", no_text="Cancel"):
+                self.cast_vote()
+        return
         except queue.Empty:
             pass
 
         elapsed = (datetime.datetime.now() - self.print_start_time).total_seconds()
         if elapsed > 20:
             self.close_printing_modal()
-            retry = messagebox.askretrycancel("Printer Timeout", "Printer is taking too long.\n\nRetry?")
-            if retry:
+            if self._show_custom_confirm("Printer Timeout", "Printer is taking too long.\n\nRetry?", yes_text="Retry", no_text="Cancel"):
                 self.cast_vote()
             return
 
