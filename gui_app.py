@@ -328,16 +328,14 @@ class VotingApp:
                 return
 
             try:
-                # In DataHandler, we will set a flag if genesis was generated
                 if not self.print_enabled:
-                    print("Printing disabled: skipping startup ticket/cut.")
-                elif hasattr(self.data_handler, 'is_new_genesis') and self.data_handler.is_new_genesis:
-                    self.printer_service.print_startup_ticket(self.data_handler.last_hash, self.log_dir)
-                    print("Genesis startup ticket printed.")
+                    print("Printing disabled: skipping startup cut.")
                 else:
+                    # Just do an initial feed+cut to clear any previous partial print on the roll.
+                    # The genesis/startup ticket is printed later when the election window first activates.
                     self.printer_service.printer.text("\n\n\n\n\n\n") # Feed past blade
                     self.printer_service.printer.cut()
-                    print("Printer connected and initialized with a startup cut.")
+                    print("Printer initialized with a startup cut.")
             except Exception as e:
                 self._show_custom_messagebox("Printer Error", f"Startup print failed, printer may be jammed: {e}", alert_type='error')
                 return
@@ -2811,6 +2809,13 @@ class VotingApp:
             width=10,
         )
         time_combo.pack(fill=tk.X, ipady=8, pady=(0, 15))
+
+        # Block mousewheel scrolling on the combobox to prevent accidental time changes
+        def _block_scroll(event):
+            return "break"
+        time_combo.bind("<MouseWheel>", _block_scroll)
+        time_combo.bind("<Button-4>", _block_scroll)
+        time_combo.bind("<Button-5>", _block_scroll)
 
         tk.Label(
             card,
