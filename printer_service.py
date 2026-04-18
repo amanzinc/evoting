@@ -541,7 +541,7 @@ class PrinterService:
         if not self.printer:
             self.connect_printer()
         if not self.printer:
-            return # Fail silently or log
+            raise Exception("Printer not connected")
             
         p = self.printer
         TOP_BAR = self._bar("=")
@@ -583,6 +583,8 @@ class PrinterService:
                 p.cut(mode='FULL')
 
                 return {"stage": "vvpat_complete"}
+
+            return True
             
         except Exception as e:
             print(f"Batch Print Error: {e}")

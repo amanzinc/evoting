@@ -985,15 +985,15 @@ class VotingApp:
         except queue.Empty:
             pass
 
-            elapsed = (datetime.datetime.now() - self.batch_print_start_time).total_seconds()
-            if elapsed > 60:
-                self.close_printing_modal()
-                if self._show_custom_confirm("Printer Timeout", "Printer is taking too long.\n\nRetry?"):
-                    self.finish_voter_session(aborted)
-                else:
-                    self.receipt_buffer = []
-                    self._finalize_session(True)
-                return
+        elapsed = (datetime.datetime.now() - self.batch_print_start_time).total_seconds()
+        if elapsed > 60:
+            self.close_printing_modal()
+            if self._show_custom_confirm("Printer Timeout", "Printer is taking too long.\n\nRetry?"):
+                self.finish_voter_session(aborted)
+            else:
+                self.receipt_buffer = []
+                self._finalize_session(True)
+            return
 
         self.batch_print_status_after_id = self.root.after(500, self.check_batch_print_status, aborted)
 
