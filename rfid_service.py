@@ -197,18 +197,19 @@ class RFIDService:
     # Internal block-reading helpers
     # ─────────────────────────────────────────────────────────────
 
-    def _read_plain_payload(self, uid):
+    def _read_plain_payload(self, uid, max_data_blocks=10):
         """
         Read a plain-text (admin/officer) card.
-        Reads blocks until a null terminator is found.
+        Reads blocks until a null terminator is found, up to `max_data_blocks`.
         Retries auth failures once to handle transient PN532 glitches.
         No minimum sector requirement. No decryption.
         Returns (uid_hex, raw_text) or None.
         """
         block_no = self.START_BLOCK
         raw_bytes = bytearray()
+        blocks_read = 0
 
-        while block_no <= self.MAX_BLOCK_NO:
+        while block_no <= self.MAX_BLOCK_NO and blocks_read < max_data_blocks:
             # Skip trailer blocks
             while self.is_trailer_block(block_no):
                 block_no += 1
@@ -251,6 +252,7 @@ class RFIDService:
             else:
                 raw_bytes.extend(data)
 
+            blocks_read += 1
             block_no += 1
 
         if not raw_bytes:
@@ -541,7 +543,7 @@ class RFIDService:
             print(f"Card Detected: {list(uid)}")
 
             if mode == 'plain':
-                return self._read_plain_payload(uid)
+                return self._read_plain_payload(uid, max_data_blocks=12)
             elif mode == 'encrypted':
                 return self._read_encrypted_payload(uid)
             else:
