@@ -687,6 +687,7 @@ class ProvisionApp:
             # Feed paper so all content clears the auto-cutter blade
             printer.text("\n\n\n\n\n\n")
             printer.cut(mode="FULL")
+            printer.text("\n\n\n\n\n\n") # Extra feed after cut
 
         finally:
             if os.path.exists(tmp_qr):

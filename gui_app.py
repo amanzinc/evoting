@@ -344,8 +344,9 @@ class VotingApp:
                 else:
                     # Just do an initial feed+cut to clear any previous partial print on the roll.
                     # The genesis/startup ticket is printed later when the election window first activates.
-                    self.printer_service.printer.text("\n\n\n\n\n\n") # Feed past blade
+                    self.printer_service.printer.text("\n\n\n\n\n\n\n\n\n\n") # Feed past blade
                     self.printer_service.printer.cut()
+                    self.printer_service.printer.text("\n\n\n\n\n\n") # Extra feed after cut
                     print("Printer initialized with a startup cut.")
             except Exception as e:
                 self._show_custom_messagebox("Printer Error", f"Startup print failed, printer may be jammed: {e}", alert_type='error')

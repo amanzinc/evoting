@@ -173,7 +173,7 @@ class PrinterService:
         p.text(top_bar + "\n")
         p.set(align='left', bold=False)
 
-        p.text("\n\n")
+        p.text("\n\n\n\n\n\n")
 
     def _set_reverse_print_mode(self, enabled):
         if not self.reverse_print or not self.printer:
@@ -358,7 +358,9 @@ class PrinterService:
             if stage in ("both", "vvpat", "receipt"):
                 self._print_vote_vvpat_section(p, context)
                 time.sleep(5)
+                p.text("\n" * 8)
                 p.cut(mode='FULL')
+                p.text("\n\n\n\n\n\n") # Extra feed after cut helps slip clear the printer
                 return {"stage": "vvpat_complete", "context": context}
 
             return True
@@ -522,8 +524,9 @@ class PrinterService:
             p.text("KEEP THIS SLIP FOR SETUP\n")
             p.text(TOP_BAR + "\n")
             p.set(align='left', font='a', width=1, height=1, bold=True)
-            p.text("\n\n\n\n\n\n")
+            p.text("\n\n\n\n\n\n\n\n")
             p.cut(mode='FULL')
+            p.text("\n\n\n\n\n\n") # Extra feed after cut
             return True
         except Exception as e:
             try:
@@ -578,9 +581,10 @@ class PrinterService:
                 p.text(TOP_BAR + "\n")
                 p.set(align='left', font='a', width=1, height=1, bold=True)
 
-                p.text("\n\n")
+                p.text("\n\n\n\n\n\n")
                 time.sleep(5)
                 p.cut(mode='FULL')
+                p.text("\n\n\n\n\n\n") # Extra feed after cut
 
                 return {"stage": "vvpat_complete"}
 
@@ -667,6 +671,7 @@ class PrinterService:
             p.set(align='left', font='a', width=1, height=1, bold=True)
             
             p.cut(mode='FULL')
+            p.text("\n\n\n\n\n\n") # Extra feed after cut
         except Exception as e:
             print(f"Failed to print startup ticket: {e}")
         finally:
@@ -731,6 +736,7 @@ class PrinterService:
             p.set(align='left', font='a', width=1, height=1, bold=True)
             
             p.cut(mode='FULL')
+            p.text("\n\n\n\n\n\n") # Extra feed after cut
             return True
         except Exception as e:
             try:
@@ -790,6 +796,7 @@ class PrinterService:
             p.set(align='left', font='a', width=1, height=1, bold=True)
             
             p.cut(mode='FULL')
+            p.text("\n\n\n\n\n\n") # Extra feed after cut
             return True
         except Exception as e:
             try:
