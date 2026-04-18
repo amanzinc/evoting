@@ -328,6 +328,7 @@ class RFIDService:
             return None
 
         raw_text = raw_bytes.decode('utf-8', errors='ignore').strip()
+        print(f"DEBUG: Read raw text from RFID: {repr(raw_text)}")
         if not raw_text:
             return None
 
