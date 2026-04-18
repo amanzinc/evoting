@@ -1718,7 +1718,7 @@ class VotingApp:
 
             self.start_next_election()
         except Exception as e:
-            self._show_custom_messagebox("System Error", f"Vote recorded but processing failed: {e}", alert_type='error')
+            self._show_custom_messagebox("System Error", f"Vote recorded but processing failed: {e}", alert_type="error")
 
     def _complete_batch_after_vvpat(self):
         self.close_vvpat_confirmation_modal()
@@ -1742,7 +1742,7 @@ class VotingApp:
             self.pending_batch_receipts = None
             self._finalize_session(False)
         except Exception as e:
-            self._show_custom_messagebox("System Error", f"Vote recorded but processing failed: {e}", alert_type='error')
+            self._show_custom_messagebox("System Error", f"Vote recorded but processing failed: {e}", alert_type="error")
 
     def challenge_vote(self):
         """Voter challenges the ballot: print a challenge receipt (no VVPAT, no vote recorded).
@@ -3232,13 +3232,13 @@ class VotingApp:
                     # Proceed to Next Election in Queue (or Finish)
                     self.start_next_election()
                     
-        except Exception as e:
-            self._show_custom_messagebox("System Error", f"Vote recorded but processing failed: {e}", alert_type='error')
-        else:
-            print(f"Async print error: {result}")
-            if self._show_custom_confirm("Printer Error", f"Printing Failed: {result}\n\nRetry?", yes_text="Retry", no_text="Cancel"):
-                self.cast_vote()
-        return
+                except Exception as e:
+                    self._show_custom_messagebox("System Error", f"Vote recorded but processing failed: {e}", alert_type="error")
+            else:
+                print(f"Async print error: {result}")
+                if self._show_custom_confirm("Printer Error", f"Printing Failed: {result}\n\nRetry?", yes_text="Retry", no_text="Cancel"):
+                    self.cast_vote()
+            return
         except queue.Empty:
             pass
 
