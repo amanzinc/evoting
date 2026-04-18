@@ -471,6 +471,10 @@ class VotingApp:
 
     def _is_election_active_now(self):
         schedule = self._load_election_schedule()
+        
+        if schedule.get("end_election_completed"):
+            return False
+
         if not schedule.get("enabled", False):
             return True
 
@@ -544,9 +548,15 @@ class VotingApp:
         frame = tk.Frame(self.main_container, bg="#FFF3E0")
         frame.pack(expand=True, fill=tk.BOTH)
 
+        schedule = self._load_election_schedule()
+        is_ended = schedule.get("end_election_completed", False)
+        
+        title_text = "Elections have ended!" if is_ended else "Election is Inactive"
+        desc_text = "The polling process has been officially concluded." if is_ended else "Voting is currently disabled outside the configured time window."
+
         tk.Label(
             frame,
-            text="Election is Inactive",
+            text=title_text,
             font=('Helvetica', 34, 'bold'),
             bg="#FFF3E0",
             fg="#E65100"
@@ -554,7 +564,7 @@ class VotingApp:
 
         tk.Label(
             frame,
-            text="Voting is currently disabled outside the configured time window.",
+            text=desc_text,
             font=('Helvetica', 20),
             bg="#FFF3E0",
             fg="#333"
@@ -1426,6 +1436,10 @@ class VotingApp:
                 btn.config(state=tk.DISABLED if lock_unselected else tk.NORMAL)
 
     def cast_vote(self):
+        if getattr(self, '_cast_vote_in_progress', False):
+            return
+        self._cast_vote_in_progress = True
+        
         # Prepare Receipt Data Snapshot
         e_name = getattr(self.data_handler, 'election_name', 'General Election')
         ballot_id = self.data_handler.get_short_ballot_id()
@@ -1535,6 +1549,7 @@ class VotingApp:
                         self.data_handler.save_json(rec)
                 else:
                     self.data_handler.save_json(vote_record)
+                self._cast_vote_in_progress = False
                 self.finish_voter_session(False)
                 return
 
@@ -1720,8 +1735,10 @@ class VotingApp:
             if not self.merge_receipts:
                 self._show_custom_messagebox("Vote Cast", "Your vote has been verified and recorded successfully!")
 
+            self._cast_vote_in_progress = False
             self.start_next_election()
         except Exception as e:
+            self._cast_vote_in_progress = False
             self._show_custom_messagebox("System Error", f"Vote recorded but processing failed: {e}", alert_type="error")
 
     def _complete_batch_after_vvpat(self):
@@ -2750,15 +2767,7 @@ class VotingApp:
         date_var = tk.StringVar(value=selected_date.strftime("%d %b %Y"))
         preview_var = tk.StringVar(value="")
 
-        def _format_time_option(hour, minute):
-            return datetime.time(hour, minute).strftime("%I:%M%p").lstrip("0").lower()
-
-        time_options = [_format_time_option(h, m) for h in range(24) for m in (0, 30)]
-        nearest = min(time_options, key=lambda t: abs(
-            (datetime.datetime.combine(datetime.date.today(), datetime.datetime.strptime(t, "%I:%M%p").time())
-             - datetime.datetime.combine(datetime.date.today(), selected_time)).total_seconds()
-        ))
-        time_var = tk.StringVar(value=nearest)
+        time_var = tk.StringVar(value="")
 
         cal_popup = {"win": None}
         cal_year = tk.IntVar(value=selected_date.year)
@@ -2798,24 +2807,62 @@ class VotingApp:
             bg="#6FAFA8",
             fg="#1d2a2a",
             anchor='w',
-        ).pack(fill=tk.X, pady=(0, 2))
+        ).pack(fill=tk.X, pady=(0, 4))
 
-        time_combo = ttk.Combobox(
-            card,
-            values=time_options,
-            textvariable=time_var,
-            state='readonly',
-            font=('Helvetica', 18, 'bold'),
-            width=10,
-        )
-        time_combo.pack(fill=tk.X, ipady=8, pady=(0, 15))
+        # --- Hour/Minute spinner (replaces scrolling Combobox) ---
+        # Snap initial time to nearest 30-min slot
+        snap_minute = 0 if selected_time.minute < 30 else 30
+        time_hour = tk.IntVar(value=selected_time.hour)
+        time_minute = tk.IntVar(value=snap_minute)
 
-        # Block mousewheel scrolling on the combobox to prevent accidental time changes
-        def _block_scroll(event):
-            return "break"
-        time_combo.bind("<MouseWheel>", _block_scroll)
-        time_combo.bind("<Button-4>", _block_scroll)
-        time_combo.bind("<Button-5>", _block_scroll)
+        def _fmt_time():
+            return datetime.time(time_hour.get(), time_minute.get()).strftime("%I:%M %p")
+
+        def _update_time_var(*_):
+            time_var.set(_fmt_time())
+            refresh_preview()
+
+        spinner_frame = tk.Frame(card, bg="#6FAFA8")
+        spinner_frame.pack(fill=tk.X, pady=(0, 14))
+
+        def _make_spinner(parent, label, var, lo, hi, step, fmt=lambda v: str(v).zfill(2)):
+            col = tk.Frame(parent, bg="#6FAFA8")
+            col.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=4)
+
+            tk.Label(col, text=label, font=('Helvetica', 11, 'bold'),
+                     bg="#6FAFA8", fg="#1d2a2a").pack()
+
+            def inc():
+                v = var.get() + step
+                if v > hi: v = lo
+                var.set(v)
+                _update_time_var()
+
+            def dec():
+                v = var.get() - step
+                if v < lo: v = hi
+                var.set(v)
+                _update_time_var()
+
+            tk.Button(col, text="▲", command=inc,
+                      font=('Helvetica', 14, 'bold'), bg="#2f6f69", fg="white",
+                      relief=tk.FLAT, bd=0, padx=10, pady=4).pack(fill=tk.X, pady=(0, 2))
+            tk.Label(col, textvariable=var, font=('Helvetica', 22, 'bold'),
+                     bg="#f7f7f7", fg="#1f2933", pady=6,
+                     width=3, anchor='center').pack(fill=tk.X)
+            tk.Button(col, text="▼", command=dec,
+                      font=('Helvetica', 14, 'bold'), bg="#2f6f69", fg="white",
+                      relief=tk.FLAT, bd=0, padx=10, pady=4).pack(fill=tk.X, pady=(2, 0))
+
+        _make_spinner(spinner_frame, "Hour", time_hour, 0, 23, 1)
+        tk.Label(spinner_frame, text=":", font=('Helvetica', 28, 'bold'),
+                 bg="#6FAFA8", fg="#1d2a2a").pack(side=tk.LEFT, pady=10)
+        _make_spinner(spinner_frame, "Min", time_minute, 0, 30, 30)
+
+        # Initialise time_var to match spinner position
+        time_var.set(_fmt_time())
+        # --------------------------------------------------------
+
 
         tk.Label(
             card,
@@ -2951,8 +2998,13 @@ class VotingApp:
             nonlocal selected_date
             selected_date = now.date()
             date_var.set(selected_date.strftime("%d %b %Y"))
-            time_var.set(_format_time_option(now.hour, 30 if now.minute >= 30 else 0))
-            refresh_preview()
+            
+            # Update spinner vars
+            snap_min = 30 if now.minute >= 30 else 0
+            time_hour.set(now.hour)
+            time_minute.set(snap_min)
+            
+            _update_time_var()
 
         def cancel():
             result["value"] = None
@@ -2960,13 +3012,12 @@ class VotingApp:
 
         def save():
             try:
-                time_obj = datetime.datetime.strptime(time_var.get().upper(), "%I:%M%p").time()
                 dt = datetime.datetime(
                     selected_date.year,
                     selected_date.month,
                     selected_date.day,
-                    time_obj.hour,
-                    time_obj.minute,
+                    time_hour.get(),
+                    time_minute.get(),
                     0,
                 )
             except Exception as exc:
@@ -3014,7 +3065,6 @@ class VotingApp:
             pady=10,
         ).pack(side=tk.RIGHT)
 
-        time_combo.bind("<<ComboboxSelected>>", refresh_preview)
         refresh_preview()
 
         dlg.protocol("WM_DELETE_WINDOW", cancel)
@@ -3199,6 +3249,7 @@ class VotingApp:
     def check_print_status(self):
         try:
             result = self.print_queue.get_nowait()
+            
             if isinstance(result, dict) and result.get('stage') == 'vvpat_complete':
                 self.close_printing_modal()
                 self._show_vvpat_confirmation_modal(
@@ -3240,13 +3291,16 @@ class VotingApp:
 
                     self.pending_print_job = None
                     self._cancel_pending_print_polling()
+                    self._cast_vote_in_progress = False
                     
                     # Proceed to Next Election in Queue (or Finish)
                     self.start_next_election()
                     
                 except Exception as e:
+                    self._cast_vote_in_progress = False
                     self._show_custom_messagebox("System Error", f"Vote recorded but processing failed: {e}", alert_type="error")
             else:
+                self._cast_vote_in_progress = False
                 print(f"Async print error: {result}")
                 if self._show_custom_confirm("Printer Error", f"Printing Failed: {result}\n\nRetry?", yes_text="Retry", no_text="Cancel"):
                     self.cast_vote()
@@ -3256,6 +3310,7 @@ class VotingApp:
 
         elapsed = (datetime.datetime.now() - self.print_start_time).total_seconds()
         if elapsed > 20:
+            self._cast_vote_in_progress = False
             self.close_printing_modal()
             if self._show_custom_confirm("Printer Timeout", "Printer is taking too long.\n\nRetry?", yes_text="Retry", no_text="Cancel"):
                 self.cast_vote()
