@@ -2592,6 +2592,7 @@ class VotingApp:
         dlg.title(title)
         dlg.transient(parent)
         dlg.attributes('-topmost', True)
+        dlg.overrideredirect(True)
 
         w, h = 760, 620
         x = (self.root.winfo_screenwidth() // 2) - (w // 2)
