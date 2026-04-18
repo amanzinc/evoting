@@ -340,6 +340,17 @@ class RFIDService:
         try:
             import base64
             compact = "".join(raw_text.split())
+
+            # Quick sanity check: ciphertext must look like base64 and be long enough
+            # for RSA-2048 OAEP output (~344 base64 chars). If it's short/plain text
+            # (e.g. officer phrase card scanned on voter loop), return as plain so
+            # on_card_scanned can route it to the officer menu.
+            base64_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+            if len(compact) < 128 or not all(ch in base64_chars for ch in compact):
+                print(f"✅ Plain card on voter loop (not ciphertext): {raw_text}")
+                return (uid.hex(), raw_text)
+
+            compact += "=" * ((4 - len(compact) % 4) % 4)
             encrypted_bytes = base64.b64decode(compact)
             decrypted_bytes = self.private_key.decrypt(
                 encrypted_bytes,
@@ -352,6 +363,11 @@ class RFIDService:
             decrypted = decrypted_bytes.decode("utf-8")
         except Exception as e:
             print(f"Voter card decryption failed: {e}")
+            # If decryption failed but we have readable text, return it as plain so
+            # the caller (on_card_scanned) can still handle officer phrase cards.
+            if raw_text and len(raw_text) < 64:
+                print(f"Returning as plain text fallback: {raw_text}")
+                return (uid.hex(), raw_text)
             return None
 
         try:

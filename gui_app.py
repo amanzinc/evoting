@@ -738,10 +738,12 @@ class VotingApp:
 
     def rfid_scan_loop(self):
         while not self.stop_scanning:
-            # Voter cards are RSA-encrypted across 22 blocks — use explicit encrypted mode.
-            result = self.rfid_service.read_card(mode='encrypted')
+            # Use 'auto' mode so that:
+            #  - Voter cards (RSA-encrypted, long base64) are decrypted normally.
+            #  - Officer cards (plain phrase) are returned as-is and routed by
+            #    on_card_scanned -> _is_polling_officer_token -> on_officer_card_scanned.
+            result = self.rfid_service.read_card(mode='auto')
             if result:
-                # uid, token
                 self.scan_queue.put(result)
                 break
             time.sleep(0.5)
