@@ -2704,6 +2704,7 @@ class VotingApp:
 
         dlg.protocol("WM_DELETE_WINDOW", cancel)
         entry.focus_set()
+        dlg.grab_set()
         dlg.wait_window()
         return result["value"]
 
@@ -2716,6 +2717,7 @@ class VotingApp:
         dlg.title(title)
         dlg.transient(parent)
         dlg.attributes('-topmost', True)
+        dlg.overrideredirect(True)
 
         w, h = 860, 640
         x = (self.root.winfo_screenwidth() // 2) - (w // 2)
@@ -2909,6 +2911,7 @@ class VotingApp:
             pop.title("Select Date")
             pop.transient(dlg)
             pop.attributes('-topmost', True)
+            pop.overrideredirect(True)
             pop.configure(bg="#ffffff")
             pop.geometry("430x380")
             cal_popup["win"] = pop
@@ -3003,20 +3006,16 @@ class VotingApp:
         refresh_preview()
 
         dlg.protocol("WM_DELETE_WINDOW", cancel)
+        dlg.grab_set()
         dlg.wait_window()
         return result["value"]
 
     def _admin_set_election_window(self, start_text=None, end_text=None, show_messages=True):
         had_admin_overlay = bool(self._admin_overlay and self._admin_overlay.winfo_exists())
-        if had_admin_overlay and (start_text is None or end_text is None):
-            # Ensure picker dialogs are shown above root and not hidden by fullscreen overlay.
-            self._close_admin_menu()
 
         if start_text is None:
             start_dt = self._show_datetime_picker_dialog("Set Election Start Time")
             if start_dt is None:
-                if had_admin_overlay:
-                    self.root.after(80, self.show_admin_menu)
                 return False
             start_text = start_dt.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -3030,8 +3029,6 @@ class VotingApp:
 
             end_dt = self._show_datetime_picker_dialog("Set Election End Time", initial_dt=suggested_end)
             if end_dt is None:
-                if had_admin_overlay:
-                    self.root.after(80, self.show_admin_menu)
                 return False
             end_text = end_dt.strftime("%Y-%m-%d %H:%M:%S")
 
