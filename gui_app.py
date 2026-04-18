@@ -738,6 +738,14 @@ class VotingApp:
 
     def rfid_scan_loop(self):
         while not self.stop_scanning:
+            if not getattr(self.rfid_service, 'connected', False):
+                try:
+                    self.rfid_service.connect()
+                except Exception:
+                    pass
+                time.sleep(0.5)
+                continue
+
             # Use 'auto' mode so that:
             #  - Voter cards (RSA-encrypted, long base64) are decrypted normally.
             #  - Officer cards (plain phrase) are returned as-is and routed by
