@@ -2371,6 +2371,7 @@ class VotingApp:
                 pass
             self._admin_overlay = None
         self._enforce_kiosk_mode()
+        self.show_idle_screen()
 
     def _admin_end_election(self):
         self._close_admin_menu()
