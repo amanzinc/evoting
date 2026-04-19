@@ -737,16 +737,6 @@ class VotingApp:
             padx=14,
             pady=6,
         )
-        self.clock_label.place(relx=0.985, rely=0.03, anchor='ne'
-        self.clock_label = tk.Label(
-            frame,
-            text="",
-            font=('Helvetica', 16, 'bold'),
-            bg="#111",
-            fg="#FFFFFF",
-            padx=14,
-            pady=6,
-        )
         self.clock_label.place(relx=0.985, rely=0.03, anchor='ne')
         self._refresh_clock_label()
 
