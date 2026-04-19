@@ -595,103 +595,32 @@ class ProvisionApp:
         return None
 
     def _print_ticket(self, bmd_id: int, public_key_pem: str, machine_id: str):
-        """Print the provisioning receipt.
-
-        QR encodes the SHA-256 fingerprint (64 hex chars) rather than the full
-        PEM: this keeps the QR small enough to scan reliably on narrow paper.
-        The RGB-canvas wrapping is mandatory — qrcode.make() returns a 1-bit
-        image that many ESC/POS drivers cannot render correctly.
-        """
-        import qrcode          # type: ignore
-        from PIL import Image
-        import hashlib
-
-        printer = self._get_printer()
-        if not printer:
-            raise RuntimeError("No thermal printer found")
-
-        timestamp   = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-        paper_width = 384      # dots (80 mm printer); use 302 for 58 mm
-        bar = "=" * 32
-
-        if "OTP_" in machine_id:
-            hw_label = "OTP (clone-resistant)"
-        elif "CPUSERIAL_" in machine_id:
-            hw_label = "CPU Serial (clone-resistant)"
-        elif "DMI_" in machine_id:
-            hw_label = "DMI UUID (clone-resistant)"
-        else:
-            hw_label = "FALLBACK (not secure)"
-
-        # ── QR generation — same pattern as _generate_voter_qr() in printer_service.py
-        # QR encodes the same JSON as bmd_key.json so the election admin can
-        # scan and directly import the key into the encryption system.
-        import json as _json
-        qr_data = _json.dumps(
-            [{
-                "bmd_id":             bmd_id,
-                "rsa_public_key_pem": public_key_pem.strip() + "\n",
-                "is_active":          True,
-            }],
-            separators=(',', ':')
-        )
-
-        qr_img = qrcode.make(qr_data)
-        qr_size = 350           # larger to fit the denser PEM QR
-        qr_img = qr_img.resize((qr_size, qr_size))
-
-        total_width = paper_width          # 384 dots for 80 mm
-        img_canvas = Image.new('RGB', (total_width, qr_size + 10), 'white')
-        x_pos = (total_width - qr_size) // 2
-        img_canvas.paste(qr_img, (x_pos, 5))
-        tmp_qr = f"/tmp/bmd_qr_{bmd_id}.png"
-        img_canvas.save(tmp_qr)
-
+        '''Print the provisioning receipt using the robust PrinterService.'''
+        from printer_service import PrinterService
+        class DummyDataHandler:
+            def __init__(self):
+                self.project_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        ps = PrinterService(DummyDataHandler())
+        
         try:
-            printer.set(align="center", bold=True)
-            printer.text(f"{bar}\n")
-            printer.text("BALLOT MARKING DEVICE\n")
-            printer.text("PROVISIONING RECEIPT\n")
-            printer.text(f"{bar}\n\n")
-
-            printer.set(align="left", bold=False)
-            printer.text(f"Date/Time  : {timestamp}\n")
-            printer.text(f"BMD ID     : {bmd_id}\n")
-            printer.text(f"HW Binding : {hw_label}\n\n")
-
-            printer.set(align="center", bold=True)
-            printer.text("PUBLIC KEY QR CODE\n")
-            printer.text("(Contains BMD ID + Full Public Key)\n\n")
-            # Identical call pattern to startup slip / VVPAT
-            printer.set(align='left')
-            printer.image(tmp_qr)
-            printer.text("\n")
-
-            # Also print fingerprint as human-readable text for verification
-            printer.set(align="left", bold=False)
-            fingerprint = hashlib.sha256(public_key_pem.strip().encode()).hexdigest()
-            printer.text(f"SHA-256: {fingerprint[:32]}\n")
-            printer.text(f"         {fingerprint[32:]}\n\n")
-
-            printer.set(align="center", bold=True)
-            printer.text(f"{bar}\nFULL PUBLIC KEY:\n{bar}\n")
-            printer.set(align="left", bold=False)
-            for line in public_key_pem.strip().splitlines():
-                printer.text(f"{line}\n")
-
-            printer.set(align="center", bold=True)
-            printer.text(f"\n{bar}\n")
-            printer.text("SEND TO ELECTION ADMIN\n")
-            printer.text(f"{bar}\n")
-
-            # Feed paper so all content clears the auto-cutter blade
-            printer.text("\n\n\n\n\n\n")
-            printer.cut(mode="FULL")
-            printer.text("\n\n\n\n\n\n") # Extra feed after cut
-
-        finally:
-            if os.path.exists(tmp_qr):
-                os.remove(tmp_qr)
+            ps.connect_printer()
+            if not ps.is_printer_connected():
+                raise RuntimeError("Printer could not connect")
+            ps.print_provisioning_ticket(bmd_id, public_key_pem, machine_id)
+        except Exception as e:
+            try:
+                if ps.printer:
+                    ps.printer.close()
+            except Exception:
+                pass
+            raise Exception(f"Printing failed: {e}")
+            raise Exception(f"Printing failed: {e}")
+            try:
+                if printer and hasattr(printer, 'close'):
+                    printer.close()
+            except Exception:
+                pass
 
 
     # ──────────────────────────────────────────────────────────────────────────

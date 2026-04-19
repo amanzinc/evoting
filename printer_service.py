@@ -20,6 +20,7 @@ class PrinterService:
     def __init__(self, data_handler):
         self.data_handler = data_handler
         self.printer = None
+        self._force_pyusb = False
         self.paper_width_chars = self._read_int_env("EVOTING_PAPER_WIDTH_CHARS", 32)
         self.paper_width_dots = self._read_int_env("EVOTING_PAPER_WIDTH_DOTS", 384)
         self.reverse_print = self._read_bool_env("EVOTING_PRINT_REVERSE", True)
@@ -203,7 +204,9 @@ class PrinterService:
 
         # On Linux, if a raw lp device is configured and exists, use it first.
         # This avoids unnecessary USB detach/probe paths that can interfere with usblp-backed printers.
-        if File and configured_device_path and os.path.exists(configured_device_path):
+        if getattr(self, "_force_pyusb", False):
+            pass # Skip straight to PyUSB reset
+        elif File and configured_device_path and os.path.exists(configured_device_path):
             try:
                 self.printer = File(configured_device_path, profile=configured_profile)
                 print(
@@ -296,6 +299,9 @@ class PrinterService:
             if configured_device_path:
                 device_candidates.append(configured_device_path)
 
+            if getattr(self, "_force_pyusb", False):
+                device_candidates = [] # PyUsb forced
+
             # Prioritize configured USB port first, then try standard ports.
             port_candidates = []
             try:
@@ -369,8 +375,11 @@ class PrinterService:
             try:
                 if self.printer:
                     self.printer.close()
-            except:
+            except Exception:
                 pass
+            if 'Input/' in str(e) or 'Errno 5' in str(e) or 'Device or resource busy' in str(e):
+                self._force_pyusb = True
+                print('Forcing PyUSB reconnect on next print...\n')
             self.printer = None
             raise e
         finally:
@@ -534,6 +543,9 @@ class PrinterService:
                     self.printer.close()
             except Exception:
                 pass
+            if 'Input/' in str(e) or 'Errno 5' in str(e) or 'Device or resource busy' in str(e):
+                self._force_pyusb = True
+                print('Forcing PyUSB reconnect on next print...\n')
             self.printer = None
             raise Exception(f"Failed to print provisioning ticket: {e}")
         finally:
@@ -595,8 +607,11 @@ class PrinterService:
             try:
                 if self.printer:
                     self.printer.close()
-            except:
+            except Exception:
                 pass
+            if 'Input/' in str(e) or 'Errno 5' in str(e) or 'Device or resource busy' in str(e):
+                self._force_pyusb = True
+                print('Forcing PyUSB reconnect on next print...\n')
             self.printer = None
             raise e
         finally:
@@ -744,6 +759,9 @@ class PrinterService:
                     self.printer.close()
             except Exception:
                 pass
+            if 'Input/' in str(e) or 'Errno 5' in str(e) or 'Device or resource busy' in str(e):
+                self._force_pyusb = True
+                print('Forcing PyUSB reconnect on next print...\n')
             self.printer = None
             raise Exception(f"Failed to print end election ticket: {e}")
         finally:
@@ -804,6 +822,9 @@ class PrinterService:
                     self.printer.close()
             except Exception:
                 pass
+            if 'Input/' in str(e) or 'Errno 5' in str(e) or 'Device or resource busy' in str(e):
+                self._force_pyusb = True
+                print('Forcing PyUSB reconnect on next print...\n')
             self.printer = None
             raise Exception(f"Failed to print challenge receipt: {e}")
         finally:
