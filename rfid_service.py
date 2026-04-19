@@ -1,3 +1,4 @@
+import threading
 import time
 import sys
 import os
@@ -26,7 +27,8 @@ class RFIDService:
         self.key_path = key_path
         self.private_key = None
         self.connected = False
-        
+        self.lock = threading.Lock()
+
         self.START_BLOCK = 4
         self.MAX_BLOCK_NO = 255
         self.MIN_REQUIRED_SECTORS = 24
@@ -84,6 +86,10 @@ class RFIDService:
         return block_no == (sector_first_block + blocks_per_sector - 1)
 
     def read_card(self, mode='encrypted', **kwargs):
+        with self.lock:
+            return self._read_card_internal(mode=mode, **kwargs)
+
+    def _read_card_internal(self, mode='encrypted', **kwargs):
         """
         Blocking call (with internal timeout loop) to read a card.
         Returns: (uid_string, decrypted_token_string) or None
@@ -150,23 +156,9 @@ class RFIDService:
                 # Enforce reading at least N sectors before allowing decrypt for voter cards
 
                 if payload_complete:
-
-                    if mode == 'plain':
-
-                        break
-
-                    elif len(read_sectors) >= self.MIN_REQUIRED_SECTORS:
-
-                        break
+                    break
 
                 block_no += 1
-
-            if mode == 'encrypted' and len(read_sectors) < self.MIN_REQUIRED_SECTORS:
-                print(
-                    f"Card read rejected: only {len(read_sectors)} sectors read; "
-                    f"minimum required is {self.MIN_REQUIRED_SECTORS}."
-                )
-                return None
 
             if not raw_bytes:
                 return None
