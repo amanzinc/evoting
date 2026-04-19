@@ -414,13 +414,18 @@ class RFIDService:
             if block_no > self.MAX_BLOCK_NO:
                 break
 
-            try:
-                auth = self.pn532.mifare_classic_authenticate_block(
-                    uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
-                )
-            except Exception:
-                block_no += 1
-                continue
+            # Retry auth once for transient glitches, matching other read loops
+            auth = False
+            for _attempt in range(2):
+                try:
+                    auth = self.pn532.mifare_classic_authenticate_block(
+                        uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
+                    )
+                    if auth:
+                        break
+                    time.sleep(0.05)
+                except Exception:
+                    time.sleep(0.05)
 
             if not auth:
                 block_no += 1
