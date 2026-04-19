@@ -230,9 +230,11 @@ class RFIDService:
                     time.sleep(0.05)
 
             if not auth:
-                # Skip this block but keep going — payload may resume in next sector
-                block_no += 1
-                continue
+                # MIFARE Classic cards halt on auth failure. We must give up on this scan attempt
+                # so the outer loop will call `read_passive_target` again to wake it up!
+                # We can't just `continue` to the next block while the card is halted!
+                print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
+                return None
 
             try:
                 raw_block = self.pn532.mifare_classic_read_block(block_no)
@@ -299,8 +301,8 @@ class RFIDService:
                     time.sleep(0.05)
 
             if not auth:
-                block_no += 1
-                continue
+                print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
+                return None
 
             try:
                 raw_block = self.pn532.mifare_classic_read_block(block_no)
@@ -428,8 +430,8 @@ class RFIDService:
                     time.sleep(0.05)
 
             if not auth:
-                block_no += 1
-                continue
+                print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
+                return None
 
             try:
                 raw_block = self.pn532.mifare_classic_read_block(block_no)
@@ -566,3 +568,6 @@ class RFIDService:
                 self.connected = False
                 self.pn532 = None
             return None
+
+
+
