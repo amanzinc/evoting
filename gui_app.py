@@ -761,6 +761,15 @@ class VotingApp:
             result = self.scan_queue.get_nowait()
             if result:
                  uid, token = result
+                 if uid == "ERROR":
+                     if hasattr(self, 'rfid_status_label') and self.rfid_status_label.winfo_exists():
+                         self.rfid_status_label.config(text="Card Read Failed! Please try again.", fg="#ff4444")
+                         self.root.after(3000, lambda: self.rfid_status_label.config(text="Waiting for Card...", fg="#fff"))
+                     self.stop_scanning = False
+                     import threading
+                     threading.Thread(target=self.rfid_scan_loop, daemon=True).start()
+                     self.root.after(500, self.check_scan_queue)
+                     return
                  self.on_card_scanned(token)
                  return
         except queue.Empty:
@@ -2028,6 +2037,18 @@ class VotingApp:
             result = self.officer_scan_queue.get_nowait()
             if result:
                 uid, token_payload = result
+                if uid == "ERROR":
+                    # Restart the background thread, then show a message box
+                    self.stop_scanning = False
+                    import threading
+                    threading.Thread(target=self.officer_scan_loop, daemon=True).start()
+                    self.root.after(500, self.check_officer_scan_queue)
+                    
+                    try:
+                        self._show_custom_messagebox("Card Error", "Card Read Failed! Please try again.", alert_type="error")
+                    except Exception:
+                        pass
+                    return
                 self.on_officer_card_scanned(token_payload)
                 return
         except queue.Empty:

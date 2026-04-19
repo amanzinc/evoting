@@ -574,12 +574,16 @@ class RFIDService:
             print(f"Card Detected: {list(uid)}")
 
             if mode == 'plain':
-                return self._read_plain_payload(uid, max_data_blocks=12)
+                res = self._read_plain_payload(uid, max_data_blocks=12)
             elif mode == 'encrypted':
-                return self._read_encrypted_payload(uid)
+                res = self._read_encrypted_payload(uid)
             else:
-                # 'auto' — legacy backward-compat path
-                return self._read_auto_payload(uid, min_required_sectors, min_required_blocks)
+                # 'auto' mode fallback
+                res = self._read_auto_payload(uid, min_required_sectors, min_required_blocks)
+
+            if res is None:
+                return ("ERROR", "Card Read Failed! Please try again.")
+            return res
 
         except Exception as e:
             print(f"Error reading card: {e}")
@@ -587,7 +591,7 @@ class RFIDService:
             if "NoneType" in str(e) or "unexpected command" in str(e).lower():
                 self.connected = False
                 self.pn532 = None
-            return None
+            return ("ERROR", "Card Error! Please try scanning again.")
 
 
 
