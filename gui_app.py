@@ -827,6 +827,11 @@ class VotingApp:
         return eid
 
     def on_card_scanned(self, token_payload):
+        if self.data_handler is None:
+            print("❌ DataHandler not initialized. Rejecting voter session.")
+            self.show_rfid_error("System Loading\nPlease wait, loading elections...")
+            return
+
         # Officer cards are now handled exclusively via the Polling Officer button;
         # voter scan loop only uses encrypted mode, so this branch is a safety net
         # in case of an unexpected plain-text payload reaching this path.
