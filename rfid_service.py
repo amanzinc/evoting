@@ -122,18 +122,21 @@ class RFIDService:
         return block_no == (sector_first_block + blocks_per_sector - 1)
 
     def _auth_block(self, uid, block_no):
-        """Authenticate a single block with 3 retries and exponential backoff."""
-        delays = [0.05, 0.15, 0.30]   # 50 ms → 150 ms → 300 ms
-        for delay in delays:
+        """Authenticate a single block, retrying only on I2C exceptions.
+
+        MIFARE Classic cards halt immediately on a failed auth — retrying a
+        False return is pointless and confuses the PN532 state machine.
+        We only retry when the library raises an exception (transient I2C glitch).
+        """
+        for attempt in range(3):
             try:
                 ok = self.pn532.mifare_classic_authenticate_block(
                     uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
                 )
-                if ok:
-                    return True
+                return ok  # True → success; False → card halted, stop immediately
             except Exception:
-                pass
-            time.sleep(delay)
+                if attempt < 2:
+                    time.sleep(0.05 * (attempt + 1))
         return False
 
     def _iter_data_blocks(self):
@@ -242,8 +245,8 @@ class RFIDService:
                     # MIFARE Classic halts on auth failure.  Record the halt time so
                     # the next read_card() call waits for the RF cooldown.
                     self._last_halt_time = time.monotonic()
-                    print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                    return ("error", "Auth timeout.\nHold card longer.")
+                    print(f"Auth failed for block {block_no}. Card halted — will retry on next scan.")
+                    return None
                 last_authed_sector = current_sector
 
             try:
@@ -302,8 +305,8 @@ class RFIDService:
             if current_sector != last_authed_sector:
                 if not self._auth_block(uid, block_no):
                     self._last_halt_time = time.monotonic()
-                    print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                    return ("error", "Auth timeout.\nHold card longer.")
+                    print(f"Auth failed for block {block_no}. Card halted — will retry on next scan.")
+                    return None
                 last_authed_sector = current_sector
 
             try:
@@ -428,8 +431,8 @@ class RFIDService:
             if current_sector != last_authed_sector:
                 if not self._auth_block(uid, block_no):
                     self._last_halt_time = time.monotonic()
-                    print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                    return ("error", "Auth timeout.\nHold card longer.")
+                    print(f"Auth failed for block {block_no}. Card halted — will retry on next scan.")
+                    return None
                 last_authed_sector = current_sector
 
             try:
