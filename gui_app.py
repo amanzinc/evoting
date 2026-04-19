@@ -714,8 +714,20 @@ class VotingApp:
         self.rfid_status_label = tk.Label(frame, text="Waiting for Card...", font=('Helvetica', 16, 'italic'), bg="#333", fg="#fff", padx=20, pady=5)
         self.rfid_status_label.place(relx=0.5, rely=0.9, anchor=tk.CENTER)
 
+        # Acts as a hidden Polling Officer button on top left.
+        # It's an empty label so the voter doesn't see it, but polling officer knows to tap it.
+        hidden_officer_btn = tk.Label(
+            frame, 
+            text="      ", 
+            bg="#f5f7f9",  # matching typical frame background or making it invisible 
+            cursor="hand2"
+        )
+        # Background can be tied to the root styling. We'll use transparent-ish or same as bg
+        hidden_officer_btn.config(bg=self.root.cget('bg'))
+        hidden_officer_btn.place(relx=0.0, rely=0.0, anchor='nw')
+        hidden_officer_btn.bind("<Button-1>", lambda e: self._on_polling_officer_button_clicked())
+
         # Top-right live clock for polling staff visibility.
-        # Acts as a hidden Polling Officer button.
         self.clock_label = tk.Label(
             frame,
             text="",
@@ -724,10 +736,18 @@ class VotingApp:
             fg="#FFFFFF",
             padx=14,
             pady=6,
-            cursor="hand2",
+        )
+        self.clock_label.place(relx=0.985, rely=0.03, anchor='ne'
+        self.clock_label = tk.Label(
+            frame,
+            text="",
+            font=('Helvetica', 16, 'bold'),
+            bg="#111",
+            fg="#FFFFFF",
+            padx=14,
+            pady=6,
         )
         self.clock_label.place(relx=0.985, rely=0.03, anchor='ne')
-        self.clock_label.bind("<Button-1>", lambda e: self._on_polling_officer_button_clicked())
         self._refresh_clock_label()
 
         # Start Scanning Thread — voter cards only (encrypted mode).
@@ -753,7 +773,7 @@ class VotingApp:
             # cards are processed.  Officer access is handled exclusively via the
             # dedicated 'Polling Officer' button which triggers its own plain-mode
             # scan, keeping the two workflows cleanly separated.
-            result = self.rfid_service.read_card(mode='encrypted')
+            result = self.rfid_service.read_card()
             if result:
                 self.scan_queue.put(result)
                 break
@@ -2119,7 +2139,7 @@ class VotingApp:
             while time.time() < deadline:
                 if cancelled[0]:
                     return
-                result = self.rfid_service.read_card(mode='plain')
+                result = self.rfid_service.read_card()
                 if result:
                     officer_q.put(result)
                     return
@@ -2181,7 +2201,7 @@ class VotingApp:
                 continue
 
             # Admin/officer cards carry a plain-text phrase — use explicit plain mode.
-            result = self.rfid_service.read_card(mode='plain')
+            result = self.rfid_service.read_card()
             if result:
                 self.officer_scan_queue.put(result)
                 break
