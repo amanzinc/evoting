@@ -7,8 +7,9 @@ try:
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives import serialization
     import hardware_crypto
+    CRYPTO_AVAILABLE = True
 except ImportError:
-    pass
+    CRYPTO_AVAILABLE = False
 
 # Hardware libraries - Wrapped to prevent crash on Dev machine
 try:
@@ -120,18 +121,18 @@ class RFIDService:
         return block_no == (sector_first_block + blocks_per_sector - 1)
 
     def _auth_block(self, uid, block_no):
-        """Authenticate a single block with 3 retries and exponential backoff."""
-        delays = [0.05, 0.15, 0.30]   # 50 ms → 150 ms → 300 ms
-        for delay in delays:
+        """Retry once on I2C exception; never retry a clean auth rejection."""
+        for attempt in range(2):
             try:
                 ok = self.pn532.mifare_classic_authenticate_block(
                     uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
                 )
                 if ok:
                     return True
+                return False   # Clean False = card halted. No retry.
             except Exception:
-                pass
-            time.sleep(delay)
+                if attempt == 0:
+                    time.sleep(0.05)
         return False
 
     def _iter_data_blocks(self):
@@ -241,8 +242,11 @@ class RFIDService:
                     # the next read_card() call waits for the RF cooldown.
                     self._last_halt_time = time.monotonic()
                     print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                    return ("error", "Auth timeout.\nHold card longer.")
-                block_no += 1
+                    return None                last_authed_sector = current_sector
+
+            try:
+                raw_block = self.pn532.mifare_classic_read_block(block_no)
+            except Exception:                block_no += 1
                 continue
 
             data = self._normalize_block_data(raw_block)
@@ -296,7 +300,7 @@ class RFIDService:
                 if not self._auth_block(uid, block_no):
                     self._last_halt_time = time.monotonic()
                     print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                    return ("error", "Auth timeout.\nHold card longer.")
+                    return None
                 last_authed_sector = current_sector
 
             try:
@@ -371,7 +375,7 @@ class RFIDService:
             if raw_text and len(raw_text) < 64:
                 print(f"Returning as plain text fallback: {raw_text}")
                 return (uid.hex(), raw_text)
-            return ("error", "Decryption failed")
+            return None
 
         try:
             import json
@@ -413,7 +417,7 @@ class RFIDService:
                 if not self._auth_block(uid, block_no):
                     self._last_halt_time = time.monotonic()
                     print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                    return ("error", "Auth timeout.\nHold card longer.")
+                    return None
                 last_authed_sector = current_sector
 
             try:
@@ -555,8 +559,9 @@ class RFIDService:
                 res = self._read_auto_payload(uid, min_required_sectors, min_required_blocks)
 
             if res is None:
-                # Return None (not an ERROR tuple) so that scan loops treat this
-                # the same as "no card yet" and simply retry after a short sleep.
+                # User-facing error handled centrally: if we saw a card but failed to process it.
+                if uid is not None:
+                    return ("error", "Card read failed.\nHold card longer.")
                 return None
             return res
 
