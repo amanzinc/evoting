@@ -560,8 +560,10 @@ class PrinterService:
             p.text("KEEP THIS SLIP FOR SETUP\n")
             p.text(TOP_BAR + "\n")
             p.set(align='left', font='a', width=1, height=1, bold=True)
-            p.text("\n\n\n\n\n\n\n\n")
-            p.cut(mode='FULL')
+            p.text("\n\n\n\n\n\n\n\n")            
+            import time
+            time.sleep(3) # Wait for print buffer to clear before cut command
+                        p.cut(mode='FULL')
             p.text("\n\n\n\n\n\n") # Extra feed after cut
             return True
         except Exception as e:
