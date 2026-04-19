@@ -220,10 +220,17 @@ class PrinterService:
         # Try to actively detach any OS kernel drivers (usblp) blocking the USB endpoints to prevent Errno 16
         try:
             import usb.core
-            for vid, pid in [(0x0483, 0x5743), (0x0416, 0x5011), (0x04b8, 0x0202)]:
-                dev = usb.core.find(idVendor=vid, idProduct=pid)
-                if dev is not None and dev.is_kernel_driver_active(0):
-                    dev.detach_kernel_driver(0)
+            # Find ANY device that has a printer interface (Class 7)
+            printers = usb.core.find(find_all=True, custom_match=lambda d: any(
+                intf.bInterfaceClass == 7 for cfg in d for intf in cfg
+            ))
+            for pdev in printers:
+                try:
+                    if pdev.is_kernel_driver_active(0):
+                        pdev.detach_kernel_driver(0)
+                        print(f"Detached kernel driver for auto-detected printer {hex(pdev.idVendor)}:{hex(pdev.idProduct)}")
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -290,6 +297,26 @@ class PrinterService:
                 print("Printer connected via USB (0x04b8:0x0202) successfully.")
                 return
             except Exception as e:
+                pass
+
+            # 6. Auto-detect any USB printer (Class=7) not listed above
+            try:
+                import usb.core
+                printers = usb.core.find(find_all=True, custom_match=lambda d: any(
+                    intf.bInterfaceClass == 7 for cfg in d for intf in cfg
+                ))
+                for pdev in printers:
+                    vid, pid = pdev.idVendor, pdev.idProduct
+                    # Skip if it's one we already explicitly tried
+                    if (vid, pid) in [(0x0483, 0x5743), (0x0416, 0x5011), (0x04b8, 0x0202)]:
+                        continue
+                    try:
+                        self.printer = Usb(vid, pid, profile="default")
+                        print(f"Printer auto-connected via generic USB ({hex(vid)}:{hex(pid)}) successfully.")
+                        return
+                    except Exception as e:
+                        print(f"Failed generic USB connect for {hex(vid)}:{hex(pid)} - {e}")
+            except Exception:
                 pass
                 
         # Fallback to File class (/dev/usb/lpX or /dev/lpX)
