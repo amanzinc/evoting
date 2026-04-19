@@ -433,22 +433,25 @@ class RFIDService:
             if block_no > self.MAX_BLOCK_NO:
                 break
 
-            # Retry auth once for transient glitches, matching other read loops
-            auth = False
-            for _attempt in range(2):
-                try:
-                    auth = self.pn532.mifare_classic_authenticate_block(
-                        uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
-                    )
-                    if auth:
-                        break
-                    time.sleep(0.05)
-                except Exception:
-                    time.sleep(0.05)
+            current_sector = self._block_to_sector(block_no)
+            if current_sector != last_authed_sector:
+                # Retry auth once for transient glitches, matching other read loops
+                auth = False
+                for _attempt in range(2):
+                    try:
+                        auth = self.pn532.mifare_classic_authenticate_block(
+                            uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
+                        )
+                        if auth:
+                            break
+                        time.sleep(0.05)
+                    except Exception:
+                        time.sleep(0.05)
 
-            if not auth:
-                print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                return None
+                if not auth:
+                    print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
+                    return None
+                last_authed_sector = current_sector
 
             try:
                 raw_block = self.pn532.mifare_classic_read_block(block_no)
