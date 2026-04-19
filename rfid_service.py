@@ -557,7 +557,7 @@ class RFIDService:
         except Exception as e:
             print(f"Error reading card: {e}")
             # Recover from transient PN532/I2C glitches by forcing reconnect.
-            if "NoneType" in str(e):
+            if "NoneType" in str(e) or "unexpected command" in str(e).lower():
                 self.connected = False
                 self.pn532 = None
             return None
