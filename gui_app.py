@@ -715,6 +715,7 @@ class VotingApp:
         self.rfid_status_label.place(relx=0.5, rely=0.9, anchor=tk.CENTER)
 
         # Top-right live clock for polling staff visibility.
+        # Acts as a hidden Polling Officer button.
         self.clock_label = tk.Label(
             frame,
             text="",
@@ -723,26 +724,11 @@ class VotingApp:
             fg="#FFFFFF",
             padx=14,
             pady=6,
+            cursor="hand2",
         )
         self.clock_label.place(relx=0.985, rely=0.03, anchor='ne')
+        self.clock_label.bind("<Button-1>", lambda e: self._on_polling_officer_button_clicked())
         self._refresh_clock_label()
-
-        # Bottom-left: Polling Officer button for explicit officer RFID verification.
-        officer_btn = tk.Button(
-            frame,
-            text="\U0001F6E1 Polling Officer",
-            font=('Helvetica', 13, 'bold'),
-            bg="#1A237E",
-            fg="#FFFFFF",
-            activebackground="#283593",
-            activeforeground="#FFFFFF",
-            relief=tk.FLAT,
-            padx=18,
-            pady=10,
-            cursor="hand2",
-            command=self._on_polling_officer_button_clicked,
-        )
-        officer_btn.place(relx=0.015, rely=0.97, anchor='sw')
 
         # Start Scanning Thread — voter cards only (encrypted mode).
         self.stop_scanning = False
@@ -2477,11 +2463,23 @@ class VotingApp:
         btn_wrap = 280 if compact_layout else 340
         btn_outer_pad_y = 5 if compact_layout else 8
 
+        bmd_id = "UNKNOWN"
+        try:
+            import json, os
+            project_dir = os.path.dirname(os.path.abspath(__file__))
+            cfg_path = os.path.join(project_dir, "bmd_config.json")
+            if os.path.exists(cfg_path):
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                bmd_id = cfg.get("bmd_id", "UNKNOWN")
+        except Exception:
+            pass
+
         header = tk.Frame(overlay, bg="#161b22", pady=header_pad_y)
         header.pack(fill=tk.X)
         tk.Label(
             header,
-            text="POLLING OFFICER MENU",
+            text=f"POLLING OFFICER MENU (BMD: {bmd_id})",
             font=header_title_font,
             bg="#161b22",
             fg="#f0f6fc"
