@@ -563,7 +563,7 @@ class PrinterService:
             p.text("\n\n\n\n\n\n\n\n")            
             import time
             time.sleep(3) # Wait for print buffer to clear before cut command
-                        p.cut(mode='FULL')
+            p.cut(mode='FULL')
             p.text("\n\n\n\n\n\n") # Extra feed after cut
             return True
         except Exception as e:
