@@ -83,7 +83,7 @@ class RFIDService:
         sector_first_block, blocks_per_sector = self._sector_layout(sector_no)
         return block_no == (sector_first_block + blocks_per_sector - 1)
 
-    def read_card(self, **kwargs):
+    def read_card(self, mode='encrypted', **kwargs):
         """
         Blocking call (with internal timeout loop) to read a card.
         Returns: (uid_string, decrypted_token_string) or None
@@ -136,13 +136,21 @@ class RFIDService:
                     else:
                         raw_bytes.extend(data)
 
-                # Enforce reading at least N sectors before allowing decrypt.
-                if payload_complete and len(read_sectors) >= self.MIN_REQUIRED_SECTORS:
-                    break
+                # Enforce reading at least N sectors before allowing decrypt for voter cards
+
+                if payload_complete:
+
+                    if mode == 'plain':
+
+                        break
+
+                    elif len(read_sectors) >= self.MIN_REQUIRED_SECTORS:
+
+                        break
 
                 block_no += 1
 
-            if len(read_sectors) < self.MIN_REQUIRED_SECTORS:
+            if mode == 'encrypted' and len(read_sectors) < self.MIN_REQUIRED_SECTORS:
                 print(
                     f"Card read rejected: only {len(read_sectors)} sectors read; "
                     f"minimum required is {self.MIN_REQUIRED_SECTORS}."
@@ -152,35 +160,47 @@ class RFIDService:
             if not raw_bytes:
                 return None
 
+            if mode == 'plain':
+                raw_text = raw_bytes.decode('utf-8', errors='ignore').strip()
+                if raw_text:
+                    return (uid.hex(), raw_text)
+                return None
+
             # Decrypt
             if not self.private_key:
                 if not self.load_key():
                     return None
 
-
             try:
-                import base64
-                # Try decoding as an encrypted voter card first
-                try:
-                    encrypted_bytes = base64.b64decode(raw_bytes.decode('utf-8'), validate=True)
-                    decrypted_bytes = self.private_key.decrypt(
-                        encrypted_bytes,
-                        padding.OAEP(
-                            mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                            algorithm=hashes.SHA256(),
-                            label=None
-                        )
-                    )
-                    decrypted = decrypted_bytes.decode("utf-8")
-                except Exception as e:
-                    # Fallback: Treat as a plaintext Polling Officer / Admin card
-                    print(f"Decryption failed ({e}). Treating as plain text card.")
-                    raw_text = raw_bytes.decode('utf-8', errors='ignore').strip()
-                    if raw_text:
-                        return (uid.hex(), raw_text)
-                    return None
 
-            
+                import base64
+
+                encrypted_bytes = base64.b64decode(raw_bytes.decode('utf-8'), validate=True)
+
+                decrypted_bytes = self.private_key.decrypt(
+
+                    encrypted_bytes,
+
+                    padding.OAEP(
+
+                        mgf=padding.MGF1(algorithm=hashes.SHA256()),
+
+                        algorithm=hashes.SHA256(),
+
+                        label=None
+
+                    )
+
+                )
+
+                decrypted = decrypted_bytes.decode("utf-8")
+
+            except Exception as e:
+
+                print(f"Decryption failed: {e}")
+
+                return None
+
             try:
                 import json
                 token_data = json.loads(decrypted)

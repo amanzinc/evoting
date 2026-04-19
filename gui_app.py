@@ -773,7 +773,7 @@ class VotingApp:
             # cards are processed.  Officer access is handled exclusively via the
             # dedicated 'Polling Officer' button which triggers its own plain-mode
             # scan, keeping the two workflows cleanly separated.
-            result = self.rfid_service.read_card()
+            result = self.rfid_service.read_card(mode='encrypted')
             if result:
                 self.scan_queue.put(result)
                 break
@@ -2139,7 +2139,7 @@ class VotingApp:
             while time.time() < deadline:
                 if cancelled[0]:
                     return
-                result = self.rfid_service.read_card()
+                result = self.rfid_service.read_card(mode='plain')
                 if result:
                     officer_q.put(result)
                     return
@@ -2201,7 +2201,7 @@ class VotingApp:
                 continue
 
             # Admin/officer cards carry a plain-text phrase — use explicit plain mode.
-            result = self.rfid_service.read_card()
+            result = self.rfid_service.read_card(mode='plain')
             if result:
                 self.officer_scan_queue.put(result)
                 break
