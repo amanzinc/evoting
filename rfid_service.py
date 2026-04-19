@@ -94,7 +94,10 @@ class RFIDService:
 
         try:
             # Check for card
-            uid = self.pn532.read_passive_target(timeout=0.5)
+            try:
+                uid = self.pn532.read_passive_target(timeout=0.5)
+            except Exception as e:
+                uid = None
             if uid is None:
                 return None
             
@@ -122,7 +125,11 @@ class RFIDService:
                     block_no += 1
                     continue
                     
-                data = self.pn532.mifare_classic_read_block(block_no)
+                try:
+                    data = self.pn532.mifare_classic_read_block(block_no)      
+                except Exception as ignore_e:
+                    data = None
+
                 if data is None:
                     block_no += 1
                     continue
@@ -216,5 +223,8 @@ class RFIDService:
             return (uid.hex(), decrypted)
 
         except Exception as e:
-            print(f"Error reading card: {e}")
+            # I2C lines can be noisy. Hide common PN532 exceptions to prevent console spam.
+            err_msg = str(e)
+            if "checksum" not in err_msg and "NoneType" not in err_msg and "unexpected command" not in err_msg:
+                print(f"Error reading card: {e}")
             return None
