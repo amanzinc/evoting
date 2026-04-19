@@ -178,25 +178,34 @@ class RFIDService:
 
                 import base64
 
-                encrypted_bytes = base64.b64decode(raw_bytes.decode('utf-8'), validate=True)
+                raw_text = raw_bytes.decode('utf-8', errors='replace')
 
-                decrypted_bytes = self.private_key.decrypt(
+                # Detect plain-text (officer) cards early — they won't be base64
+                try:
+                    encrypted_bytes = base64.b64decode(raw_text, validate=True)
+                except Exception:
+                    # Not a base64-encoded voter card; skip silently in encrypted mode
+                    return None
 
-                    encrypted_bytes,
+                key_size = self.private_key.key_size // 8  # e.g. 256 for RSA-2048
 
-                    padding.OAEP(
+                if len(encrypted_bytes) == 0 or len(encrypted_bytes) % key_size != 0:
+                    print(f"Decryption skipped: unexpected ciphertext length {len(encrypted_bytes)} (key_size={key_size})")
+                    return None
 
-                        mgf=padding.MGF1(algorithm=hashes.SHA256()),
-
-                        algorithm=hashes.SHA256(),
-
-                        label=None
-
-                    )
-
+                oaep_padding = padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None
                 )
 
-                decrypted = decrypted_bytes.decode("utf-8")
+                # Support single-chunk and multi-chunk RSA payloads
+                decrypted_parts = []
+                for i in range(0, len(encrypted_bytes), key_size):
+                    chunk = encrypted_bytes[i:i + key_size]
+                    decrypted_parts.append(self.private_key.decrypt(chunk, oaep_padding))
+
+                decrypted = b"".join(decrypted_parts).decode("utf-8")
 
             except Exception as e:
 
