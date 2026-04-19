@@ -1,6 +1,7 @@
 import time
 import sys
 import os
+import threading
 
 try:
     from cryptography.hazmat.primitives.asymmetric import padding
@@ -40,6 +41,7 @@ class RFIDService:
         # reliable; shorter values cause persistent halt loops.
         self._last_halt_time = 0.0
         self.HALT_RECOVERY_DELAY = 0.40   # seconds
+        self.lock = threading.Lock()
 
     def _block_to_sector(self, block_no):
         # MIFARE Classic 4K: sectors 0-31 have 4 blocks, sectors 32-39 have 16 blocks.
@@ -550,6 +552,10 @@ class RFIDService:
         if not self.connected:
             return None
 
+        with self.lock:
+            return self._read_card_locked(mode, min_required_sectors, min_required_blocks)
+
+    def _read_card_locked(self, mode, min_required_sectors, min_required_blocks):
         # ── RF Halt-Recovery Cooldown ─────────────────────────────────────────
         # After a MIFARE Classic card halts (auth failure) the card's on-board
         # capacitor must drain before the card can re-initialise.  Calling
