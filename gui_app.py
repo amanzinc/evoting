@@ -726,8 +726,25 @@ class VotingApp:
         )
         self.clock_label.place(relx=0.985, rely=0.03, anchor='ne')
         self._refresh_clock_label()
-        
-        # Start Scanning Thread
+
+        # Bottom-left: Polling Officer button for explicit officer RFID verification.
+        officer_btn = tk.Button(
+            frame,
+            text="\U0001F6E1 Polling Officer",
+            font=('Helvetica', 13, 'bold'),
+            bg="#1A237E",
+            fg="#FFFFFF",
+            activebackground="#283593",
+            activeforeground="#FFFFFF",
+            relief=tk.FLAT,
+            padx=18,
+            pady=10,
+            cursor="hand2",
+            command=self._on_polling_officer_button_clicked,
+        )
+        officer_btn.place(relx=0.015, rely=0.97, anchor='sw')
+
+        # Start Scanning Thread — voter cards only (encrypted mode).
         self.stop_scanning = False
         self.scan_queue = queue.Queue()
         self.scan_thread = threading.Thread(target=self.rfid_scan_loop)
@@ -746,13 +763,11 @@ class VotingApp:
                 time.sleep(0.5)
                 continue
 
-            # Use 'auto' mode so that:
-            #  - Voter cards (RSA-encrypted, long base64) are decrypted normally.
-            #  - Officer cards (plain phrase) are returned as-is and routed by
-            #    on_card_scanned -> _is_polling_officer_token -> on_officer_card_scanned.
-            # read_card() returns None when no card is present or auth fails;
-            # the RF-cooldown delay is handled inside rfid_service itself.
-            result = self.rfid_service.read_card(mode='auto')
+            # Voter-only scan: use 'encrypted' mode so only RSA-encrypted voter
+            # cards are processed.  Officer access is handled exclusively via the
+            # dedicated 'Polling Officer' button which triggers its own plain-mode
+            # scan, keeping the two workflows cleanly separated.
+            result = self.rfid_service.read_card(mode='encrypted')
             if result:
                 self.scan_queue.put(result)
                 break
@@ -812,7 +827,9 @@ class VotingApp:
         return eid
 
     def on_card_scanned(self, token_payload):
-        # Intercept Polling Officer Cards early
+        # Officer cards are now handled exclusively via the Polling Officer button;
+        # voter scan loop only uses encrypted mode, so this branch is a safety net
+        # in case of an unexpected plain-text payload reaching this path.
         if self._is_polling_officer_token(token_payload):
             self.on_officer_card_scanned(token_payload)
             return
@@ -2004,6 +2021,154 @@ class VotingApp:
         self.officer_scan_thread.daemon = True
         self.officer_scan_thread.start()
         self.check_officer_scan_queue()
+
+    def _on_polling_officer_button_clicked(self):
+        """Called when the Polling Officer button is pressed on the voter RFID screen.
+
+        Pauses the voter scan loop and shows a modal overlay instructing the officer
+        to scan their RFID card.  A background thread reads the card in plain mode
+        and, on success, routes to on_officer_card_scanned.  A Cancel button lets
+        voters return to normal waiting without leaving the unit in a broken state.
+        """
+        # Pause voter scan loop
+        self.stop_scanning = True
+
+        # ── Officer scan overlay ──────────────────────────────────────────────
+        overlay = tk.Toplevel(self.root)
+        overlay.title("Polling Officer Verification")
+        overlay.configure(bg="#0D1B6E")
+        overlay.attributes("-topmost", True)
+        overlay.grab_set()  # modal
+
+        # Center the overlay
+        ow, oh = 560, 340
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        overlay.geometry(f"{ow}x{oh}+{(sw - ow) // 2}+{(sh - oh) // 2}")
+        overlay.resizable(False, False)
+        overlay.overrideredirect(True)  # borderless
+
+        tk.Label(
+            overlay,
+            text="\U0001F6E1  Polling Officer Verification",
+            font=('Helvetica', 18, 'bold'),
+            bg="#0D1B6E",
+            fg="#FFFFFF",
+        ).pack(pady=(30, 8))
+
+        tk.Label(
+            overlay,
+            text="Please scan your Polling Officer RFID card now.",
+            font=('Helvetica', 14),
+            bg="#0D1B6E",
+            fg="#90CAF9",
+            wraplength=500,
+            justify="center",
+        ).pack(pady=(0, 10))
+
+        status_lbl = tk.Label(
+            overlay,
+            text="Waiting for card...",
+            font=('Helvetica', 13, 'italic'),
+            bg="#0D1B6E",
+            fg="#FFD54F",
+        )
+        status_lbl.pack(pady=6)
+
+        cancelled = [False]
+        result_holder = [None]
+
+        def _cancel():
+            cancelled[0] = True
+            overlay.grab_release()
+            overlay.destroy()
+            # Resume normal voter scanning
+            self.stop_scanning = False
+            self.scan_queue = queue.Queue()
+            self.scan_thread = threading.Thread(target=self.rfid_scan_loop)
+            self.scan_thread.daemon = True
+            self.scan_thread.start()
+            self.check_scan_queue()
+
+        tk.Button(
+            overlay,
+            text="Cancel",
+            font=('Helvetica', 13),
+            bg="#B71C1C",
+            fg="white",
+            activebackground="#C62828",
+            activeforeground="white",
+            relief=tk.FLAT,
+            padx=24,
+            pady=8,
+            cursor="hand2",
+            command=_cancel,
+        ).pack(pady=(16, 0))
+
+        # ── Background thread: plain-mode officer card scan ───────────────────
+        officer_q = queue.Queue()
+
+        def _officer_scan_worker():
+            # Reconnect if needed
+            if not getattr(self.rfid_service, 'connected', False):
+                try:
+                    self.rfid_service.connect()
+                except Exception:
+                    pass
+            # Poll until we get a result or a cancel signal
+            deadline = time.time() + 30  # 30-second scan window
+            while time.time() < deadline:
+                if cancelled[0]:
+                    return
+                result = self.rfid_service.read_card(mode='plain')
+                if result:
+                    officer_q.put(result)
+                    return
+                time.sleep(0.4)
+            # Timeout
+            officer_q.put(None)
+
+        scan_thread = threading.Thread(target=_officer_scan_worker, daemon=True)
+        scan_thread.start()
+
+        # ── Poll queue from the Tkinter main loop ────────────────────────────
+        def _check_officer_q():
+            if cancelled[0]:
+                return
+            try:
+                res = officer_q.get_nowait()
+                overlay.grab_release()
+                overlay.destroy()
+                if res is None:
+                    # Timeout — update status and resume voter scan
+                    self.stop_scanning = False
+                    self.scan_queue = queue.Queue()
+                    self.scan_thread = threading.Thread(target=self.rfid_scan_loop)
+                    self.scan_thread.daemon = True
+                    self.scan_thread.start()
+                    self.check_scan_queue()
+                    self._show_custom_messagebox(
+                        "Timeout",
+                        "No officer card detected within 30 seconds.\nReturning to voter screen.",
+                        alert_type="error"
+                    )
+                    return
+                # Got a card — route to officer handler
+                uid, token_payload = res
+                self.on_officer_card_scanned(token_payload)
+                return
+            except queue.Empty:
+                pass
+            # Update the waiting animation
+            dots = getattr(self, '_officer_wait_dots', 0)
+            self._officer_wait_dots = (dots + 1) % 4
+            try:
+                status_lbl.config(text="Waiting for card" + "." * self._officer_wait_dots)
+            except Exception:
+                pass
+            self.root.after(400, _check_officer_q)
+
+        self.root.after(400, _check_officer_q)
 
     def officer_scan_loop(self):
         while not self.stop_scanning:
