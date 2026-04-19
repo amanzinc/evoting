@@ -242,11 +242,13 @@ class RFIDService:
                     # the next read_card() call waits for the RF cooldown.
                     self._last_halt_time = time.monotonic()
                     print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                    return None                last_authed_sector = current_sector
+                    return None
+                last_authed_sector = current_sector
 
             try:
                 raw_block = self.pn532.mifare_classic_read_block(block_no)
-            except Exception:                block_no += 1
+            except Exception:
+                block_no += 1
                 continue
 
             data = self._normalize_block_data(raw_block)
