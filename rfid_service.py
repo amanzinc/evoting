@@ -241,12 +241,7 @@ class RFIDService:
                     # the next read_card() call waits for the RF cooldown.
                     self._last_halt_time = time.monotonic()
                     print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                    return None
-                last_authed_sector = current_sector
-
-            try:
-                raw_block = self.pn532.mifare_classic_read_block(block_no)
-            except Exception:
+                    return ("error", "Auth timeout.\nHold card longer.")
                 block_no += 1
                 continue
 
@@ -301,7 +296,7 @@ class RFIDService:
                 if not self._auth_block(uid, block_no):
                     self._last_halt_time = time.monotonic()
                     print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                    return None
+                    return ("error", "Auth timeout.\nHold card longer.")
                 last_authed_sector = current_sector
 
             try:
@@ -376,7 +371,7 @@ class RFIDService:
             if raw_text and len(raw_text) < 64:
                 print(f"Returning as plain text fallback: {raw_text}")
                 return (uid.hex(), raw_text)
-            return None
+            return ("error", "Decryption failed")
 
         try:
             import json
@@ -418,7 +413,7 @@ class RFIDService:
                 if not self._auth_block(uid, block_no):
                     self._last_halt_time = time.monotonic()
                     print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                    return None
+                    return ("error", "Auth timeout.\nHold card longer.")
                 last_authed_sector = current_sector
 
             try:

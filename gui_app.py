@@ -779,6 +779,14 @@ class VotingApp:
             result = self.scan_queue.get_nowait()
             if result:
                 uid, token = result
+                if uid == "error":
+                    # Update status label with the error message instead of failing
+                    if hasattr(self, 'rfid_status_label') and self.rfid_status_label.winfo_exists():
+                        self.rfid_status_label.config(text=f"Read Failed! {token}", fg="#D32F2F")
+                        self.root.after(3000, lambda: self.rfid_status_label.config(text="Waiting for Card...", fg="#fff") if self.rfid_status_label.winfo_exists() else None)
+                    # Keep scanning
+                    self.root.after(200, self.check_scan_queue)
+                    return
                 self.on_card_scanned(token)
                 return
         except queue.Empty:
