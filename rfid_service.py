@@ -117,9 +117,13 @@ class RFIDService:
                 if block_no > self.MAX_BLOCK_NO:
                     break
                 
-                auth = self.pn532.mifare_classic_authenticate_block(
-                    uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
-                )
+                try:
+                    auth = self.pn532.mifare_classic_authenticate_block(
+                        uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
+                    )
+                except Exception as e:
+                    # Ignore single block auth failures
+                    auth = False
                 
                 if not auth:
                     block_no += 1
@@ -223,8 +227,6 @@ class RFIDService:
             return (uid.hex(), decrypted)
 
         except Exception as e:
-            # I2C lines can be noisy. Hide common PN532 exceptions to prevent console spam.
-            err_msg = str(e)
-            if "checksum" not in err_msg and "NoneType" not in err_msg and "unexpected command" not in err_msg:
-                print(f"Error reading card: {e}")
+            # Tell us what caused the outer loop to abort!
+            print(f"Read aborted completely: {e}")
             return None
