@@ -750,33 +750,27 @@ class VotingApp:
             #  - Voter cards (RSA-encrypted, long base64) are decrypted normally.
             #  - Officer cards (plain phrase) are returned as-is and routed by
             #    on_card_scanned -> _is_polling_officer_token -> on_officer_card_scanned.
+            # read_card() returns None when no card is present or auth fails;
+            # the RF-cooldown delay is handled inside rfid_service itself.
             result = self.rfid_service.read_card(mode='auto')
             if result:
                 self.scan_queue.put(result)
                 break
-            time.sleep(0.5)
+            # No card or transient failure — short poll before next attempt.
+            time.sleep(0.15)
 
     def check_scan_queue(self):
         try:
             result = self.scan_queue.get_nowait()
             if result:
-                 uid, token = result
-                 if uid == "ERROR":
-                     if hasattr(self, 'rfid_status_label') and self.rfid_status_label.winfo_exists():
-                         self.rfid_status_label.config(text="Card Read Failed! Please try again.", fg="#ff4444")
-                         self.root.after(3000, lambda: self.rfid_status_label.config(text="Waiting for Card...", fg="#fff"))
-                     self.stop_scanning = False
-                     import threading
-                     threading.Thread(target=self.rfid_scan_loop, daemon=True).start()
-                     self.root.after(500, self.check_scan_queue)
-                     return
-                 self.on_card_scanned(token)
-                 return
+                uid, token = result
+                self.on_card_scanned(token)
+                return
         except queue.Empty:
             pass
             
         if not self.active_token: 
-             self.root.after(500, self.check_scan_queue)
+             self.root.after(200, self.check_scan_queue)
 
     def reset_token_log(self):
         try:

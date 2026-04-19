@@ -31,9 +31,15 @@ class RFIDService:
         
         self.START_BLOCK = 4
         self.MAX_BLOCK_NO = 255
-        self.MIN_REQUIRED_SECTORS = 21   # Voter card spans at least 21 sectors
         self.VOTER_REQUIRED_BLOCKS = 22  # Voter payload is exactly 22 data blocks
         self.KEY_DEFAULT = b'\xFF' * 6
+
+        # RF cooldown tracking: after a card halts (auth failure), we must wait
+        # before issuing the next read_passive_target so the card's RF capacitor
+        # can drain and the card can fully re-initialize.  400 ms is empirically
+        # reliable; shorter values cause persistent halt loops.
+        self._last_halt_time = 0.0
+        self.HALT_RECOVERY_DELAY = 0.40   # seconds
 
     def _block_to_sector(self, block_no):
         # MIFARE Classic 4K: sectors 0-31 have 4 blocks, sectors 32-39 have 16 blocks.
@@ -114,12 +120,19 @@ class RFIDService:
         return block_no == (sector_first_block + blocks_per_sector - 1)
 
     def _auth_block(self, uid, block_no):
-        try:
-            return self.pn532.mifare_classic_authenticate_block(
-                uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
-            )
-        except Exception:
-            return False
+        """Authenticate a single block with 3 retries and exponential backoff."""
+        delays = [0.05, 0.15, 0.30]   # 50 ms → 150 ms → 300 ms
+        for delay in delays:
+            try:
+                ok = self.pn532.mifare_classic_authenticate_block(
+                    uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
+                )
+                if ok:
+                    return True
+            except Exception:
+                pass
+            time.sleep(delay)
+        return False
 
     def _iter_data_blocks(self):
         block_no = self.START_BLOCK
@@ -205,7 +218,7 @@ class RFIDService:
         """
         Read a plain-text (admin/officer) card.
         Reads blocks until a null terminator is found, up to `max_data_blocks`.
-        Retries auth failures once to handle transient PN532 glitches.
+        Uses _auth_block (3 retries, exponential backoff) per sector.
         No minimum sector requirement. No decryption.
         Returns (uid_hex, raw_text) or None.
         """
@@ -223,27 +236,12 @@ class RFIDService:
 
             current_sector = self._block_to_sector(block_no)
             if current_sector != last_authed_sector:
-                # Retry auth once — transient PN532 I2C glitches can cause false-fail
-                auth = False
-                for _attempt in range(2):
-                    try:
-                        auth = self.pn532.mifare_classic_authenticate_block(
-                            uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
-                        )
-                        if auth:
-                            break
-                        time.sleep(0.05)
-                    except Exception:
-                        time.sleep(0.05)
-
-                if not auth:
-                    # MIFARE Classic cards halt on auth failure. We must give up on this scan attempt
-                    # so the outer loop will call `read_passive_target` again to wake it up!
-                    # We can't just `continue` to the next block while the card is halted!
+                if not self._auth_block(uid, block_no):
+                    # MIFARE Classic halts on auth failure.  Record the halt time so
+                    # the next read_card() call waits for the RF cooldown.
+                    self._last_halt_time = time.monotonic()
                     print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
                     return None
-
-
                 last_authed_sector = current_sector
 
             try:
@@ -283,7 +281,7 @@ class RFIDService:
         Reads blocks until a null terminator is found, collecting ALL bytes
         (same stop-on-null approach as the original working code).
         NO sector-count enforcement — RSA decryption is the security guarantee.
-        Retries auth once per block to handle transient PN532 glitches.
+        Uses _auth_block (3 retries, exponential backoff) per sector.
         Returns (uid_hex, decrypted_json_str) or None.
         """
         block_no = self.START_BLOCK
@@ -300,24 +298,10 @@ class RFIDService:
 
             current_sector = self._block_to_sector(block_no)
             if current_sector != last_authed_sector:
-                # Retry auth once for transient glitches
-                auth = False
-                for _attempt in range(2):
-                    try:
-                        auth = self.pn532.mifare_classic_authenticate_block(
-                            uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
-                        )
-                        if auth:
-                            break
-                        time.sleep(0.05)
-                    except Exception:
-                        time.sleep(0.05)
-
-                if not auth:
+                if not self._auth_block(uid, block_no):
+                    self._last_halt_time = time.monotonic()
                     print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
                     return None
-
-
                 last_authed_sector = current_sector
 
             try:
@@ -343,9 +327,8 @@ class RFIDService:
 
             block_no += 1
 
-        if read_blocks < 21:
-            print(f"Encrypted card read rejected: Expected at least 21 blocks, got {read_blocks}.")
-            return None
+        # NOTE: No block-count minimum check here.  RSA-OAEP decryption failure
+        # is the security gate — spurious short reads are rejected at decrypt time.
 
         if not raw_bytes:
             print("Encrypted card read: no data collected.")
@@ -413,10 +396,7 @@ class RFIDService:
         Legacy auto-detect mode: reads blocks, then decides between plain and
         encrypted via a base64 heuristic. Kept for backward compatibility only.
         """
-        required_sectors = self.MIN_REQUIRED_SECTORS if min_required_sectors is None else int(min_required_sectors)
         required_blocks = 1 if min_required_blocks is None else int(min_required_blocks)
-        if required_sectors < 1:
-            required_sectors = 1
         if required_blocks < 1:
             required_blocks = 1
 
@@ -435,20 +415,8 @@ class RFIDService:
 
             current_sector = self._block_to_sector(block_no)
             if current_sector != last_authed_sector:
-                # Retry auth once for transient glitches, matching other read loops
-                auth = False
-                for _attempt in range(2):
-                    try:
-                        auth = self.pn532.mifare_classic_authenticate_block(
-                            uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
-                        )
-                        if auth:
-                            break
-                        time.sleep(0.05)
-                    except Exception:
-                        time.sleep(0.05)
-
-                if not auth:
+                if not self._auth_block(uid, block_no):
+                    self._last_halt_time = time.monotonic()
                     print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
                     return None
                 last_authed_sector = current_sector
@@ -565,6 +533,16 @@ class RFIDService:
         if not self.connected:
             return None
 
+        # ── RF Halt-Recovery Cooldown ─────────────────────────────────────────
+        # After a MIFARE Classic card halts (auth failure) the card's on-board
+        # capacitor must drain before the card can re-initialise.  Calling
+        # read_passive_target too soon keeps detecting the same halted card UID
+        # and auth will always fail again.  We enforce a minimum gap here.
+        elapsed_since_halt = time.monotonic() - self._last_halt_time
+        if elapsed_since_halt < self.HALT_RECOVERY_DELAY:
+            remaining = self.HALT_RECOVERY_DELAY - elapsed_since_halt
+            time.sleep(remaining)
+
         try:
             raw_uid = self.pn532.read_passive_target(timeout=0.5)
             uid = self._normalize_uid(raw_uid)
@@ -582,7 +560,9 @@ class RFIDService:
                 res = self._read_auto_payload(uid, min_required_sectors, min_required_blocks)
 
             if res is None:
-                return ("ERROR", "Card Read Failed! Please try again.")
+                # Return None (not an ERROR tuple) so that scan loops treat this
+                # the same as "no card yet" and simply retry after a short sleep.
+                return None
             return res
 
         except Exception as e:
@@ -591,7 +571,7 @@ class RFIDService:
             if "NoneType" in str(e) or "unexpected command" in str(e).lower():
                 self.connected = False
                 self.pn532 = None
-            return ("ERROR", "Card Error! Please try scanning again.")
+            return None
 
 
 
