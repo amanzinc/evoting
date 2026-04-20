@@ -11,22 +11,16 @@ Usage:
 import argparse
 import json
 import time
-import uuid
 
 from rfid_service import RFIDService
 
 CARDS = [
-    {"voter_id": "VOTER_TEST_001", "name": "Alice"},
-    {"voter_id": "VOTER_TEST_002", "name": "Bob"},
-    {"voter_id": "VOTER_TEST_003", "name": "Charlie"},
-    {"voter_id": "VOTER_TEST_004", "name": "Diana"},
-    {"voter_id": "VOTER_TEST_005", "name": "Eve"},
+    {"v": "VOTER_TEST_001", "name": "Alice"},
+    {"v": "VOTER_TEST_002", "name": "Bob"},
+    {"v": "VOTER_TEST_003", "name": "Charlie"},
+    {"v": "VOTER_TEST_004", "name": "Diana"},
+    {"v": "VOTER_TEST_005", "name": "Eve"},
 ]
-
-
-def make_token_id(voter_id: str) -> str:
-    short = uuid.uuid4().hex[:8].upper()
-    return f"TEST_{voter_id}_{short}"
 
 
 def write_cards(election: str, booth: int, count: int, wait: int):
@@ -39,17 +33,10 @@ def write_cards(election: str, booth: int, count: int, wait: int):
 
     written = []
     for i, card in enumerate(cards, start=1):
-        token_id = make_token_id(card["voter_id"])
-        payload = {
-            "token_id": token_id,
-            "voter_id": card["voter_id"],
-            "eid_vector": election,
-            "booth": booth,
-        }
-        payload_json = json.dumps(payload)
+        payload = {"v": card["v"], "e": election, "b": booth}
+        payload_json = json.dumps(payload, separators=(',', ':'))
 
-        print(f"[{i}/{len(cards)}] {card['name']} ({card['voter_id']})")
-        print(f"         token_id  : {token_id}")
+        print(f"[{i}/{len(cards)}] {card['name']} ({card['v']})")
         print(f"         payload   : {payload_json}")
         print(f"  Place card on reader (waiting up to {wait}s)...")
 
@@ -66,7 +53,7 @@ def write_cards(election: str, booth: int, count: int, wait: int):
 
     print("── Summary ──────────────────────────────────")
     for w in written:
-        print(f"  UID {w['uid']}  token={w['token_id']}  voter={w['voter_id']}")
+        print(f"  UID {w['uid']}  voter={w['v']}  election={w['e']}  booth={w['b']}")
     print(f"  {len(written)}/{len(cards)} cards written successfully.")
 
 

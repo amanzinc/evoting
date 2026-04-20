@@ -814,7 +814,7 @@ class VotingApp:
     def skip_rfid_check(self):
         self.stop_scanning = True
         # Simulate a dev token that grants access only to election_id_1.
-        payload = '{"token_id": "DEV_SKIP_' + str(int(time.time())) + '", "eid_vector": "election_id_1"}'
+        payload = '{"v":"DEV_SKIP_' + str(int(time.time())) + '","e":"election_id_1","b":1}'
         self.on_card_scanned(payload)
 
     def _normalize_election_id(self, election_id):
@@ -864,30 +864,34 @@ class VotingApp:
         self.current_voter_id = token_id
         self.current_token_id = token_id
         self.current_booth = 1
-        
+
         try:
             data = json.loads(token_payload)
             if isinstance(data, dict):
-                if 'token_id' in data:
-                    token_id = data['token_id']
-                    self.current_token_id = token_id
+                # Compact format: {"v":"...","e":"...","b":...}
+                # Legacy format:  {"token_id":"...","voter_id":"...","eid_vector":"...","booth":...}
+                voter_id = data.get('v') or data.get('voter_id') or data.get('entry_number')
+                eid_raw  = data.get('e') or data.get('eid_vector')
+                booth    = data.get('b') or data.get('booth')
 
-                if 'eid_vector' in data:
-                    if isinstance(data['eid_vector'], list):
-                        eid_vector_str = ";".join(str(x) for x in data['eid_vector'])
+                # voter_id doubles as token_id in the compact format (no separate token_id)
+                token_id = data.get('token_id') or voter_id or token_id
+                self.current_token_id = token_id
+
+                if voter_id:
+                    self.current_voter_id = voter_id
+
+                if eid_raw is not None:
+                    if isinstance(eid_raw, list):
+                        eid_vector_str = ";".join(str(x) for x in eid_raw)
                     else:
-                        eid_vector_str = str(data['eid_vector'])
+                        eid_vector_str = str(eid_raw)
 
-                if 'voter_id' in data:
-                    self.current_voter_id = data['voter_id']
-                elif 'entry_number' in data:
-                    self.current_voter_id = data['entry_number']
-
-                if 'booth' in data:
-                    self.current_booth = data['booth']
+                if booth is not None:
+                    self.current_booth = booth
 
             elif isinstance(data, list):
-                # Array payload support: [token_id, voter_id, eid_vector, booth]
+                # Legacy array payload: [token_id, voter_id, eid_vector, booth]
                 if len(data) > 0 and data[0] is not None:
                     token_id = data[0]
                     self.current_token_id = token_id
