@@ -1,24 +1,30 @@
 [Unit]
 Description=Ballot Marking Device — evoting application
-# Start after the graphical session is ready (X11 or XWayland available)
-After=graphical-session.target
-PartOf=graphical-session.target
+# Wait for the display manager to have started the graphical session.
+# graphical.target is reached after display-manager.service completes,
+# making it the right hook for any GUI app that must run on every boot.
+After=graphical.target display-manager.service
+Wants=graphical.target
 
 [Service]
-Type=simple
-# DISPLAY and XAUTHORITY must be set so Tkinter can reach the X server.
+Type=idle
+# ---- Set by setup_rpi.sh (do not edit manually) ----
+User=__EVOTING_USER__
+Group=__EVOTING_USER__
+WorkingDirectory=__EVOTING_DIR__
+ExecStart=__EVOTING_PYTHON__ __EVOTING_DIR__/main.py
+# ---- End of generated section ----
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/evoting/.Xauthority
-# Use the project venv; adjust path if the repo is cloned elsewhere.
-ExecStart=/home/evoting/evoting/venv/bin/python /home/evoting/evoting/main.py
-# Restart on crash (e.g. an uncaught exception), but not on clean exit.
-Restart=on-failure
+Environment=XAUTHORITY=__EVOTING_HOME__/.Xauthority
+# Also try Wayland XDG_RUNTIME_DIR in case XWayland sets DISPLAY there
+Environment=XDG_RUNTIME_DIR=/run/user/__EVOTING_UID__
+Restart=always
 RestartSec=5
+# Give the display server an extra moment to be fully ready
+TimeoutStartSec=30
 StandardOutput=journal
 StandardError=journal
-# Ensure the working directory is always the project root so relative
-# paths (private.pem, bmd_config.json, etc.) resolve correctly.
-WorkingDirectory=/home/evoting/evoting
+SyslogIdentifier=evoting
 
 [Install]
-WantedBy=graphical-session.target
+WantedBy=graphical.target
