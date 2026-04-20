@@ -615,12 +615,6 @@ class ProvisionApp:
             except Exception:
                 pass
             raise Exception(f"Printing failed: {e}")
-            raise Exception(f"Printing failed: {e}")
-            try:
-                if printer and hasattr(printer, 'close'):
-                    printer.close()
-            except Exception:
-                pass
 
 
     # ──────────────────────────────────────────────────────────────────────────
