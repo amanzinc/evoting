@@ -838,6 +838,30 @@ class VotingApp:
         # Keep original as fallback to preserve existing behavior/error messaging.
         return eid
 
+    def _get_bmd_id(self):
+        """Resolve this device's BMD ID (integer). Returns None if not set."""
+        env_val = os.environ.get("EVOTING_BMD_ID", "").strip()
+        if env_val:
+            try:
+                return int(env_val)
+            except ValueError:
+                return env_val
+
+        bmd_file = "/etc/evoting/bmd_id"
+        if os.path.exists(bmd_file):
+            try:
+                with open(bmd_file, "r") as f:
+                    raw = f.read().strip()
+                if raw:
+                    try:
+                        return int(raw)
+                    except ValueError:
+                        return raw
+            except Exception:
+                pass
+
+        return None
+
     def on_card_scanned(self, token_payload):
         if self.data_handler is None:
             print("❌ DataHandler not initialized. Rejecting voter session.")
@@ -912,7 +936,22 @@ class VotingApp:
         except:
             pass
             
-        # 2. Check Verification
+        # 2. Booth validation — card's booth must match this device's BMD ID
+        bmd_id = self._get_bmd_id()
+        if bmd_id is not None and self.current_booth is not None:
+            try:
+                card_booth = int(self.current_booth)
+                device_booth = int(bmd_id)
+                if card_booth != device_booth:
+                    print(f"❌ Booth mismatch: card={card_booth}, device={device_booth}")
+                    self.show_rfid_error(
+                        f"Wrong Booth!\nPlease go to Booth {card_booth}."
+                    )
+                    return
+            except (ValueError, TypeError):
+                pass
+
+        # 3. Check Verification
         if self.data_handler.is_token_used(token_id):
             print(f"❌ Token {token_id} already used!")
             self.show_rfid_error("Token Already Used\nVoter has already cast a vote.")
