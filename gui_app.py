@@ -820,24 +820,33 @@ class VotingApp:
         return eid
 
     def _get_bmd_id(self):
-        """Resolve this device's BMD ID (integer). Returns None if not set."""
+        """Resolve this device's BMD ID (integer). Returns None if not determinable."""
+        # 1. Environment variable (highest priority, set by first_boot_provision)
         env_val = os.environ.get("EVOTING_BMD_ID", "").strip()
         if env_val:
             try:
                 return int(env_val)
             except ValueError:
-                return env_val
+                pass
 
+        # 2. /etc/evoting/bmd_id (Linux/RPi system file)
         bmd_file = "/etc/evoting/bmd_id"
         if os.path.exists(bmd_file):
             try:
-                with open(bmd_file, "r") as f:
-                    raw = f.read().strip()
+                raw = open(bmd_file).read().strip()
                 if raw:
-                    try:
-                        return int(raw)
-                    except ValueError:
-                        return raw
+                    return int(raw)
+            except Exception:
+                pass
+
+        # 3. bmd_config.json in project directory (written by provisioner)
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bmd_config.json")
+        if os.path.exists(config_path):
+            try:
+                data = json.load(open(config_path))
+                bmd_id = data.get("bmd_id")
+                if bmd_id is not None:
+                    return int(bmd_id)
             except Exception:
                 pass
 
