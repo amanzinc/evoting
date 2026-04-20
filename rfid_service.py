@@ -257,7 +257,9 @@ class RFIDService:
             plaintext = rfid_crypto.decrypt_payload(b64_text)
         except Exception as e:
             print(f"RFID AES decryption failed: {e}")
-            return ("error", "Decryption failed")
+            # Force a cooldown so the same unprovisioned card isn't hammered.
+            self._last_halt_time = time.monotonic()
+            return ("error", "Card not provisioned")
 
         return (uid.hex(), plaintext)
 

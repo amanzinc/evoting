@@ -770,7 +770,11 @@ class VotingApp:
             result = self.rfid_service.read_card(mode='encrypted')
             if result:
                 self.scan_queue.put(result)
-                break
+                if result[0] != "error":
+                    break
+                # Error (e.g. unprovisioned card): show in UI but keep scanning.
+                time.sleep(1.0)
+                continue
             # No card or transient failure — short poll before next attempt.
             time.sleep(0.15)
 
@@ -2135,8 +2139,13 @@ class VotingApp:
                     return
                 result = self.rfid_service.read_card(mode='plain')
                 if result:
-                    officer_q.put(result)
-                    return
+                    if result[0] != "error":
+                        officer_q.put(result)
+                        return
+                    # Unprovisioned card — log and keep scanning.
+                    print(f"Officer scan: {result[1]}, retrying.")
+                    time.sleep(1.0)
+                    continue
                 time.sleep(0.4)
             # Timeout
             officer_q.put(None)
@@ -2194,11 +2203,16 @@ class VotingApp:
                 time.sleep(0.5)
                 continue
 
-            # Admin/officer cards carry a plain-text phrase — use explicit plain mode.
+            # Admin/officer cards carry an AES-encrypted phrase — use explicit plain mode.
             result = self.rfid_service.read_card(mode='plain')
             if result:
-                self.officer_scan_queue.put(result)
-                break
+                if result[0] != "error":
+                    self.officer_scan_queue.put(result)
+                    break
+                # Unprovisioned card — log and keep scanning.
+                print(f"Officer scan: {result[1]}, retrying.")
+                time.sleep(1.0)
+                continue
             time.sleep(0.5)
 
     def check_officer_scan_queue(self):
