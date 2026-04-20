@@ -206,8 +206,23 @@ def main():
     _setup_logging(log_dir_early)
 
     root = tk.Tk()
+    root.title("BMD")
+    root.attributes('-fullscreen', True)
+    root.configure(bg="#1A237E")
+
+    # Show a splash immediately so the screen is never blank while services load.
+    splash = tk.Label(
+        root,
+        text="Starting…",
+        font=("Helvetica", 28, "bold"),
+        bg="#1A237E",
+        fg="#FFFFFF",
+    )
+    splash.pack(expand=True)
+    root.update()   # force Tk to render before any blocking call
 
     log_dir, log_err = _find_log_dir(wait_seconds=2)
+    splash.destroy()
 
     # ── First-boot provisioning ─────────────────────────────────────────────
     # If the .provisioned flag is absent (or log partition not yet mounted),

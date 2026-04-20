@@ -3605,18 +3605,56 @@ class VotingApp:
 
         log_dir = getattr(self, 'log_dir', None)
         if log_dir:
+            # Delete from both canonical path and the legacy LOGS/LOGS nested path.
             to_delete.append(os.path.join(log_dir, ".provisioned"))
+            to_delete.append(os.path.join(log_dir, "LOGS", ".provisioned"))
 
+        failed = []
         for path in to_delete:
+            if not os.path.exists(path):
+                continue
+            deleted = False
             try:
-                os.chmod(path, 0o644)
                 os.remove(path)
-            except Exception:
-                pass
+                deleted = True
+                print(f"[reprovision] Deleted: {path}")
+            except Exception as e:
+                print(f"[reprovision] os.remove failed ({e}), trying sudo: {path}")
+
+            if not deleted and os.name != 'nt':
+                import subprocess
+                try:
+                    subprocess.run(
+                        ['sudo', 'rm', '-f', path],
+                        check=True, timeout=5, capture_output=True
+                    )
+                    deleted = True
+                    print(f"[reprovision] Deleted via sudo: {path}")
+                except Exception as e2:
+                    print(f"[reprovision] sudo rm also failed: {e2}")
+
+            if not deleted:
+                failed.append(path)
+
+        # The .provisioned flag MUST be gone — otherwise execv will reload the
+        # voting app instead of the provisioning wizard.
+        provisioned_flag = os.path.join(log_dir, ".provisioned") if log_dir else None
+        if provisioned_flag and os.path.exists(provisioned_flag):
+            self._show_custom_messagebox(
+                "Reprovision Failed",
+                "Could not delete the .provisioned flag.\n\n"
+                f"Path: {provisioned_flag}\n\n"
+                "Try running the app as root, or delete it manually.",
+                alert_type="error"
+            )
+            return
+
+        if failed:
+            print(f"[reprovision] Warning — could not delete: {failed}")
 
         self._close_admin_menu()
         import sys
-        self.root.destroy()
+        # os.execv replaces this process entirely; no need to destroy root first.
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def show_printing_modal(self, text="Printing VVPAT..."):
