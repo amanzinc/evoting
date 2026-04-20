@@ -24,3 +24,6 @@ secret.key
 # Device-specific provisioning files (generated at first boot, never committed)
 bmd_config.json
 .provisioned
+
+# RFID symmetric key - must not be committed
+rfid_aes.key

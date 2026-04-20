@@ -3,12 +3,9 @@ import sys
 import os
 
 try:
-    from cryptography.hazmat.primitives.asymmetric import padding
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives import serialization
-    import hardware_crypto
+    import rfid_crypto
 except ImportError:
-    pass
+    rfid_crypto = None
 
 # Hardware libraries - Wrapped to prevent crash on Dev machine
 try:
@@ -26,12 +23,10 @@ class RFIDService:
         self.i2c = None
         self.key_path = key_path
         self.project_dir = os.path.dirname(os.path.abspath(__file__))
-        self.private_key = None
         self.connected = False
-        
+
         self.START_BLOCK = 4
         self.MAX_BLOCK_NO = 255
-        self.VOTER_REQUIRED_BLOCKS = 22  # Voter payload is exactly 22 data blocks
         self.KEY_DEFAULT = b'\xFF' * 6
 
         # RF cooldown tracking: after a card halts (auth failure), we must wait
@@ -53,26 +48,8 @@ class RFIDService:
         return 128 + (sector_no - 32) * 16, 16
 
     def load_key(self):
-        key_path = self.key_path
-        if not os.path.isabs(key_path):
-            key_path = os.path.join(self.project_dir, key_path)
-
-        if not os.path.exists(key_path):
-            print(f"Key file {key_path} not found.")
-            return False
-            
-        try:
-            passphrase = hardware_crypto.get_hardware_passphrase()
-            with open(key_path, "rb") as kf:
-                self.private_key = serialization.load_pem_private_key(
-                    kf.read(),
-                    password=passphrase
-                )
-            self.key_path = key_path
-            return True
-        except Exception as e:
-            print(f"Error loading private key: {e}")
-            return False
+        """No-op: RFID encryption uses a shared AES key from rfid_crypto."""
+        return True
 
     def _close_bus(self):
         try:
@@ -167,8 +144,13 @@ class RFIDService:
                 return None
         return None
 
+    def write_card_payload(self, payload_text, wait_seconds=20):
+        """AES-256-GCM encrypt payload_text and write to card data blocks."""
+        encrypted_b64 = rfid_crypto.encrypt_payload(payload_text)
+        return self.write_plaintext_card_payload(encrypted_b64, wait_seconds=wait_seconds)
+
     def write_plaintext_card_payload(self, payload_text, wait_seconds=20):
-        """Write plain text payload to card data blocks (null-terminated)."""
+        """Write a raw (unencrypted) string to card data blocks (null-terminated)."""
         if not self.connected:
             if not self.connect():
                 raise RuntimeError("RFID reader not connected")
@@ -214,21 +196,21 @@ class RFIDService:
     # Internal block-reading helpers
     # ─────────────────────────────────────────────────────────────
 
-    def _read_plain_payload(self, uid, max_data_blocks=10):
+    def _read_aes_payload(self, uid, max_data_blocks=None):
         """
-        Read a plain-text (admin/officer) card.
-        Reads blocks until a null terminator is found, up to `max_data_blocks`.
-        Uses _auth_block (3 retries, exponential backoff) per sector.
-        No minimum sector requirement. No decryption.
-        Returns (uid_hex, raw_text) or None.
+        Read RFID blocks until null terminator, then AES-256-GCM decrypt.
+        Used for both polling officer and voter cards.
+        Returns (uid_hex, plaintext_str), ("error", message), or None.
         """
         block_no = self.START_BLOCK
         raw_bytes = bytearray()
         blocks_read = 0
         last_authed_sector = -1
 
-        while block_no <= self.MAX_BLOCK_NO and blocks_read < max_data_blocks:
-            # Skip trailer blocks
+        while block_no <= self.MAX_BLOCK_NO:
+            if max_data_blocks is not None and blocks_read >= max_data_blocks:
+                break
+
             while self.is_trailer_block(block_no):
                 block_no += 1
             if block_no > self.MAX_BLOCK_NO:
@@ -237,11 +219,14 @@ class RFIDService:
             current_sector = self._block_to_sector(block_no)
             if current_sector != last_authed_sector:
                 if not self._auth_block(uid, block_no):
-                    # MIFARE Classic halts on auth failure.  Record the halt time so
-                    # the next read_card() call waits for the RF cooldown.
                     self._last_halt_time = time.monotonic()
                     print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
                     return ("error", "Auth timeout.\nHold card longer.")
+                last_authed_sector = current_sector
+
+            try:
+                raw_block = self.pn532.mifare_classic_read_block(block_no)
+            except Exception:
                 block_no += 1
                 continue
 
@@ -249,71 +234,8 @@ class RFIDService:
             if data is None:
                 block_no += 1
                 continue
-
-            # Stop at null terminator — plain payloads are null-terminated
-            if b'\x00' in data:
-                raw_bytes.extend(data.split(b'\x00')[0])
-                break
-            else:
-                raw_bytes.extend(data)
 
             blocks_read += 1
-            block_no += 1
-
-        if not raw_bytes:
-            return None
-
-        raw_text = raw_bytes.decode('utf-8', errors='ignore').strip()
-        if not raw_text:
-            return None
-
-        print(f"✅ Plain card read success: {raw_text}")
-        return (uid.hex(), raw_text)
-
-    def _read_encrypted_payload(self, uid):
-        """
-        Read an encrypted voter card.
-        Reads blocks until a null terminator is found, collecting ALL bytes
-        (same stop-on-null approach as the original working code).
-        NO sector-count enforcement — RSA decryption is the security guarantee.
-        Uses _auth_block (3 retries, exponential backoff) per sector.
-        Returns (uid_hex, decrypted_json_str) or None.
-        """
-        block_no = self.START_BLOCK
-        raw_bytes = bytearray()
-        read_blocks = 0
-        last_authed_sector = -1
-
-        while block_no <= self.MAX_BLOCK_NO:
-            # Skip trailer blocks
-            while self.is_trailer_block(block_no):
-                block_no += 1
-            if block_no > self.MAX_BLOCK_NO:
-                break
-
-            current_sector = self._block_to_sector(block_no)
-            if current_sector != last_authed_sector:
-                if not self._auth_block(uid, block_no):
-                    self._last_halt_time = time.monotonic()
-                    print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                    return ("error", "Auth timeout.\nHold card longer.")
-                last_authed_sector = current_sector
-
-            try:
-                raw_block = self.pn532.mifare_classic_read_block(block_no)
-            except Exception:
-                block_no += 1
-                continue
-
-            data = self._normalize_block_data(raw_block)
-            if data is None:
-                block_no += 1
-                continue
-
-            read_blocks += 1
-
-            # The base64-encoded ciphertext ends with MIFARE null padding.
-            # Stop on the first null byte — same approach as original working code.
             if b'\x00' in data:
                 raw_bytes.extend(data.split(b'\x00')[0])
                 break
@@ -322,185 +244,49 @@ class RFIDService:
 
             block_no += 1
 
-        # NOTE: No block-count minimum check here.  RSA-OAEP decryption failure
-        # is the security gate — spurious short reads are rejected at decrypt time.
-
         if not raw_bytes:
-            print("Encrypted card read: no data collected.")
             return None
 
-        raw_text = raw_bytes.decode('utf-8', errors='ignore').strip()
-        print(f"DEBUG: Read raw text from RFID: {repr(raw_text)}")
-        if not raw_text:
+        b64_text = raw_bytes.decode('ascii', errors='ignore').strip()
+        if not b64_text:
             return None
 
-        # Load private key if not already loaded
-        if not self.private_key:
-            if not self.load_key():
-                print("Voter card decryption failed: private key not available.")
-                return None
+        print(f"DEBUG: Read raw b64 from RFID ({blocks_read} blocks): {repr(b64_text)}")
 
         try:
-            import base64
-            compact = "".join(raw_text.split())
-
-            # Quick sanity check: ciphertext must look like base64 and be long enough
-            # for RSA-2048 OAEP output (~344 base64 chars). If it's short/plain text
-            # (e.g. officer phrase card scanned on voter loop), return as plain so
-            # on_card_scanned can route it to the officer menu.
-            base64_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
-            if len(compact) < 128 or not all(ch in base64_chars for ch in compact):
-                print(f"✅ Plain card on voter loop (not ciphertext): {raw_text}")
-                return (uid.hex(), raw_text)
-
-            compact += "=" * ((4 - len(compact) % 4) % 4)
-            encrypted_bytes = base64.b64decode(compact)
-            decrypted_bytes = self.private_key.decrypt(
-                encrypted_bytes,
-                padding.OAEP(
-                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                    algorithm=hashes.SHA256(),
-                    label=None
-                )
-            )
-            decrypted = decrypted_bytes.decode("utf-8")
+            plaintext = rfid_crypto.decrypt_payload(b64_text)
         except Exception as e:
-            print(f"Voter card decryption failed: {e}")
-            # If decryption failed but we have readable text, return it as plain so
-            # the caller (on_card_scanned) can still handle officer phrase cards.
-            if raw_text and len(raw_text) < 64:
-                print(f"Returning as plain text fallback: {raw_text}")
-                return (uid.hex(), raw_text)
+            print(f"RFID AES decryption failed: {e}")
             return ("error", "Decryption failed")
 
-        try:
-            import json
-            token_data = json.loads(decrypted)
-            print("\n✅ Voter card read success! Data:")
-            print("-----------------------------")
-            for k, v in token_data.items():
-                print(f"{k}: {v}")
-            print("-----------------------------\n")
-        except Exception:
-            print(f"✅ Voter card read success (raw): {decrypted}")
+        return (uid.hex(), plaintext)
 
-        return (uid.hex(), decrypted)
+    def _read_plain_payload(self, uid, max_data_blocks=10):
+        """Read a polling-officer card (AES-256-GCM encrypted)."""
+        result = self._read_aes_payload(uid, max_data_blocks=max_data_blocks)
+        if result and result[0] != "error":
+            print(f"✅ Officer card read success: {result[1]}")
+        return result
+
+    def _read_encrypted_payload(self, uid):
+        """Read a voter card (AES-256-GCM encrypted)."""
+        result = self._read_aes_payload(uid)
+        if result and result[0] != "error":
+            import json
+            try:
+                token_data = json.loads(result[1])
+                print("\n✅ Voter card read success! Data:")
+                print("-----------------------------")
+                for k, v in token_data.items():
+                    print(f"{k}: {v}")
+                print("-----------------------------\n")
+            except Exception:
+                print(f"✅ Voter card read success (raw): {result[1]}")
+        return result
 
     def _read_auto_payload(self, uid, min_required_sectors, min_required_blocks):
-        """
-        Legacy auto-detect mode: reads blocks, then decides between plain and
-        encrypted via a base64 heuristic. Kept for backward compatibility only.
-        """
-        required_blocks = 1 if min_required_blocks is None else int(min_required_blocks)
-        if required_blocks < 1:
-            required_blocks = 1
-
-        block_no = self.START_BLOCK
-        raw_bytes = bytearray()
-        read_sectors = set()
-        read_blocks = 0
-        last_authed_sector = -1
-        payload_complete = False
-
-        while block_no <= self.MAX_BLOCK_NO:
-            while self.is_trailer_block(block_no):
-                block_no += 1
-            if block_no > self.MAX_BLOCK_NO:
-                break
-
-            current_sector = self._block_to_sector(block_no)
-            if current_sector != last_authed_sector:
-                if not self._auth_block(uid, block_no):
-                    self._last_halt_time = time.monotonic()
-                    print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                    return ("error", "Auth timeout.\nHold card longer.")
-                last_authed_sector = current_sector
-
-            try:
-                raw_block = self.pn532.mifare_classic_read_block(block_no)
-            except Exception:
-                block_no += 1
-                continue
-
-            data = self._normalize_block_data(raw_block)
-            if data is None:
-                block_no += 1
-                continue
-
-            read_sectors.add(self._block_to_sector(block_no))
-            read_blocks += 1
-
-            if not payload_complete:
-                if b'\x00' in data:
-                    raw_bytes.extend(data.split(b'\x00')[0])
-                    payload_complete = True
-                else:
-                    raw_bytes.extend(data)
-
-            if payload_complete:
-                break
-
-            block_no += 1
-
-        if not raw_bytes:
-            return None
-
-        raw_text = raw_bytes.decode('utf-8', errors='ignore').strip()
-        if not raw_text:
-            return None
-
-        # Heuristic: if it looks like base64 ciphertext → try to decrypt
-        compact = "".join(raw_text.split())
-        base64_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
-        looks_like_base64_ciphertext = (
-            len(compact) >= 128
-            and len(compact) % 4 == 0
-            and all(ch in base64_chars for ch in compact)
-        )
-
-        if not looks_like_base64_ciphertext:
-            print(f"✅ Card Read Success! Plain payload: {raw_text}")
-            return (uid.hex(), raw_text)
-
-        if not self.private_key:
-            if not self.load_key():
-                return None
-
-        try:
-            import base64
-            encrypted_bytes = base64.b64decode(compact)
-            decrypted_bytes = self.private_key.decrypt(
-                encrypted_bytes,
-                padding.OAEP(
-                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                    algorithm=hashes.SHA256(),
-                    label=None
-                )
-            )
-            decrypted = decrypted_bytes.decode("utf-8")
-        except Exception as e:
-            print(f"Decryption failed: {e}")
-            # Fallback: return as plain text
-            try:
-                if raw_text:
-                    print(f"✅ Card Read Success! Plain payload (fallback): {raw_text}")
-                    return (uid.hex(), raw_text)
-            except Exception:
-                pass
-            return None
-
-        try:
-            import json
-            token_data = json.loads(decrypted)
-            print("\n✅ Card Read Success! Data:")
-            print("-----------------------------")
-            for k, v in token_data.items():
-                print(f"{k}: {v}")
-            print("-----------------------------\n")
-        except Exception:
-            print(f"✅ Card Read Success! Token Payload (String): {decrypted}")
-
-        return (uid.hex(), decrypted)
+        """Legacy auto-detect mode. Delegates to AES decryption."""
+        return self._read_aes_payload(uid)
 
     # ─────────────────────────────────────────────────────────────
     # Public API
@@ -513,13 +299,9 @@ class RFIDService:
         Parameters
         ----------
         mode : str
-            'plain'     – Admin/officer card. Plain-text payload, no decryption.
-                          Reads until null terminator; no minimum sector requirement.
-            'encrypted' – Voter card. RSA-encrypted payload across 22 data blocks.
-                          Enforces MIN_REQUIRED_SECTORS and VOTER_REQUIRED_BLOCKS,
-                          then decrypts with the hardware-bound private key.
-            'auto'      – Legacy heuristic: auto-detect by base64 inspection.
-                          Use explicit modes for new callers.
+            'plain'     – Polling officer card. AES-256-GCM encrypted, limited read.
+            'encrypted' – Voter card. AES-256-GCM encrypted, full card read.
+            'auto'      – Legacy: same as 'encrypted'. Use explicit modes for new callers.
 
         Returns
         -------

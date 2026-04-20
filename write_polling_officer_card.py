@@ -59,9 +59,9 @@ def main():
         raise SystemExit("RFID reader not connected.")
 
     print("Place RFID card on reader...")
-    uid_hex = svc.write_plaintext_card_payload(payload, wait_seconds=30)
+    uid_hex = svc.write_card_payload(payload, wait_seconds=30)
     print(f"Card written successfully. UID={uid_hex}")
-    print("Payload written:")
+    print("Payload written (before encryption):")
     print(payload)
 
 
