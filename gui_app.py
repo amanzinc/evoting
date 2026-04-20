@@ -727,24 +727,7 @@ class VotingApp:
         self.clock_label.place(relx=0.985, rely=0.03, anchor='ne')
         self._refresh_clock_label()
 
-        # Bottom-left: Polling Officer button for explicit officer RFID verification.
-        officer_btn = tk.Button(
-            frame,
-            text="\U0001F6E1 Polling Officer",
-            font=('Helvetica', 13, 'bold'),
-            bg="#1A237E",
-            fg="#FFFFFF",
-            activebackground="#283593",
-            activeforeground="#FFFFFF",
-            relief=tk.FLAT,
-            padx=18,
-            pady=10,
-            cursor="hand2",
-            command=self._on_polling_officer_button_clicked,
-        )
-        officer_btn.place(relx=0.015, rely=0.97, anchor='sw')
-
-        # Start Scanning Thread — voter cards only (encrypted mode).
+        # Start Scanning Thread — handles both voter and officer cards (AES mode).
         self.stop_scanning = False
         self.scan_queue = queue.Queue()
         self.scan_thread = threading.Thread(target=self.rfid_scan_loop)
@@ -763,10 +746,8 @@ class VotingApp:
                 time.sleep(0.5)
                 continue
 
-            # Voter-only scan: use 'encrypted' mode so only RSA-encrypted voter
-            # cards are processed.  Officer access is handled exclusively via the
-            # dedicated 'Polling Officer' button which triggers its own plain-mode
-            # scan, keeping the two workflows cleanly separated.
+            # Both voter and officer cards are AES-encrypted — single scan path.
+            # on_card_scanned routes officer phrases to on_officer_card_scanned.
             result = self.rfid_service.read_card(mode='encrypted')
             if result:
                 self.scan_queue.put(result)
@@ -868,9 +849,6 @@ class VotingApp:
             self.show_rfid_error("System Loading\nPlease wait, loading elections...")
             return
 
-        # Officer cards are now handled exclusively via the Polling Officer button;
-        # voter scan loop only uses encrypted mode, so this branch is a safety net
-        # in case of an unexpected plain-text payload reaching this path.
         if self._is_polling_officer_token(token_payload):
             self.on_officer_card_scanned(token_payload)
             return
