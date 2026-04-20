@@ -560,13 +560,17 @@ class PrinterService:
             p.text("KEEP THIS SLIP FOR SETUP\n")
             p.text(TOP_BAR + "\n")
             p.set(align='left', font='a', width=1, height=1, bold=True)
-            # Feed enough paper to clear the cutter before issuing the cut.
-            # Do NOT write anything after p.cut() — a full cut separates the
-            # paper and any subsequent write can hang the USB connection.
-            p.text("\n\n\n\n\n\n\n\n\n\n")
+            p.text("\n\n\n\n\n\n\n\n")
             import time
-            time.sleep(2)  # let print buffer drain before cut
+            time.sleep(3)  # let print buffer drain before cut
             p.cut(mode='FULL')
+            # Best-effort post-cut feed so the slip fully exits the mechanism.
+            # Errors here are silently ignored — the cut already succeeded.
+            try:
+                time.sleep(0.5)
+                p.text("\n\n\n\n\n\n")
+            except Exception:
+                pass
             return True
         except Exception as e:
             try:

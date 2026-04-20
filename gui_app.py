@@ -1096,7 +1096,7 @@ class VotingApp:
     def _finalize_session(self, aborted=False):
         # 2. LOG SESSION TOKEN
         if not aborted and self.active_token:
-            self.data_handler.log_token(self.active_token)
+            self.data_handler.log_token(getattr(self, 'current_token_id', None) or self.active_token)
             
         if not aborted:
             self.active_token = None
@@ -3630,6 +3630,7 @@ class VotingApp:
         self.printing_overlay.attributes('-topmost', True)
         self.printing_overlay.lift()
         self.printing_overlay.overrideredirect(True)
+        self.printing_overlay.grab_set()  # block all input to underlying windows
         f = tk.Frame(self.printing_overlay, bg="#E3F2FD", bd=2, relief=tk.RAISED)
         f.pack(fill=tk.BOTH, expand=True)
         tk.Label(f, text=text, font=('Helvetica', 22, 'bold'), bg="#E3F2FD", wraplength=500, justify=tk.CENTER).pack(pady=36)

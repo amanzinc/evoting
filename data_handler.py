@@ -578,15 +578,18 @@ class DataHandler:
         try:
             import datetime
             import json
-            
-            # Extract simple ID if possible
+
             token_id = token_payload
             try:
                 data = json.loads(token_payload)
-                if 'token_id' in data:
-                    token_id = data['token_id']
-            except:
-                pass # Use full string if not JSON
+                if isinstance(data, dict):
+                    # Compact format: v=voter_id; legacy format: token_id
+                    token_id = (data.get('token_id')
+                                or data.get('v')
+                                or data.get('voter_id')
+                                or token_payload)
+            except Exception:
+                pass  # not JSON — use raw string
 
             timestamp = datetime.datetime.now().isoformat()
             with open(self.token_log_file, "a", encoding='utf-8') as f:
