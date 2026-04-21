@@ -53,7 +53,7 @@ class VotingApp:
         self.max_ranks = 3
         self.current_rank = 1
         self.selections = {}
-        self.merge_receipts = True # Temporary flag for merged printing
+        self.merge_receipts = False # Print VVPAT immediately after each election
         self.receipt_buffer = [] # Store print data for batching 
         self.print_enabled = True
         self.pending_print_job = None
@@ -1638,7 +1638,7 @@ class VotingApp:
                 else:
                     self.data_handler.save_json(vote_record)
                 self._cast_vote_in_progress = False
-                self.finish_voter_session(False)
+                self.start_next_election()
                 return
 
             self.show_printing_modal()
@@ -1819,10 +1819,6 @@ class VotingApp:
             )
 
             self.pending_print_job = None
-
-            if not self.merge_receipts:
-                self._show_custom_messagebox("Vote Cast", "Your vote has been verified and recorded successfully!")
-
             self._cast_vote_in_progress = False
             self.start_next_election()
         except Exception as e:
@@ -3725,14 +3721,9 @@ class VotingApp:
                         status="USED"
                     )
                     
-                    if not self.merge_receipts:
-                        self._show_custom_messagebox("Vote Cast", "Your vote has been verified and recorded successfully!")
-
                     self.pending_print_job = None
                     self._cancel_pending_print_polling()
                     self._cast_vote_in_progress = False
-                    
-                    # Proceed to Next Election in Queue (or Finish)
                     self.start_next_election()
                     
                 except Exception as e:
