@@ -144,14 +144,14 @@ class PrinterService:
         }
 
     def _print_vote_vvpat_section(self, p, context):
-        top_bar = self._bar("_")
-        bottom_bar = self._bar("_")
+        import textwrap
+        bar = self._bar("=")
+        w   = self.paper_width_chars
 
         p.text("\n")
-        p.text(bottom_bar + "\n")
+        p.text(bar + "\n")
 
         temp_img = self._generate_vvpat_qr(context["qr_choice_data"], context["short_b_id"])
-
         p.text("\n")
         p.set(align='left')
         p.image(temp_img)
@@ -159,19 +159,21 @@ class PrinterService:
         if os.path.exists(temp_img):
             os.remove(temp_img)
 
+        # Label on its own line; name on next line(s) wrapped at full paper width
         p.set(align='left', bold=True)
-        p.text(f"Choice : {context['vvpat_sel_str']}\n")
+        p.text("Choice:\n")
         p.set(align='left', bold=False)
+        for line in textwrap.wrap(context['vvpat_sel_str'], width=w):
+            p.text(line + "\n")
+
         p.text("\n")
-
         p.set(align='left')
-        p.text(f"Station: {context['station_id']}\n")
-
+        p.text(context['timestamp'] + "\n")
         p.text("\n")
 
         p.set(align='left', font='a', width=1, height=1, bold=True)
         p.text(self._center_line("** VVPAT SLIP **") + "\n")
-        p.text(top_bar + "\n")
+        p.text(bar + "\n")
         p.set(align='left', bold=False)
 
         p.text("\n\n\n\n\n\n")
