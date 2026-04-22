@@ -73,8 +73,54 @@ class VotingApp:
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
         
-        # Start with USB Polling Screen
-        self.show_usb_waiting_screen()
+        # Start with Hardware Check Screen
+        self.show_hardware_check_screen()
+
+    def show_hardware_check_screen(self):
+        self.clear_container()
+        frame = tk.Frame(self.main_container, bg="#E8F5E9")
+        frame.pack(expand=True, fill=tk.BOTH)
+        
+        tk.Label(frame, text="Hardware Diagnostics", font=('Helvetica', 32, 'bold'), bg="#E8F5E9", fg="#2E7D32").pack(pady=(150, 20))
+        tk.Label(frame, text="Checking critical hardware components...", font=('Helvetica', 24), bg="#E8F5E9", fg="#333").pack(pady=20)
+
+        self.hw_status_label = tk.Label(frame, text="", font=('Helvetica', 18), bg="#E8F5E9", fg="#1565C0", justify="center")
+        self.hw_status_label.pack(pady=20)
+        
+        self.root.after(500, self._perform_hardware_check)
+
+    def _perform_hardware_check(self):
+        # Check Printer
+        from printer_service import PrinterService
+        if not getattr(self, 'printer_service', None):
+            self.printer_service = PrinterService(None)
+            
+        printer_ok = self.printer_service.is_printer_connected()
+        
+        # Check RFID
+        try:
+            if not getattr(self.rfid_service, 'connected', False):
+                self.rfid_service.connect()
+            rfid_ok = getattr(self.rfid_service, 'connected', False)
+        except Exception:
+            rfid_ok = False
+            
+        if printer_ok and rfid_ok:
+            self.hw_status_label.config(text="All critical hardware detected.\nProceeding to initialization...", fg="#2E7D32")
+            self.root.after(1500, self.show_usb_waiting_screen)
+        else:
+            missing = []
+            if not printer_ok: missing.append("Thermal Printer")
+            if not rfid_ok: missing.append("RFID Reader")
+            
+            error_text = f"Missing Critical Hardware:\n{', '.join(missing)}\n\nPlease connect the devices. Retrying in 3 seconds..."
+            self.hw_status_label.config(text=error_text, fg="#C62828")
+            
+            # Reset the printer service so it tries reconnecting fully next time
+            if not printer_ok:
+                self.printer_service = None
+                
+            self.root.after(3000, self._perform_hardware_check)
 
     def _enforce_kiosk_mode(self):
         if self._kiosk_enforcing:
@@ -331,7 +377,11 @@ class VotingApp:
 
             print(f"Initializing DataHandler with candidate map: {candidate_path}")
             self.data_handler = DataHandler(candidate_path, log_file=self.votes_log, token_log_file=self.tokens_log) 
-            self.printer_service = PrinterService(self.data_handler)
+            
+            if not getattr(self, 'printer_service', None):
+                self.printer_service = PrinterService(self.data_handler)
+            else:
+                self.printer_service.data_handler = self.data_handler
             
             # Perform an initial cut to clear the printer roll on startup
             if not self.printer_service.is_printer_connected():
