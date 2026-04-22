@@ -2782,8 +2782,13 @@ class VotingApp:
 
         def _restart():
             self.close_printing_modal()
-            import sys
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+            import subprocess
+            try:
+                subprocess.Popen(['sudo', 'reboot'])
+            except Exception as e:
+                print(f"[export_reset] reboot failed ({e}), falling back to process restart")
+                import sys
+                os.execv(sys.executable, [sys.executable] + sys.argv)
 
         def _fail(err):
             self.close_printing_modal()
@@ -2907,8 +2912,29 @@ class VotingApp:
                     # show_idle_screen restarts the scan thread (or shows inactive screen)
                     self.root.after(0, self.show_idle_screen)
 
+            def _run_with_modal(modal_text, worker_fn, error_title):
+                """Show a status modal, run worker_fn in a thread, then call _done()."""
+                self.show_printing_modal(text=modal_text)
+                dlg.grab_release()  # let the modal take grab
+
+                def _thread():
+                    err = None
+                    try:
+                        worker_fn()
+                    except Exception as e:
+                        err = str(e)
+                    def _finish():
+                        self.close_printing_modal()
+                        if err:
+                            self._show_custom_messagebox(error_title, err, alert_type="error")
+                        else:
+                            _done()
+                    self.root.after(0, _finish)
+
+                threading.Thread(target=_thread, daemon=True).start()
+
             def _commit():
-                try:
+                def _work():
                     self._recovery_save_vote(entry)
                     self._vote_journal.write_committed(entry['id'])
                     try:
@@ -2916,9 +2942,7 @@ class VotingApp:
                     except AttributeError:
                         pass
                     print(f"[recovery] Committed {entry['id']} without reprint.")
-                except Exception as e:
-                    self._show_custom_messagebox("Recovery Error", f"Could not commit:\n{e}", alert_type="error")
-                _done()
+                _run_with_modal("Committing Vote…\nPlease wait.", _work, "Recovery Error")
 
             def _reprint_commit():
                 ps = getattr(self, 'printer_service', None)
@@ -2929,7 +2953,8 @@ class VotingApp:
                         alert_type="error"
                     )
                     return
-                try:
+
+                def _work():
                     ps.print_recovery_vvpat(
                         entry.get('election_name', 'Election'),
                         entry.get('vvpat_choice_str', 'Unknown'),
@@ -2942,10 +2967,7 @@ class VotingApp:
                     except AttributeError:
                         pass
                     print(f"[recovery] Reprinted and committed {entry['id']}.")
-                except Exception as e:
-                    self._show_custom_messagebox("Reprint Error", f"Reprint failed:\n{e}", alert_type="error")
-                    return
-                _done()
+                _run_with_modal("Reprinting VVPAT…\nPlease wait.", _work, "Reprint Error")
 
             def _discard():
                 if not self._show_custom_confirm(
@@ -2955,13 +2977,15 @@ class VotingApp:
                     no_text="Cancel"
                 ):
                     return
-                self._vote_journal.write_discarded(entry['id'])
-                try:
-                    os.sync()
-                except AttributeError:
-                    pass
-                print(f"[recovery] Discarded {entry['id']}.")
-                _done()
+
+                def _work():
+                    self._vote_journal.write_discarded(entry['id'])
+                    try:
+                        os.sync()
+                    except AttributeError:
+                        pass
+                    print(f"[recovery] Discarded {entry['id']}.")
+                _run_with_modal("Discarding Vote…\nPlease wait.", _work, "Discard Error")
 
             # Header
             hdr = tk.Frame(dlg, bg="#7f0000", pady=10)
