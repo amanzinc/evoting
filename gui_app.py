@@ -2662,12 +2662,14 @@ class VotingApp:
 
         _btn("Error State", self._admin_error_state, "#d32f2f", row=2, col=0, colspan=2)
 
+        _btn("Export & Reset Session", self._admin_export_and_reset, "#e65100", row=3, col=0, colspan=2)
+
         _btn(
             "Close Polling Officer Menu",
             self._close_admin_menu,
             "#21262d",
             fg="#cdd9e5",
-            row=3,
+            row=4,
             col=0,
             colspan=2
         )
@@ -2684,6 +2686,75 @@ class VotingApp:
             self._admin_overlay = None
         self._enforce_kiosk_mode()
         self.show_idle_screen()
+
+    def _admin_export_and_reset(self):
+        log_dir = getattr(self, 'log_dir', None)
+        if not log_dir or not os.path.isdir(log_dir):
+            self._show_custom_messagebox("Error", "Log partition not accessible.", alert_type="error")
+            return
+
+        if not self._show_custom_confirm(
+            "Export & Reset Session",
+            "All session data (votes, logs, database) will be archived to a\ntimestamped folder on the log partition.\n\n"
+            "The device will restart with a clean session.\nThe .provisioned flag is kept — no re-provisioning needed.\n\n"
+            "Continue?",
+            yes_text="Export & Reset",
+            no_text="Cancel"
+        ):
+            return
+
+        self._close_admin_menu()
+        self.show_printing_modal(text="Archiving session data…\nPlease wait.")
+
+        def _worker():
+            try:
+                import shutil
+                ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                archive_dir = os.path.join(log_dir, ts)
+                os.makedirs(archive_dir, exist_ok=True)
+
+                moved, errors = [], []
+                for entry in os.scandir(log_dir):
+                    if entry.name == '.provisioned':
+                        continue
+                    if os.path.abspath(entry.path) == os.path.abspath(archive_dir):
+                        continue
+                    try:
+                        shutil.move(entry.path, os.path.join(archive_dir, entry.name))
+                        moved.append(entry.name)
+                    except Exception as mv_err:
+                        errors.append(f"{entry.name}: {mv_err}")
+
+                # Checkpoint and close the DB so WAL is fully written before move.
+                try:
+                    bm = getattr(self, 'ballot_manager', None)
+                    if bm and getattr(bm, 'conn', None):
+                        bm.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                        bm.conn.close()
+                        bm.conn = None
+                except Exception:
+                    pass
+
+                try:
+                    os.sync()
+                except AttributeError:
+                    pass
+
+                print(f"[export_reset] Archived {len(moved)} items to {archive_dir}. Errors: {errors}")
+                self.root.after(0, _restart)
+            except Exception as e:
+                self.root.after(0, lambda err=str(e): _fail(err))
+
+        def _restart():
+            self.close_printing_modal()
+            import sys
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+        def _fail(err):
+            self.close_printing_modal()
+            self._show_custom_messagebox("Export Error", f"Failed to archive session:\n{err}", alert_type="error")
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _admin_error_state(self):
         self._close_admin_menu()
