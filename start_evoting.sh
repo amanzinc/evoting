@@ -11,5 +11,13 @@ if command -v unclutter > /dev/null 2>&1; then
     unclutter -idle 0.5 -root &
 fi
 
-# Log output to a rolling file in /tmp so it doesn't fill the SD card
-exec "$VENV_PYTHON" "$SCRIPT_DIR/main.py" >> /tmp/evoting_app.log 2>&1
+# Infinite loop to automatically restart the app if it crashes
+while true; do
+    echo "Starting EVoting App at $(date)" >> /tmp/evoting_app.log
+    
+    # Run the application
+    "$VENV_PYTHON" "$SCRIPT_DIR/main.py" >> /tmp/evoting_app.log 2>&1
+    
+    echo "App exited or crashed. Restarting in 3 seconds..." >> /tmp/evoting_app.log
+    sleep 3
+done

@@ -36,12 +36,16 @@ class BallotManager:
             return None
 
         # Prefer new naming convention first.
-        ballot_variants = [
-            d for d in os.listdir(usb_root)
-            if d.startswith("ballot_") and os.path.isdir(os.path.join(usb_root, d))
-        ]
-        if ballot_variants:
-            return os.path.join(usb_root, sorted(ballot_variants)[0])
+        try:
+            ballot_variants = [
+                d for d in os.listdir(usb_root)
+                if d.startswith("ballot_") and os.path.isdir(os.path.join(usb_root, d))
+            ]
+            if ballot_variants:
+                return os.path.join(usb_root, sorted(ballot_variants)[0])
+        except PermissionError:
+            print(f"Permission denied when trying to read: {usb_root}")
+            return None
 
         # Backward compatibility.
         legacy_path = os.path.join(usb_root, "ballot")

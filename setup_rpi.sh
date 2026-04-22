@@ -10,9 +10,8 @@
 #   4. Disables USB automount popups
 #   5. Configures LightDM autologin for current user
 #   6. Disables screen blanking
-#   7. Writes LXDE + labwc kiosk autostart (belt-and-suspenders backup)
-#   8. Installs evoting.service as a SYSTEM-level systemd service
-#      (most reliable: fires on every boot after graphical.target)
+#   7. Writes LXDE + labwc kiosk autostart (primary GUI autostart)
+#   8. Removes legacy systemd service to prevent permission conflicts
 
 set -e
 
@@ -112,7 +111,7 @@ xset s noblank
 XSESS
 chown "$APP_USER:$APP_USER" "$APP_HOME/.Xsessionrc"
 
-# ── 7. Desktop autostart (backup in case systemd service doesn't fire) ────────
+# ── 7. Desktop autostart (Primary GUI Autostart) ──────────────────────────────
 echo "[7/8] Writing desktop autostart entries..."
 chmod +x "$PROJECT_DIR/start_evoting.sh"
 
@@ -151,22 +150,17 @@ Comment=Ballot Marking Device
 DESKTOP
 chown -R "$APP_USER:$APP_USER" "$XDG_DIR"
 
-# ── 8. System-level systemd service (primary autostart) ──────────────────────
-echo "[8/8] Installing evoting system service..."
+# ── 8. Remove legacy systemd service (if present) ────────────────────────────
+echo "[8/8] Cleaning up legacy systemd service..."
 
-# Substitute placeholders in the service template.
 SERVICE_DEST="/etc/systemd/system/evoting.service"
-sed \
-    -e "s|__EVOTING_USER__|$APP_USER|g" \
-    -e "s|__EVOTING_DIR__|$PROJECT_DIR|g" \
-    -e "s|__EVOTING_PYTHON__|$VENV_PYTHON|g" \
-    -e "s|__EVOTING_HOME__|$APP_HOME|g" \
-    -e "s|__EVOTING_UID__|$APP_UID|g" \
-    "$PROJECT_DIR/evoting.service" > "$SERVICE_DEST"
-
-systemctl daemon-reload
-systemctl enable evoting.service
-echo "    evoting.service enabled."
+if [ -f "$SERVICE_DEST" ]; then
+    systemctl stop evoting.service 2>/dev/null || true
+    systemctl disable evoting.service 2>/dev/null || true
+    rm -f "$SERVICE_DEST"
+    systemctl daemon-reload
+    echo "    Removed legacy evoting.service."
+fi
 
 # RTC sync service
 if [ -f "$PROJECT_DIR/evoting-rtc-sync.service" ]; then
@@ -181,9 +175,8 @@ echo "============================================="
 echo "   Setup Complete!"
 echo "============================================="
 echo ""
-echo "  Service status : sudo systemctl status evoting"
-echo "  Live logs      : sudo journalctl -u evoting -f"
-echo "  Start now      : sudo systemctl start evoting"
+echo "  Live logs      : tail -f /tmp/evoting_app.log"
+echo "  Start manually : $PROJECT_DIR/start_evoting.sh"
 echo ""
 echo "  Reboot to verify autostart: sudo reboot"
 echo ""
