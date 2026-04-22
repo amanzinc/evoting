@@ -2561,11 +2561,11 @@ class VotingApp:
         header_sub_font = ('Helvetica', 12) if compact_layout else ('Helvetica', 14)
         grid_pad_x = 34 if compact_layout else 60
         grid_pad_y = 10 if compact_layout else 20
-        btn_font = ('Helvetica', 12, 'bold') if compact_layout else ('Helvetica', 15, 'bold')
-        btn_internal_pad_y = 9 if compact_layout else 20
-        btn_internal_pad_x = 12 if compact_layout else 16
-        btn_wrap = 280 if compact_layout else 340
-        btn_outer_pad_y = 5 if compact_layout else 8
+        btn_font = ('Helvetica', 16, 'bold') if compact_layout else ('Helvetica', 22, 'bold')
+        btn_internal_pad_y = 18 if compact_layout else 36
+        btn_internal_pad_x = 16 if compact_layout else 24
+        btn_wrap = 280 if compact_layout else 400
+        btn_outer_pad_y = 10 if compact_layout else 16
 
         header = tk.Frame(overlay, bg="#161b22", pady=header_pad_y)
         header.pack(fill=tk.X)
@@ -2689,24 +2689,24 @@ class VotingApp:
         keypad = tk.Frame(frame, bg=bg_color)
         keypad.pack(pady=20)
         
-        btn_font = ('Helvetica', 24, 'bold')
+        btn_font = ('Helvetica', 18, 'bold')
         
         # Row 0
-        tk.Button(keypad, text="1", font=btn_font, width=4, height=2, command=lambda: press(1)).grid(row=0, column=0, padx=5, pady=5)
-        tk.Button(keypad, text="2", font=btn_font, width=4, height=2, command=lambda: press(2)).grid(row=0, column=1, padx=5, pady=5)
-        tk.Button(keypad, text="3", font=btn_font, width=4, height=2, command=lambda: press(3)).grid(row=0, column=2, padx=5, pady=5)
+        tk.Button(keypad, text="1", font=btn_font, width=4, height=1, command=lambda: press(1)).grid(row=0, column=0, padx=8, pady=8)
+        tk.Button(keypad, text="2", font=btn_font, width=4, height=1, command=lambda: press(2)).grid(row=0, column=1, padx=8, pady=8)
+        tk.Button(keypad, text="3", font=btn_font, width=4, height=1, command=lambda: press(3)).grid(row=0, column=2, padx=8, pady=8)
         # Row 1
-        tk.Button(keypad, text="4", font=btn_font, width=4, height=2, command=lambda: press(4)).grid(row=1, column=0, padx=5, pady=5)
-        tk.Button(keypad, text="5", font=btn_font, width=4, height=2, command=lambda: press(5)).grid(row=1, column=1, padx=5, pady=5)
-        tk.Button(keypad, text="6", font=btn_font, width=4, height=2, command=lambda: press(6)).grid(row=1, column=2, padx=5, pady=5)
+        tk.Button(keypad, text="4", font=btn_font, width=4, height=1, command=lambda: press(4)).grid(row=1, column=0, padx=8, pady=8)
+        tk.Button(keypad, text="5", font=btn_font, width=4, height=1, command=lambda: press(5)).grid(row=1, column=1, padx=8, pady=8)
+        tk.Button(keypad, text="6", font=btn_font, width=4, height=1, command=lambda: press(6)).grid(row=1, column=2, padx=8, pady=8)
         # Row 2
-        tk.Button(keypad, text="7", font=btn_font, width=4, height=2, command=lambda: press(7)).grid(row=2, column=0, padx=5, pady=5)
-        tk.Button(keypad, text="8", font=btn_font, width=4, height=2, command=lambda: press(8)).grid(row=2, column=1, padx=5, pady=5)
-        tk.Button(keypad, text="9", font=btn_font, width=4, height=2, command=lambda: press(9)).grid(row=2, column=2, padx=5, pady=5)
+        tk.Button(keypad, text="7", font=btn_font, width=4, height=1, command=lambda: press(7)).grid(row=2, column=0, padx=8, pady=8)
+        tk.Button(keypad, text="8", font=btn_font, width=4, height=1, command=lambda: press(8)).grid(row=2, column=1, padx=8, pady=8)
+        tk.Button(keypad, text="9", font=btn_font, width=4, height=1, command=lambda: press(9)).grid(row=2, column=2, padx=8, pady=8)
         # Row 3
-        tk.Button(keypad, text="CLEAR", font=('Helvetica', 16, 'bold'), width=6, height=3, bg="#e57373", fg="white", command=clear_pin).grid(row=3, column=0, padx=5, pady=5)
-        tk.Button(keypad, text="0", font=btn_font, width=4, height=2, command=lambda: press(0)).grid(row=3, column=1, padx=5, pady=5)
-        tk.Button(keypad, text="OK", font=('Helvetica', 16, 'bold'), width=6, height=3, bg="#81c784", fg="white", command=submit_pin).grid(row=3, column=2, padx=5, pady=5)
+        tk.Button(keypad, text="CLEAR", font=('Helvetica', 14, 'bold'), width=5, height=2, bg="#e57373", fg="white", command=clear_pin).grid(row=3, column=0, padx=8, pady=8)
+        tk.Button(keypad, text="0", font=btn_font, width=4, height=1, command=lambda: press(0)).grid(row=3, column=1, padx=8, pady=8)
+        tk.Button(keypad, text="OK", font=('Helvetica', 14, 'bold'), width=5, height=2, bg="#81c784", fg="white", command=submit_pin).grid(row=3, column=2, padx=8, pady=8)
 
         tk.Button(frame, text="Cancel", font=('Helvetica', 14), bg="#b0bec5", command=self.show_idle_screen).pack(pady=20)
 
