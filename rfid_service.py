@@ -71,22 +71,27 @@ class RFIDService:
             return True
 
         last_error = None
-        for attempt in range(1, 4):
+        for attempt in range(1, 6): # Increased to 5 attempts for boot timing
             try:
                 self._close_bus()
-                # On RPi this uses board.SCL/SDA. On Windows this might fail.
+                # On very early boot, the PN532 takes a moment to boot its I2C interface.
+                time.sleep(0.5) 
+                
+                # On RPi this uses board.SCL/SDA.
                 self.i2c = busio.I2C(board.SCL, board.SDA)
-                time.sleep(0.15)
+                time.sleep(0.2)
                 self.pn532 = PN532_I2C(self.i2c, debug=False)
-                time.sleep(0.15)
+                time.sleep(0.2)
                 self.pn532.SAM_configuration()
                 self.connected = True
                 print("RFID Reader Connected Successfully.")
                 return True
             except Exception as e:
                 last_error = e
+                print(f"RFID connection attempt {attempt} failed: {e}")
                 self._close_bus()
-                time.sleep(0.3 * attempt)
+                # Exponential backoff on fail (0.5s, 1.0s, 1.5s, 2.0s...)
+                time.sleep(0.5 * attempt)
 
         print(f"RFID Connection Failed after retries: {last_error}")
         return False
