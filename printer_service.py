@@ -391,7 +391,7 @@ class PrinterService:
             if stage in ("both", "vvpat", "receipt"):
                 self._print_vote_vvpat_section(p, context)
                 time.sleep(5)
-                p.text("\n" * 8)
+                p.text("\n" * 4)
                 p.cut(mode='FULL')
                 p.text("\n" * 12) # Extra feed after cut helps slip clear the printer
                 return {"stage": "vvpat_complete", "context": context}
@@ -560,7 +560,7 @@ class PrinterService:
             p.text("KEEP THIS SLIP FOR SETUP\n")
             p.text(TOP_BAR + "\n")
             p.set(align='left', font='a', width=1, height=1, bold=True)
-            p.text("\n\n\n\n\n\n\n\n")
+            p.text("\n" * 4)
             import time
             time.sleep(3)  # let print buffer drain before cut
             p.cut(mode='FULL')
@@ -628,7 +628,7 @@ class PrinterService:
                 p.text(TOP_BAR + "\n")
                 p.set(align='left', font='a', width=1, height=1, bold=True)
 
-                p.text("\n\n\n\n\n\n")
+                p.text("\n" * 4)
                 time.sleep(5)
                 p.cut(mode='FULL')
                 p.text("\n" * 12) # Extra feed after cut
