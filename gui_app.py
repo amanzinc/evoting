@@ -28,6 +28,16 @@ class VotingApp:
         self.max_challenges_per_election = 1
         self._kiosk_enforcing = False
 
+        # Two-phase commit journal — tracks PENDING/COMMITTED per VVPAT print
+        self._pending_journal_id = None
+        self._journal_startup_checked = False
+        try:
+            from vote_journal import VoteJournal
+            self._vote_journal = VoteJournal(log_dir) if log_dir else None
+        except Exception as _je:
+            print(f"[journal] Could not init VoteJournal: {_je}")
+            self._vote_journal = None
+
         # Hidden polling-officer menu trigger: typing "Aman" opens the panel.
         self._admin_key_buffer = ""
         self._admin_overlay = None
@@ -621,6 +631,11 @@ class VotingApp:
             print(f"[schedule] Failed printing start-window ticket: {exc}")
 
     def show_idle_screen(self):
+        # One-time startup check for unresolved PENDING journal entries.
+        if not self._journal_startup_checked:
+            self._journal_startup_checked = True
+            self.root.after(400, self._check_pending_journal)
+
         is_active = self._is_election_active_now()
 
         if is_active and self._last_schedule_active is not True:
@@ -1724,6 +1739,21 @@ class VotingApp:
                 self.start_next_election()
                 return
 
+            # Phase 1: write PENDING to journal before any print attempt
+            import uuid as _uuid
+            self._pending_journal_id = str(_uuid.uuid4())
+            if self._vote_journal:
+                self._vote_journal.write_pending(
+                    self._pending_journal_id,
+                    getattr(self, 'current_voter_id', 'UNKNOWN'),
+                    str(self.current_election_id or ''),
+                    getattr(self.data_handler, 'election_name', ''),
+                    vvpat_sel_str,
+                    vote_record,
+                    self.voting_mode,
+                    dict(self.selections),
+                )
+
             self.show_printing_modal()
             self.print_queue = queue.Queue()
 
@@ -1895,17 +1925,22 @@ class VotingApp:
                 )
 
             self.ballot_manager.mark_as_used(self.data_handler.ballot_file_id, self.current_election_id)
-            
+
             vid = getattr(self, 'current_voter_id', 'UNKNOWN')
             tid = getattr(self, 'current_token_id', 'UNKNOWN')
             primary_identity = vid if vid and vid != 'UNKNOWN_VOTER' else tid
             self.ballot_manager.mark_voter_election_used(primary_identity, self.current_election_id)
-            
+
             self.data_handler.store_used_ballot_snapshot(
                 election_id=self.current_election_id,
                 ballot_file_id=self.data_handler.ballot_file_id,
                 status="USED"
             )
+
+            # Phase 2: COMMITTED — vote is durably saved
+            if self._vote_journal:
+                self._vote_journal.write_committed(self._pending_journal_id)
+            self._pending_journal_id = None
 
             self.pending_print_job = None
             self._cast_vote_in_progress = False
@@ -2755,6 +2790,193 @@ class VotingApp:
             self._show_custom_messagebox("Export Error", f"Failed to archive session:\n{err}", alert_type="error")
 
         threading.Thread(target=_worker, daemon=True).start()
+
+    # ── Vote Recovery (two-phase journal) ────────────────────────────────────
+
+    def _check_pending_journal(self):
+        """Called once at startup. Shows recovery screen if any PENDING votes found."""
+        if not self._vote_journal:
+            return
+        try:
+            pending = self._vote_journal.get_pending()
+        except Exception as e:
+            print(f"[journal] Error scanning for pending votes: {e}")
+            return
+        if not pending:
+            return
+        print(f"[journal] {len(pending)} PENDING vote(s) found — showing officer recovery screen.")
+        self._show_vote_recovery_screen(pending)
+
+    def _show_vote_recovery_screen(self, pending_entries):
+        """Full-screen officer verification overlay for unresolved PENDING votes."""
+        if not pending_entries:
+            return
+
+        entry = pending_entries[0]
+        remaining = pending_entries[1:]
+
+        overlay = tk.Toplevel(self.root)
+        overlay.overrideredirect(True)
+        overlay.attributes('-fullscreen', True)
+        overlay.attributes('-topmost', True)
+        overlay.configure(bg="#1a0000")
+        overlay.grab_set()
+        overlay.lift()
+        overlay.focus_force()
+
+        def _done():
+            overlay.grab_release()
+            overlay.destroy()
+            if remaining:
+                self.root.after(200, lambda: self._show_vote_recovery_screen(remaining))
+
+        def _commit():
+            try:
+                self._recovery_save_vote(entry)
+                self._vote_journal.write_committed(entry['id'])
+                try:
+                    os.sync()
+                except AttributeError:
+                    pass
+                print(f"[recovery] Committed vote {entry['id']} without reprint.")
+            except Exception as e:
+                print(f"[recovery] Error committing vote: {e}")
+                self._show_custom_messagebox("Recovery Error", f"Could not commit vote:\n{e}", alert_type="error")
+            _done()
+
+        def _reprint_commit():
+            ps = getattr(self, 'printer_service', None)
+            if not ps:
+                self._show_custom_messagebox(
+                    "Printer Not Ready",
+                    "Ballot data not yet loaded.\n\nPlease import the ballot USB first,\nthen re-open the officer menu.",
+                    alert_type="error"
+                )
+                return
+            try:
+                ps.print_recovery_vvpat(
+                    entry.get('election_name', 'Election'),
+                    entry.get('vvpat_choice_str', 'Unknown'),
+                    entry.get('timestamp', ''),
+                )
+                self._recovery_save_vote(entry)
+                self._vote_journal.write_committed(entry['id'])
+                try:
+                    os.sync()
+                except AttributeError:
+                    pass
+                print(f"[recovery] Reprinted and committed vote {entry['id']}.")
+            except Exception as e:
+                print(f"[recovery] Reprint error: {e}")
+                self._show_custom_messagebox("Reprint Error", f"Reprint failed:\n{e}", alert_type="error")
+                return
+            _done()
+
+        def _discard():
+            if not self._show_custom_confirm(
+                "Discard Vote",
+                "Are you sure you want to DISCARD this vote?\nIt will NOT be recorded.",
+                yes_text="Discard",
+                no_text="Cancel"
+            ):
+                return
+            self._vote_journal.write_discarded(entry['id'])
+            try:
+                os.sync()
+            except AttributeError:
+                pass
+            print(f"[recovery] Discarded vote {entry['id']}.")
+            _done()
+
+        # ── Layout ────────────────────────────────────────────────────────────
+        header = tk.Frame(overlay, bg="#7f0000", pady=18)
+        header.pack(fill=tk.X)
+        tk.Label(header, text="⚠  VOTE RECOVERY — OFFICER REQUIRED",
+                 font=('Helvetica', 22, 'bold'), bg="#7f0000", fg="white").pack()
+        tk.Label(header, text="Power loss detected during VVPAT printing. Please verify the slip.",
+                 font=('Helvetica', 14), bg="#7f0000", fg="#ffcccc").pack(pady=(4, 0))
+
+        body = tk.Frame(overlay, bg="#1a0000", pady=20)
+        body.pack(fill=tk.BOTH, expand=True, padx=60)
+
+        info_frame = tk.Frame(body, bg="#2d0000", bd=2, relief=tk.RIDGE)
+        info_frame.pack(fill=tk.X, pady=(0, 24))
+
+        def _row(label, value):
+            r = tk.Frame(info_frame, bg="#2d0000")
+            r.pack(fill=tk.X, padx=20, pady=6)
+            tk.Label(r, text=label, font=('Helvetica', 14, 'bold'),
+                     bg="#2d0000", fg="#ff9999", width=16, anchor='w').pack(side=tk.LEFT)
+            tk.Label(r, text=value, font=('Helvetica', 14),
+                     bg="#2d0000", fg="white", anchor='w', wraplength=600, justify=tk.LEFT).pack(side=tk.LEFT)
+
+        _row("Voter ID:", entry.get('voter_id', 'Unknown'))
+        _row("Election:", entry.get('election_id', 'Unknown'))
+        _row("Selection:", entry.get('vvpat_choice_str', 'Unknown'))
+        ts = entry.get('timestamp', '')
+        if ts:
+            try:
+                import datetime as _dt
+                ts = _dt.datetime.fromisoformat(ts).strftime("%d-%m-%Y %H:%M:%S")
+            except Exception:
+                pass
+        _row("Vote Time:", ts)
+
+        tk.Label(body,
+                 text="Check the printer for a physical slip and choose the appropriate action:",
+                 font=('Helvetica', 15), bg="#1a0000", fg="#ffdddd",
+                 wraplength=900, justify=tk.CENTER).pack(pady=(0, 20))
+
+        btn_cfg = dict(font=('Helvetica', 17, 'bold'), relief=tk.FLAT, bd=0,
+                       cursor='hand2', pady=20, padx=30)
+
+        tk.Button(body, text="✅  Slip Was Fully Printed — Commit Vote",
+                  bg="#1b5e20", fg="white",
+                  command=_commit, **btn_cfg).pack(fill=tk.X, pady=8)
+        tk.Label(body, text="Use when: slip came out completely. Vote is committed, no reprint.",
+                 font=('Helvetica', 12), bg="#1a0000", fg="#aaaaaa").pack()
+
+        tk.Button(body, text="🖨  Slip Not Printed / Partial — Reprint & Commit",
+                  bg="#e65100", fg="white",
+                  command=_reprint_commit, **btn_cfg).pack(fill=tk.X, pady=(16, 8))
+        tk.Label(body, text="Use when: no slip came out or it was cut short. Reprints a recovery VVPAT then commits.",
+                 font=('Helvetica', 12), bg="#1a0000", fg="#aaaaaa").pack()
+
+        tk.Button(body, text="🗑  Discard This Vote — Do NOT Record",
+                  bg="#37474f", fg="#ff8888",
+                  command=_discard, **btn_cfg).pack(fill=tk.X, pady=(16, 8))
+        tk.Label(body, text="Use when: officer confirms the voter did not complete their vote.",
+                 font=('Helvetica', 12), bg="#1a0000", fg="#aaaaaa").pack()
+
+        if remaining:
+            tk.Label(body,
+                     text=f"Note: {len(remaining)} more pending vote(s) will follow after this one.",
+                     font=('Helvetica', 13, 'italic'), bg="#1a0000", fg="#ffcc00").pack(pady=(20, 0))
+
+    def _recovery_save_vote(self, entry):
+        """Save a recovered vote record directly to the votes log and mark DB."""
+        vote_record = entry.get('vote_record')
+        voter_id    = entry.get('voter_id', 'UNKNOWN')
+        election_id = entry.get('election_id', 'UNKNOWN')
+
+        if vote_record:
+            votes_path = getattr(self, 'votes_log', None) or os.path.join(self.log_dir, 'votes.json')
+            try:
+                with open(votes_path, 'a', encoding='utf-8') as f:
+                    records = vote_record if isinstance(vote_record, list) else [vote_record]
+                    for rec in records:
+                        f.write(json.dumps(rec) + '\n')
+                    f.flush()
+                    os.fsync(f.fileno())
+            except Exception as e:
+                print(f"[recovery] Error writing vote record: {e}")
+
+        try:
+            self.ballot_manager.mark_voter_election_used(voter_id, election_id)
+        except Exception as e:
+            print(f"[recovery] Error marking voter+election in DB: {e}")
+
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _admin_error_state(self):
         self._close_admin_menu()
@@ -3922,18 +4144,23 @@ class VotingApp:
                     # But preventing reuse is critical.
                     # Let's Mark USed now. The risk is a wasted ballot on print fail. Acceptable.
                     self.ballot_manager.mark_as_used(self.data_handler.ballot_file_id, self.current_election_id)
-                    
+
                     vid = getattr(self, 'current_voter_id', 'UNKNOWN')
                     tid = getattr(self, 'current_token_id', 'UNKNOWN')
                     primary_identity = vid if vid and vid != 'UNKNOWN_VOTER' else tid
                     self.ballot_manager.mark_voter_election_used(primary_identity, self.current_election_id)
-                    
+
                     self.data_handler.store_used_ballot_snapshot(
                         election_id=self.current_election_id,
                         ballot_file_id=self.data_handler.ballot_file_id,
                         status="USED"
                     )
-                    
+
+                    # Phase 2: COMMITTED
+                    if self._vote_journal:
+                        self._vote_journal.write_committed(self._pending_journal_id)
+                    self._pending_journal_id = None
+
                     self.pending_print_job = None
                     self._cancel_pending_print_polling()
                     self._cast_vote_in_progress = False

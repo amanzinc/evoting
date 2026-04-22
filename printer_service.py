@@ -413,6 +413,59 @@ class PrinterService:
             self._set_reverse_print_mode(False)
 
 
+    def print_recovery_vvpat(self, election_name, vvpat_choice_str, original_timestamp=""):
+        """
+        Print a plain-text recovery VVPAT slip when the original print was interrupted.
+        Does not need candidate data loaded — uses pre-rendered strings from the journal.
+        """
+        if not self.printer:
+            self.connect_printer()
+        if not self.printer:
+            raise Exception("Printer not connected")
+
+        p = self.printer
+        try:
+            self._set_reverse_print_mode(True)
+            bar = self._bar("=")
+            p.set(align='center', bold=True)
+            p.text("\n")
+            p.text(bar + "\n")
+            p.text("** RECOVERY VVPAT **\n")
+            p.text(bar + "\n\n")
+            p.set(align='left', bold=False)
+            p.text(f"Election : {election_name}\n")
+            p.text(f"Choice   : {vvpat_choice_str}\n")
+            if original_timestamp:
+                try:
+                    import datetime as _dt
+                    ts = _dt.datetime.fromisoformat(original_timestamp).strftime("%d-%m-%Y %H:%M:%S")
+                except Exception:
+                    ts = original_timestamp
+                p.text(f"Vote Time: {ts}\n")
+            p.text(f"Printed  : {datetime.datetime.now().strftime('%d-%m-%Y %H:%M:%S')}\n")
+            p.text("\n")
+            p.set(align='center', bold=True)
+            p.text("** OFFICER VERIFIED REPRINT **\n")
+            p.text(bar + "\n")
+            p.set(bold=False)
+            p.text("\n\n\n\n")
+            p.cut(mode='FULL')
+            try:
+                time.sleep(0.5)
+                p.text("\n" * 6)
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                if self.printer:
+                    self.printer.close()
+            except Exception:
+                pass
+            self.printer = None
+            raise e
+        finally:
+            self._set_reverse_print_mode(False)
+
     def _generate_vvpat_qr(self, choice_data, ballot_id):
         try:
             qr_c = qrcode.make(choice_data)
