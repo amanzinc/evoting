@@ -2808,150 +2808,205 @@ class VotingApp:
         self._show_vote_recovery_screen(pending)
 
     def _show_vote_recovery_screen(self, pending_entries):
-        """Full-screen officer verification overlay for unresolved PENDING votes."""
+        """
+        Two-phase recovery screen for unresolved PENDING votes.
+
+        Phase 1 — full-screen alert, waits for officer RFID card.
+        Phase 2 — compact action dialog shown only after officer authenticates.
+        """
         if not pending_entries:
+            self.stop_scanning = False
             return
 
-        entry = pending_entries[0]
+        # Pause regular voter scan loop for the duration of recovery.
+        self.stop_scanning = True
+
+        entry     = pending_entries[0]
         remaining = pending_entries[1:]
 
-        overlay = tk.Toplevel(self.root)
-        overlay.overrideredirect(True)
-        overlay.attributes('-fullscreen', True)
-        overlay.attributes('-topmost', True)
-        overlay.configure(bg="#1a0000")
-        overlay.grab_set()
-        overlay.lift()
-        overlay.focus_force()
+        # ── Phase 1: full-screen "call officer" screen ────────────────────────
+        phase1 = tk.Toplevel(self.root)
+        phase1.overrideredirect(True)
+        phase1.attributes('-fullscreen', True)
+        phase1.attributes('-topmost', True)
+        phase1.configure(bg="#1a0000")
+        phase1.grab_set()
+        phase1.lift()
+        phase1.focus_force()
 
-        def _done():
-            overlay.grab_release()
-            overlay.destroy()
-            if remaining:
-                self.root.after(200, lambda: self._show_vote_recovery_screen(remaining))
+        tk.Label(phase1, text="⚠", font=('Helvetica', 72), bg="#1a0000", fg="#ff4444").pack(pady=(60, 0))
+        tk.Label(phase1, text="POWER LOSS DETECTED",
+                 font=('Helvetica', 28, 'bold'), bg="#1a0000", fg="white").pack(pady=(0, 8))
+        tk.Label(phase1,
+                 text="A vote may not have been recorded properly.\nPlease call a Polling Officer for verification.",
+                 font=('Helvetica', 16), bg="#1a0000", fg="#ffaaaa",
+                 justify=tk.CENTER).pack(pady=(0, 40))
 
-        def _commit():
-            try:
-                self._recovery_save_vote(entry)
-                self._vote_journal.write_committed(entry['id'])
+        tk.Frame(phase1, bg="#7f0000", height=2).pack(fill=tk.X, padx=80)
+
+        tk.Label(phase1, text="Polling Officer: scan your RFID card to proceed",
+                 font=('Helvetica', 15, 'italic'), bg="#1a0000", fg="#ffdd88").pack(pady=(30, 10))
+
+        status_lbl = tk.Label(phase1, text="Waiting for officer card…",
+                              font=('Helvetica', 13), bg="#1a0000", fg="#888888")
+        status_lbl.pack()
+
+        scan_active = [True]
+
+        def _stop_scan():
+            scan_active[0] = False
+
+        # Background thread polls RFID for officer card
+        def _scan_loop():
+            while scan_active[0]:
+                try:
+                    result = self.rfid_service.read_card(mode='encrypted')
+                    if result and result[0] != 'error':
+                        payload = result[1] if len(result) > 1 else result[0]
+                        if self._is_polling_officer_token(payload):
+                            phase1.after(0, _officer_verified)
+                            return
+                        else:
+                            phase1.after(0, lambda: status_lbl.config(
+                                text="Not an officer card. Try again.", fg="#ff8888"))
+                except Exception:
+                    pass
+                import time as _t
+                _t.sleep(0.3)
+
+        def _officer_verified():
+            _stop_scan()
+            phase1.grab_release()
+            phase1.destroy()
+            self.root.after(100, lambda: _show_phase2())
+
+        threading.Thread(target=_scan_loop, daemon=True).start()
+
+        # ── Phase 2: compact action dialog ────────────────────────────────────
+        def _show_phase2():
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            dw, dh = min(760, sw - 40), min(560, sh - 40)
+            dx = (sw - dw) // 2
+            dy = (sh - dh) // 2
+
+            dlg = tk.Toplevel(self.root)
+            dlg.overrideredirect(True)
+            dlg.geometry(f"{dw}x{dh}+{dx}+{dy}")
+            dlg.attributes('-topmost', True)
+            dlg.configure(bg="#1a0000")
+            dlg.grab_set()
+            dlg.lift()
+
+            def _done():
+                dlg.grab_release()
+                dlg.destroy()
+                if remaining:
+                    self.root.after(200, lambda: self._show_vote_recovery_screen(remaining))
+                else:
+                    self.stop_scanning = False
+
+            def _commit():
+                try:
+                    self._recovery_save_vote(entry)
+                    self._vote_journal.write_committed(entry['id'])
+                    try:
+                        os.sync()
+                    except AttributeError:
+                        pass
+                    print(f"[recovery] Committed {entry['id']} without reprint.")
+                except Exception as e:
+                    self._show_custom_messagebox("Recovery Error", f"Could not commit:\n{e}", alert_type="error")
+                _done()
+
+            def _reprint_commit():
+                ps = getattr(self, 'printer_service', None)
+                if not ps:
+                    self._show_custom_messagebox(
+                        "Printer Not Ready",
+                        "Import ballot USB first, then retry.",
+                        alert_type="error"
+                    )
+                    return
+                try:
+                    ps.print_recovery_vvpat(
+                        entry.get('election_name', 'Election'),
+                        entry.get('vvpat_choice_str', 'Unknown'),
+                        entry.get('timestamp', ''),
+                    )
+                    self._recovery_save_vote(entry)
+                    self._vote_journal.write_committed(entry['id'])
+                    try:
+                        os.sync()
+                    except AttributeError:
+                        pass
+                    print(f"[recovery] Reprinted and committed {entry['id']}.")
+                except Exception as e:
+                    self._show_custom_messagebox("Reprint Error", f"Reprint failed:\n{e}", alert_type="error")
+                    return
+                _done()
+
+            def _discard():
+                if not self._show_custom_confirm(
+                    "Discard Vote",
+                    "DISCARD this vote?\nIt will NOT be recorded.",
+                    yes_text="Discard",
+                    no_text="Cancel"
+                ):
+                    return
+                self._vote_journal.write_discarded(entry['id'])
                 try:
                     os.sync()
                 except AttributeError:
                     pass
-                print(f"[recovery] Committed vote {entry['id']} without reprint.")
-            except Exception as e:
-                print(f"[recovery] Error committing vote: {e}")
-                self._show_custom_messagebox("Recovery Error", f"Could not commit vote:\n{e}", alert_type="error")
-            _done()
+                print(f"[recovery] Discarded {entry['id']}.")
+                _done()
 
-        def _reprint_commit():
-            ps = getattr(self, 'printer_service', None)
-            if not ps:
-                self._show_custom_messagebox(
-                    "Printer Not Ready",
-                    "Ballot data not yet loaded.\n\nPlease import the ballot USB first,\nthen re-open the officer menu.",
-                    alert_type="error"
-                )
-                return
-            try:
-                ps.print_recovery_vvpat(
-                    entry.get('election_name', 'Election'),
-                    entry.get('vvpat_choice_str', 'Unknown'),
-                    entry.get('timestamp', ''),
-                )
-                self._recovery_save_vote(entry)
-                self._vote_journal.write_committed(entry['id'])
-                try:
-                    os.sync()
-                except AttributeError:
-                    pass
-                print(f"[recovery] Reprinted and committed vote {entry['id']}.")
-            except Exception as e:
-                print(f"[recovery] Reprint error: {e}")
-                self._show_custom_messagebox("Reprint Error", f"Reprint failed:\n{e}", alert_type="error")
-                return
-            _done()
+            # Header
+            hdr = tk.Frame(dlg, bg="#7f0000", pady=10)
+            hdr.pack(fill=tk.X)
+            tk.Label(hdr, text="⚠  Vote Recovery — Officer Verified",
+                     font=('Helvetica', 16, 'bold'), bg="#7f0000", fg="white").pack()
 
-        def _discard():
-            if not self._show_custom_confirm(
-                "Discard Vote",
-                "Are you sure you want to DISCARD this vote?\nIt will NOT be recorded.",
-                yes_text="Discard",
-                no_text="Cancel"
-            ):
-                return
-            self._vote_journal.write_discarded(entry['id'])
-            try:
-                os.sync()
-            except AttributeError:
-                pass
-            print(f"[recovery] Discarded vote {entry['id']}.")
-            _done()
+            # Info rows
+            info = tk.Frame(dlg, bg="#2d0000", pady=6)
+            info.pack(fill=tk.X, padx=16, pady=(10, 6))
 
-        # ── Layout ────────────────────────────────────────────────────────────
-        header = tk.Frame(overlay, bg="#7f0000", pady=18)
-        header.pack(fill=tk.X)
-        tk.Label(header, text="⚠  VOTE RECOVERY — OFFICER REQUIRED",
-                 font=('Helvetica', 22, 'bold'), bg="#7f0000", fg="white").pack()
-        tk.Label(header, text="Power loss detected during VVPAT printing. Please verify the slip.",
-                 font=('Helvetica', 14), bg="#7f0000", fg="#ffcccc").pack(pady=(4, 0))
+            def _row(lbl, val):
+                r = tk.Frame(info, bg="#2d0000")
+                r.pack(fill=tk.X, padx=12, pady=2)
+                tk.Label(r, text=lbl, font=('Helvetica', 12, 'bold'),
+                         bg="#2d0000", fg="#ff9999", width=12, anchor='w').pack(side=tk.LEFT)
+                tk.Label(r, text=val, font=('Helvetica', 12),
+                         bg="#2d0000", fg="white", anchor='w', wraplength=500).pack(side=tk.LEFT)
 
-        body = tk.Frame(overlay, bg="#1a0000", pady=20)
-        body.pack(fill=tk.BOTH, expand=True, padx=60)
-
-        info_frame = tk.Frame(body, bg="#2d0000", bd=2, relief=tk.RIDGE)
-        info_frame.pack(fill=tk.X, pady=(0, 24))
-
-        def _row(label, value):
-            r = tk.Frame(info_frame, bg="#2d0000")
-            r.pack(fill=tk.X, padx=20, pady=6)
-            tk.Label(r, text=label, font=('Helvetica', 14, 'bold'),
-                     bg="#2d0000", fg="#ff9999", width=16, anchor='w').pack(side=tk.LEFT)
-            tk.Label(r, text=value, font=('Helvetica', 14),
-                     bg="#2d0000", fg="white", anchor='w', wraplength=600, justify=tk.LEFT).pack(side=tk.LEFT)
-
-        _row("Voter ID:", entry.get('voter_id', 'Unknown'))
-        _row("Election:", entry.get('election_id', 'Unknown'))
-        _row("Selection:", entry.get('vvpat_choice_str', 'Unknown'))
-        ts = entry.get('timestamp', '')
-        if ts:
+            _row("Voter ID:", entry.get('voter_id', '?'))
+            _row("Election:", entry.get('election_id', '?'))
+            _row("Selection:", entry.get('vvpat_choice_str', '?'))
+            ts = entry.get('timestamp', '')
             try:
                 import datetime as _dt
                 ts = _dt.datetime.fromisoformat(ts).strftime("%d-%m-%Y %H:%M:%S")
             except Exception:
                 pass
-        _row("Vote Time:", ts)
+            _row("Vote Time:", ts)
 
-        tk.Label(body,
-                 text="Check the printer for a physical slip and choose the appropriate action:",
-                 font=('Helvetica', 15), bg="#1a0000", fg="#ffdddd",
-                 wraplength=900, justify=tk.CENTER).pack(pady=(0, 20))
+            tk.Label(dlg, text="Check the printer slip and choose:",
+                     font=('Helvetica', 13), bg="#1a0000", fg="#ffdddd").pack(pady=(8, 4))
 
-        btn_cfg = dict(font=('Helvetica', 17, 'bold'), relief=tk.FLAT, bd=0,
-                       cursor='hand2', pady=20, padx=30)
+            bf = dict(font=('Helvetica', 14, 'bold'), relief=tk.FLAT, bd=0,
+                      cursor='hand2', pady=12, padx=12)
 
-        tk.Button(body, text="✅  Slip Was Fully Printed — Commit Vote",
-                  bg="#1b5e20", fg="white",
-                  command=_commit, **btn_cfg).pack(fill=tk.X, pady=8)
-        tk.Label(body, text="Use when: slip came out completely. Vote is committed, no reprint.",
-                 font=('Helvetica', 12), bg="#1a0000", fg="#aaaaaa").pack()
+            tk.Button(dlg, text="Slip Fully Printed — Commit Vote",
+                      bg="#1b5e20", fg="white", command=_commit, **bf).pack(fill=tk.X, padx=16, pady=4)
+            tk.Button(dlg, text="No / Partial Slip — Reprint & Commit",
+                      bg="#e65100", fg="white", command=_reprint_commit, **bf).pack(fill=tk.X, padx=16, pady=4)
+            tk.Button(dlg, text="Discard This Vote",
+                      bg="#37474f", fg="#ff8888", command=_discard, **bf).pack(fill=tk.X, padx=16, pady=4)
 
-        tk.Button(body, text="🖨  Slip Not Printed / Partial — Reprint & Commit",
-                  bg="#e65100", fg="white",
-                  command=_reprint_commit, **btn_cfg).pack(fill=tk.X, pady=(16, 8))
-        tk.Label(body, text="Use when: no slip came out or it was cut short. Reprints a recovery VVPAT then commits.",
-                 font=('Helvetica', 12), bg="#1a0000", fg="#aaaaaa").pack()
-
-        tk.Button(body, text="🗑  Discard This Vote — Do NOT Record",
-                  bg="#37474f", fg="#ff8888",
-                  command=_discard, **btn_cfg).pack(fill=tk.X, pady=(16, 8))
-        tk.Label(body, text="Use when: officer confirms the voter did not complete their vote.",
-                 font=('Helvetica', 12), bg="#1a0000", fg="#aaaaaa").pack()
-
-        if remaining:
-            tk.Label(body,
-                     text=f"Note: {len(remaining)} more pending vote(s) will follow after this one.",
-                     font=('Helvetica', 13, 'italic'), bg="#1a0000", fg="#ffcc00").pack(pady=(20, 0))
+            if remaining:
+                tk.Label(dlg, text=f"{len(remaining)} more pending vote(s) after this.",
+                         font=('Helvetica', 11, 'italic'), bg="#1a0000", fg="#ffcc00").pack(pady=(6, 0))
 
     def _recovery_save_vote(self, entry):
         """Save a recovered vote record directly to the votes log and mark DB."""
