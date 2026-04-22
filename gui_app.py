@@ -2621,8 +2621,7 @@ class VotingApp:
         _btn("Set Election Window", lambda: self._admin_set_election_window(show_messages=True), "#4a148c", row=1, col=0)
         _btn("Extend Election End Time", self._admin_extend_end_time_prompt, "#4a148c", row=1, col=1)
 
-        _btn("Re-Print Device Slip", self._admin_reprint_device_slip, "#2e7d32", row=2, col=0)
-        _btn("Update Firmware", self._admin_update_firmware, "#1565c0", row=2, col=1)
+        _btn("Error State", self._admin_error_state, "#d32f2f", row=2, col=0, colspan=2)
 
         _btn(
             "Close Polling Officer Menu",
@@ -2646,6 +2645,70 @@ class VotingApp:
             self._admin_overlay = None
         self._enforce_kiosk_mode()
         self.show_idle_screen()
+
+    def _admin_error_state(self):
+        self._close_admin_menu()
+        self._show_error_state_screen()
+
+    def _show_error_state_screen(self):
+        self.clear_container()
+        
+        bg_color = "#ffebee"
+        frame = tk.Frame(self.main_container, bg=bg_color)
+        frame.pack(expand=True, fill=tk.BOTH)
+        
+        tk.Label(frame, text="Sorry this booth is down.", font=('Helvetica', 32, 'bold'), fg="#c62828", bg=bg_color).pack(pady=(80, 20))
+        tk.Label(frame, text="Enter Developer Pin for Repair", font=('Helvetica', 20), fg="#333", bg=bg_color).pack(pady=(0, 30))
+        
+        pin_var = tk.StringVar(value="")
+        
+        pin_display = tk.Label(frame, text="", font=('Consolas', 36, 'bold'), bg="white", fg="black", width=12, relief="solid", bd=2)
+        pin_display.pack(pady=20)
+        
+        def update_display():
+            val = pin_var.get()
+            pin_display.config(text="*" * len(val))
+            
+        def press(num):
+            current = pin_var.get()
+            if len(current) < 10:
+                pin_var.set(current + str(num))
+                update_display()
+                
+        def clear_pin():
+            pin_var.set("")
+            update_display()
+            
+        def submit_pin():
+            if pin_var.get() == "042026":
+                self.exit_app()
+            else:
+                pin_var.set("")
+                update_display()
+                
+        keypad = tk.Frame(frame, bg=bg_color)
+        keypad.pack(pady=20)
+        
+        btn_font = ('Helvetica', 24, 'bold')
+        
+        # Row 0
+        tk.Button(keypad, text="1", font=btn_font, width=4, height=2, command=lambda: press(1)).grid(row=0, column=0, padx=5, pady=5)
+        tk.Button(keypad, text="2", font=btn_font, width=4, height=2, command=lambda: press(2)).grid(row=0, column=1, padx=5, pady=5)
+        tk.Button(keypad, text="3", font=btn_font, width=4, height=2, command=lambda: press(3)).grid(row=0, column=2, padx=5, pady=5)
+        # Row 1
+        tk.Button(keypad, text="4", font=btn_font, width=4, height=2, command=lambda: press(4)).grid(row=1, column=0, padx=5, pady=5)
+        tk.Button(keypad, text="5", font=btn_font, width=4, height=2, command=lambda: press(5)).grid(row=1, column=1, padx=5, pady=5)
+        tk.Button(keypad, text="6", font=btn_font, width=4, height=2, command=lambda: press(6)).grid(row=1, column=2, padx=5, pady=5)
+        # Row 2
+        tk.Button(keypad, text="7", font=btn_font, width=4, height=2, command=lambda: press(7)).grid(row=2, column=0, padx=5, pady=5)
+        tk.Button(keypad, text="8", font=btn_font, width=4, height=2, command=lambda: press(8)).grid(row=2, column=1, padx=5, pady=5)
+        tk.Button(keypad, text="9", font=btn_font, width=4, height=2, command=lambda: press(9)).grid(row=2, column=2, padx=5, pady=5)
+        # Row 3
+        tk.Button(keypad, text="CLEAR", font=('Helvetica', 16, 'bold'), width=6, height=3, bg="#e57373", fg="white", command=clear_pin).grid(row=3, column=0, padx=5, pady=5)
+        tk.Button(keypad, text="0", font=btn_font, width=4, height=2, command=lambda: press(0)).grid(row=3, column=1, padx=5, pady=5)
+        tk.Button(keypad, text="OK", font=('Helvetica', 16, 'bold'), width=6, height=3, bg="#81c784", fg="white", command=submit_pin).grid(row=3, column=2, padx=5, pady=5)
+
+        tk.Button(frame, text="Cancel", font=('Helvetica', 14), bg="#b0bec5", command=self.show_idle_screen).pack(pady=20)
 
     def _admin_end_election(self):
         self._close_admin_menu()
