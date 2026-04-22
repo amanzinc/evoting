@@ -11,6 +11,13 @@ if command -v unclutter > /dev/null 2>&1; then
     unclutter -idle 0.5 -root &
 fi
 
+# Ensure only one instance of this wrapper runs at a time using a file lock
+exec 9>/tmp/evoting_app.lock
+if ! flock -n 9; then
+    echo "$(date): Another instance of start_evoting.sh is already running. Exiting to prevent hardware conflicts." >> /tmp/evoting_app.log
+    exit 1
+fi
+
 # Infinite loop to automatically restart the app if it crashes
 while true; do
     echo "Starting EVoting App at $(date)" >> /tmp/evoting_app.log
