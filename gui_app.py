@@ -2815,7 +2815,7 @@ class VotingApp:
         Phase 2 — compact action dialog shown only after officer authenticates.
         """
         if not pending_entries:
-            self.stop_scanning = False
+            self.root.after(0, self.show_idle_screen)
             return
 
         # Pause regular voter scan loop for the duration of recovery.
@@ -2904,7 +2904,8 @@ class VotingApp:
                 if remaining:
                     self.root.after(200, lambda: self._show_vote_recovery_screen(remaining))
                 else:
-                    self.stop_scanning = False
+                    # show_idle_screen restarts the scan thread (or shows inactive screen)
+                    self.root.after(0, self.show_idle_screen)
 
             def _commit():
                 try:
