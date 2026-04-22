@@ -26,7 +26,7 @@ class RFIDService:
         self.connected = False
 
         self.START_BLOCK = 4
-        self.MAX_BLOCK_NO = 255
+        self.MAX_BLOCK_NO = 63  # MIFARE Classic 1K: 64 blocks (0-63)
         self.KEY_DEFAULT = b'\xFF' * 6
 
         # RF cooldown tracking: after a card halts (auth failure), we must wait
@@ -37,15 +37,8 @@ class RFIDService:
         self.HALT_RECOVERY_DELAY = 0.40   # seconds
 
     def _block_to_sector(self, block_no):
-        # MIFARE Classic 4K: sectors 0-31 have 4 blocks, sectors 32-39 have 16 blocks.
-        if block_no < 128:
-            return block_no // 4
-        return 32 + ((block_no - 128) // 16)
-
-    def _sector_layout(self, sector_no):
-        if sector_no < 32:
-            return sector_no * 4, 4
-        return 128 + (sector_no - 32) * 16, 16
+        # MIFARE Classic 1K: 16 sectors of 4 blocks each.
+        return block_no // 4
 
     def load_key(self):
         """No-op: RFID encryption uses a shared AES key from rfid_crypto."""
@@ -97,9 +90,8 @@ class RFIDService:
         return False
 
     def is_trailer_block(self, block_no):
-        sector_no = self._block_to_sector(block_no)
-        sector_first_block, blocks_per_sector = self._sector_layout(sector_no)
-        return block_no == (sector_first_block + blocks_per_sector - 1)
+        # MIFARE Classic 1K: blocks 3, 7, 11, 15, ... are sector trailers.
+        return (block_no + 1) % 4 == 0
 
     def _auth_block(self, uid, block_no):
         """Authenticate a single block with 3 retries and exponential backoff."""
