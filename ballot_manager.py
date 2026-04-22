@@ -16,6 +16,10 @@ class BallotManager:
         try:
              self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
              self.cursor = self.conn.cursor()
+             # Ensure every commit is fsynced to physical storage.
+             # Critical on USB/FAT drives where power cuts can drop OS write cache.
+             self.cursor.execute("PRAGMA synchronous = FULL")
+             self.cursor.execute("PRAGMA journal_mode = WAL")
              self.cursor.execute('''
                  CREATE TABLE IF NOT EXISTS ballots (
                      ballot_id TEXT,
@@ -232,6 +236,7 @@ class BallotManager:
     def mark_voter_election_used(self, voter_id, election_id):
         """
         Marks that a voter has successfully cast their ballot for a specific election.
+        Flushes OS write buffers so the record survives a sudden power cut.
         """
         if self.conn is None:
             return
@@ -242,6 +247,11 @@ class BallotManager:
                 VALUES (?, ?, 'USED')
             ''', (str(voter_id), str(election_id)))
             self.conn.commit()
+            # Force OS to push all dirty pages to physical storage (USB FAT safety).
+            try:
+                os.sync()
+            except AttributeError:
+                pass  # Windows — no os.sync, not a deployment target
             print(f"Marked voter {voter_id} as USED for election {election_id} in DB.")
         except Exception as e:
             print(f"Error updating SQLite voter_elections: {e}")
