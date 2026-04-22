@@ -167,9 +167,6 @@ class PrinterService:
             p.text(line + "\n")
 
         p.text("\n")
-        p.set(align='left')
-        p.text(context['timestamp'] + "\n")
-        p.text("\n")
 
         p.set(align='left', font='a', width=1, height=1, bold=True)
         p.text(self._center_line("** VVPAT SLIP **") + "\n")
