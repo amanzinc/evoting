@@ -2359,7 +2359,7 @@ class VotingApp:
 
     def _has_polling_officer_phrase(self, token_payload):
         phrase = self.polling_officer_phrase
-        text = str(token_payload or "").strip()
+        text = str(token_payload or "").strip().replace("\\n", "\n")
 
         if text == phrase:
             return True
@@ -2385,7 +2385,7 @@ class VotingApp:
     def _extract_polling_officer_command(self, token_payload):
         """Extract optional command from phrase-authorized officer card payload."""
         phrase = self.polling_officer_phrase
-        text = str(token_payload or "").strip()
+        text = str(token_payload or "").strip().replace("\\n", "\n")
 
         try:
             data = json.loads(text)
@@ -2481,7 +2481,7 @@ class VotingApp:
         return self._has_polling_officer_phrase(token_payload)
 
     def on_officer_card_scanned(self, token_payload):
-        token_text = str(token_payload or "").strip()
+        token_text = str(token_payload or "").strip().replace("\\n", "\n")
         phrase_upper = self.polling_officer_phrase.upper()
         token_upper = token_text.upper()
         if token_text and len(token_text) < len(self.polling_officer_phrase) and phrase_upper.startswith(token_upper):

@@ -393,7 +393,7 @@ class PrinterService:
                 time.sleep(5)
                 p.text("\n" * 8)
                 p.cut(mode='FULL')
-                p.text("\n\n\n\n\n\n") # Extra feed after cut helps slip clear the printer
+                p.text("\n" * 12) # Extra feed after cut helps slip clear the printer
                 return {"stage": "vvpat_complete", "context": context}
 
             return True
@@ -568,7 +568,7 @@ class PrinterService:
             # Errors here are silently ignored — the cut already succeeded.
             try:
                 time.sleep(0.5)
-                p.text("\n\n\n\n\n\n")
+                p.text("\n" * 12)
             except Exception:
                 pass
             return True
@@ -631,7 +631,7 @@ class PrinterService:
                 p.text("\n\n\n\n\n\n")
                 time.sleep(5)
                 p.cut(mode='FULL')
-                p.text("\n\n\n\n\n\n") # Extra feed after cut
+                p.text("\n" * 12) # Extra feed after cut
 
                 return {"stage": "vvpat_complete"}
 
@@ -721,7 +721,7 @@ class PrinterService:
             p.set(align='left', font='a', width=1, height=1, bold=True)
             
             p.cut(mode='FULL')
-            p.text("\n\n\n\n\n\n") # Extra feed after cut
+            p.text("\n" * 12) # Extra feed after cut
         except Exception as e:
             print(f"Failed to print startup ticket: {e}")
         finally:
@@ -786,7 +786,7 @@ class PrinterService:
             p.set(align='left', font='a', width=1, height=1, bold=True)
             
             p.cut(mode='FULL')
-            p.text("\n\n\n\n\n\n") # Extra feed after cut
+            p.text("\n" * 12) # Extra feed after cut
             return True
         except Exception as e:
             try:
@@ -849,7 +849,7 @@ class PrinterService:
             p.set(align='left', font='a', width=1, height=1, bold=True)
             
             p.cut(mode='FULL')
-            p.text("\n\n\n\n\n\n") # Extra feed after cut
+            p.text("\n" * 12) # Extra feed after cut
             return True
         except Exception as e:
             try:
