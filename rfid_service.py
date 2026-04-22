@@ -218,7 +218,7 @@ class RFIDService:
                 if not self._auth_block(uid, block_no):
                     self._last_halt_time = time.monotonic()
                     print(f"Auth failed for block {block_no}. Card is likely halted. Aborting this scan.")
-                    return ("error", "Auth timeout.\nHold card longer.")
+                    return ("error", "Auth failed.\nLift card and try again.")
                 last_authed_sector = current_sector
 
             try:
