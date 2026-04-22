@@ -208,14 +208,14 @@ def main():
     root = tk.Tk()
     root.title("BMD")
     root.attributes('-fullscreen', True)
-    root.configure(bg="#1A237E")
+    root.configure(bg="#000000")
 
     # Show a splash immediately so the screen is never blank while services load.
     splash = tk.Label(
         root,
-        text="Starting…",
-        font=("Helvetica", 28, "bold"),
-        bg="#1A237E",
+        text="Please wait, loading system...",
+        font=("Helvetica", 32, "bold"),
+        bg="#000000",
         fg="#FFFFFF",
     )
     splash.pack(expand=True)
