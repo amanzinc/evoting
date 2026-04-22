@@ -24,6 +24,12 @@ while true; do
     
     # Run the application
     "$VENV_PYTHON" "$SCRIPT_DIR/main.py" >> /tmp/evoting_app.log 2>&1
+    EXIT_CODE=$?
+    
+    if [ $EXIT_CODE -eq 42 ]; then
+        echo "Developer pin entered. Exiting autostart loop." >> /tmp/evoting_app.log
+        break
+    fi
     
     echo "App exited or crashed. Restarting in 3 seconds..." >> /tmp/evoting_app.log
     sleep 3

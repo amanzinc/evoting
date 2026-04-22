@@ -338,6 +338,34 @@ class VotingApp:
         except Exception as exc:
             print(f"[schedule] Warning: could not persist end-election completion flag: {exc}")
 
+        # --- LOCAL EXPORT TRANSFER ---
+        try:
+            import datetime
+            import shutil
+            ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            local_export_dir = os.path.join(self.log_dir, ts)
+            os.makedirs(local_export_dir, exist_ok=True)
+            
+            files_to_transfer = [
+                getattr(self, 'election_schedule_path', None),
+                getattr(self, 'db_path', None),
+                getattr(self, 'tokens_log', None),
+                getattr(self, 'votes_log', None)
+            ]
+            
+            for fpath in files_to_transfer:
+                if fpath and os.path.exists(fpath):
+                    try:
+                        shutil.move(fpath, local_export_dir)
+                    except Exception as move_err:
+                        print(f"Move failed for {fpath}, falling back to copy: {move_err}")
+                        shutil.copy2(fpath, local_export_dir)
+                        
+            print(f"Transferred local log files to {local_export_dir}")
+        except Exception as e:
+            print(f"Warning: Failed to transfer local log files: {e}")
+        # -----------------------------
+
         self.close_printing_modal()
         self._show_custom_messagebox(
             "Export Successful",
@@ -2681,7 +2709,8 @@ class VotingApp:
             
         def submit_pin():
             if pin_var.get() == "042026":
-                self.exit_app()
+                import sys
+                sys.exit(42)
             else:
                 pin_var.set("")
                 update_display()
