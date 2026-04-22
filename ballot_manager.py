@@ -24,6 +24,14 @@ class BallotManager:
                      PRIMARY KEY (ballot_id, election_id)
                  )
              ''')
+             self.cursor.execute('''
+                 CREATE TABLE IF NOT EXISTS voter_elections (
+                     voter_id TEXT,
+                     election_id TEXT,
+                     status TEXT,
+                     PRIMARY KEY (voter_id, election_id)
+                 )
+             ''')
              self.conn.commit()
              print("Connected to SQLite Database.")
         except Exception as e:
@@ -220,6 +228,43 @@ class BallotManager:
             print(f"Marked ballot {ballot_id} as USED in DB.")
         except Exception as e:
             print(f"Error updating SQLite: {e}")
+
+    def mark_voter_election_used(self, voter_id, election_id):
+        """
+        Marks that a voter has successfully cast their ballot for a specific election.
+        """
+        if self.conn is None:
+            return
+
+        try:
+            self.cursor.execute('''
+                INSERT OR REPLACE INTO voter_elections (voter_id, election_id, status)
+                VALUES (?, ?, 'USED')
+            ''', (str(voter_id), str(election_id)))
+            self.conn.commit()
+            print(f"Marked voter {voter_id} as USED for election {election_id} in DB.")
+        except Exception as e:
+            print(f"Error updating SQLite voter_elections: {e}")
+
+    def has_voter_voted(self, voter_id, election_id):
+        """
+        Returns True if the voter has already cast a ballot for the given election.
+        """
+        if self.conn is None:
+            return False
+
+        try:
+            self.cursor.execute(
+                "SELECT status FROM voter_elections WHERE voter_id = ? AND election_id = ?",
+                (str(voter_id), str(election_id))
+            )
+            result = self.cursor.fetchone()
+            if result and result[0] == 'USED':
+                return True
+        except Exception as e:
+            print(f"Error reading SQLite voter_elections: {e}")
+            
+        return False
 
 if __name__ == "__main__":
     pass

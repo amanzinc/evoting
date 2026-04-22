@@ -1016,12 +1016,6 @@ class VotingApp:
             except (ValueError, TypeError):
                 pass
 
-        # 3. Check Verification
-        if self.data_handler.is_token_used(token_id):
-            print(f"❌ Token {token_id} already used!")
-            self.show_rfid_error("Token Already Used\nVoter has already cast a vote.")
-            return
-
         self.active_token = token_payload
         # Fresh voter session => reset per-election challenge counters.
         self.challenge_counts_by_election = {}
@@ -1042,6 +1036,21 @@ class VotingApp:
             print("❌ No elections found in token vector.")
             self.show_rfid_error("Access Denied\nNo valid elections found for this voter.")
             return
+
+        # 4. Filter out already-voted elections using per-election tracking
+        primary_identity = self.current_voter_id if self.current_voter_id and self.current_voter_id != "UNKNOWN_VOTER" else token_id
+        
+        filtered_queue = []
+        for eid in self.election_queue:
+            if not self.ballot_manager.has_voter_voted(primary_identity, eid):
+                filtered_queue.append(eid)
+                
+        if not filtered_queue and self.election_queue:
+            print(f"❌ Voter/Token {primary_identity} already voted in all assigned elections!")
+            self.show_rfid_error("Token Already Used\nVoter has already cast a vote for all assigned elections.")
+            return
+            
+        self.election_queue = filtered_queue
 
         self.start_next_election()
 
@@ -1415,15 +1424,11 @@ class VotingApp:
 
         if self.voting_mode == 'normal':
             tk.Button(footer, text="Review Vote", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.go_next, padx=15, pady=8).pack(side=tk.RIGHT, padx=30)
-            tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.abort_session, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
         elif self.voting_mode == 'block':
             tk.Button(footer, text="Review Vote", font=('Helvetica', 16, 'bold'), bg="#4CAF50", fg="white", command=self.go_next, padx=15, pady=8).pack(side=tk.RIGHT, padx=30)
-            tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.abort_session, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
         else:
             if self.current_rank > 1:
                 tk.Button(footer, text="< Previous", font=('Helvetica', 16), command=self.go_previous, padx=15, pady=8).pack(side=tk.LEFT, padx=30)
-            else:
-                 tk.Button(footer, text="Cancel", font=('Helvetica', 16), command=self.abort_session, padx=15, pady=8, fg="red").pack(side=tk.LEFT, padx=30)
 
             next_text = "Next >" if self.current_rank < self.max_ranks else "Finish"
             tk.Button(footer, text=next_text, font=('Helvetica', 16, 'bold'), bg="#2196F3", fg="white", command=self.go_next, padx=15, pady=8).pack(side=tk.RIGHT, padx=30)
@@ -1890,6 +1895,12 @@ class VotingApp:
                 )
 
             self.ballot_manager.mark_as_used(self.data_handler.ballot_file_id, self.current_election_id)
+            
+            vid = getattr(self, 'current_voter_id', 'UNKNOWN')
+            tid = getattr(self, 'current_token_id', 'UNKNOWN')
+            primary_identity = vid if vid and vid != 'UNKNOWN_VOTER' else tid
+            self.ballot_manager.mark_voter_election_used(primary_identity, self.current_election_id)
+            
             self.data_handler.store_used_ballot_snapshot(
                 election_id=self.current_election_id,
                 ballot_file_id=self.data_handler.ballot_file_id,
@@ -3840,6 +3851,12 @@ class VotingApp:
                     # But preventing reuse is critical.
                     # Let's Mark USed now. The risk is a wasted ballot on print fail. Acceptable.
                     self.ballot_manager.mark_as_used(self.data_handler.ballot_file_id, self.current_election_id)
+                    
+                    vid = getattr(self, 'current_voter_id', 'UNKNOWN')
+                    tid = getattr(self, 'current_token_id', 'UNKNOWN')
+                    primary_identity = vid if vid and vid != 'UNKNOWN_VOTER' else tid
+                    self.ballot_manager.mark_voter_election_used(primary_identity, self.current_election_id)
+                    
                     self.data_handler.store_used_ballot_snapshot(
                         election_id=self.current_election_id,
                         ballot_file_id=self.data_handler.ballot_file_id,
