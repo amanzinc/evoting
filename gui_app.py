@@ -2856,22 +2856,26 @@ class VotingApp:
         phase1.lift()
         phase1.focus_force()
 
-        tk.Label(phase1, text="✓", font=('Helvetica', 72), bg="#1a0000", fg="#66bb6a").pack(pady=(60, 0))
+        tk.Label(phase1, text="✓", font=('Helvetica', 72), bg="#1a0000", fg="#66bb6a",
+                 anchor='center').pack(fill=tk.X, pady=(60, 0))
         tk.Label(phase1, text="VOTE SUCCESSFULLY RECORDED",
-                 font=('Helvetica', 28, 'bold'), bg="#1a0000", fg="#66bb6a").pack(pady=(0, 8))
+                 font=('Helvetica', 28, 'bold'), bg="#1a0000", fg="#66bb6a",
+                 anchor='center').pack(fill=tk.X, pady=(0, 8))
         tk.Label(phase1,
                  text="Your vote has been saved.\nHowever, the printed slip may be incomplete due to a power interruption.\nA Polling Officer must verify the paper slip before this machine continues.",
                  font=('Helvetica', 16), bg="#1a0000", fg="#ffaaaa",
-                 justify=tk.CENTER).pack(pady=(0, 40))
+                 justify=tk.CENTER, anchor='center').pack(fill=tk.X, pady=(0, 40))
 
         tk.Frame(phase1, bg="#7f0000", height=2).pack(fill=tk.X, padx=80)
 
         tk.Label(phase1, text="Polling Officer: scan your RFID card to proceed",
-                 font=('Helvetica', 15, 'italic'), bg="#1a0000", fg="#ffdd88").pack(pady=(30, 10))
+                 font=('Helvetica', 15, 'italic'), bg="#1a0000", fg="#ffdd88",
+                 anchor='center').pack(fill=tk.X, pady=(30, 10))
 
         status_lbl = tk.Label(phase1, text="Waiting for officer card…",
-                              font=('Helvetica', 13), bg="#1a0000", fg="#888888")
-        status_lbl.pack()
+                              font=('Helvetica', 13), bg="#1a0000", fg="#888888",
+                              anchor='center')
+        status_lbl.pack(fill=tk.X)
 
         scan_active = [True]
 
