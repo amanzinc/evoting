@@ -918,7 +918,7 @@ class PrinterService:
                 p.text(f"{final_hash[:32]}\n")
 
             p.set(align='left', bold=False)
-            p.text("FINAL SEED (RECORD THIS):\n")
+            p.text("FINAL CHAIN HASH (hash_value of last vote):\n")
             p.set(align='left', bold=True)
             
             p.text(f"Export Dir : {export_path}\n")

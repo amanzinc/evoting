@@ -373,9 +373,22 @@ class VotingApp:
             exporter = ExportService("private.pem", usb_mount_point=usb_path)
             export_path = exporter.export_election_data(self.log_dir, usb_path)
 
-            # Fetch final hash and force printing of final receipt before shutdown.
+            # Fetch final hash from the last record in votes.json (authoritative source).
+            # In-memory last_hash would be wrong if the app was restarted before end election.
+            final_hash = "UNKNOWN_HASH"
+            try:
+                import json as _json
+                votes_path = os.path.join(self.log_dir, "votes.json")
+                if os.path.exists(votes_path):
+                    with open(votes_path, "r", encoding="utf-8") as _vf:
+                        lines = [l.strip() for l in _vf if l.strip()]
+                    if lines:
+                        last_record = _json.loads(lines[-1])
+                        final_hash = last_record.get("hash_value") or "UNKNOWN_HASH"
+            except Exception as _he:
+                print(f"[end_election] Could not read final hash from votes.json: {_he}")
+
             if self.print_enabled and hasattr(self, 'data_handler') and hasattr(self, 'printer_service'):
-                final_hash = self.data_handler.last_hash or "UNKNOWN_HASH"
                 self.printer_service.print_end_election_ticket(final_hash, export_path)
             elif self.print_enabled:
                 raise Exception("Core services unavailable for end-of-election receipt printing.")
