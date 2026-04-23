@@ -23,7 +23,6 @@ DISABLED_SERVICES=(
     hciuart
     avahi-daemon
     triggerhappy
-    wpa_supplicant
     ModemManager
     vncserver-x11-serviced
     vncserver-virtuald
@@ -216,13 +215,6 @@ for svc in "${DISABLED_SERVICES[@]}"; do
         echo "    Masked: ${svc}"
     fi
 done
-
-# Disable wpa_supplicant config at boot via /etc/network/interfaces (belt-and-suspenders)
-if [ -f /etc/wpa_supplicant/wpa_supplicant.conf ]; then
-    mv /etc/wpa_supplicant/wpa_supplicant.conf \
-       /etc/wpa_supplicant/wpa_supplicant.conf.bmd_disabled
-    echo "    Renamed wpa_supplicant.conf → .bmd_disabled"
-fi
 
 echo "    WiFi, Bluetooth, SSH, VNC disabled."
 
