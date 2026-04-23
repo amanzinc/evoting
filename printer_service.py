@@ -239,7 +239,10 @@ class PrinterService:
             pass # Skip straight to PyUSB reset
         elif File and configured_device_path and os.path.exists(configured_device_path):
             try:
-                self.printer = File(configured_device_path, profile=configured_profile)
+                candidate = File(configured_device_path, profile=configured_profile)
+                # Probe: send a harmless NUL byte; a dangling cable raises an error here.
+                candidate._raw(b"\x00")
+                self.printer = candidate
                 print(
                     f"Printer connected successfully at {configured_device_path} "
                     f"with {configured_profile} profile."
@@ -379,7 +382,10 @@ class PrinterService:
                 seen_paths.add(device_path)
                 if os.path.exists(device_path):
                     try:
-                        self.printer = File(device_path, profile=configured_profile)
+                        candidate = File(device_path, profile=configured_profile)
+                        # Probe: send a harmless NUL byte; a dangling cable raises an error here.
+                        candidate._raw(b"\x00")
+                        self.printer = candidate
                         print(
                             f"Printer connected successfully at {device_path} "
                             f"with {configured_profile} profile."
