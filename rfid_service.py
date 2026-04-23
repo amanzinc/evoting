@@ -94,9 +94,11 @@ class RFIDService:
         return (block_no + 1) % 4 == 0
 
     def _auth_block(self, uid, block_no):
-        """Authenticate a single block with 3 retries and exponential backoff."""
-        delays = [0.05, 0.15, 0.30]   # 50 ms → 150 ms → 300 ms
-        for delay in delays:
+        """Authenticate a single block with 3 attempts and inter-attempt delays."""
+        delays = [0.05, 0.15, 0.30]   # wait BEFORE each retry (not after last)
+        for attempt, delay in enumerate(delays):
+            if attempt > 0:
+                time.sleep(delay)
             try:
                 ok = self.pn532.mifare_classic_authenticate_block(
                     uid, block_no, MIFARE_CMD_AUTH_B, self.KEY_DEFAULT
@@ -105,7 +107,6 @@ class RFIDService:
                     return True
             except Exception:
                 pass
-            time.sleep(delay)
         return False
 
     def _iter_data_blocks(self):
@@ -208,8 +209,11 @@ class RFIDService:
             if max_data_blocks is not None and blocks_read >= max_data_blocks:
                 break
 
-            while self.is_trailer_block(block_no):
+            # Skip trailer blocks
+            if self.is_trailer_block(block_no):
                 block_no += 1
+                last_authed_sector = -1  # force re-auth after skipping trailer
+                continue
             if block_no > self.MAX_BLOCK_NO:
                 break
 
@@ -223,14 +227,17 @@ class RFIDService:
 
             try:
                 raw_block = self.pn532.mifare_classic_read_block(block_no)
-            except Exception:
-                block_no += 1
-                continue
+            except Exception as read_ex:
+                # A read failure mid-card means the RF link dropped — abort cleanly.
+                print(f"Read failed at block {block_no}: {read_ex}. Aborting scan.")
+                self._last_halt_time = time.monotonic()
+                return ("error", "Read failed.\nLift card and try again.")
 
             data = self._normalize_block_data(raw_block)
             if data is None:
-                block_no += 1
-                continue
+                print(f"Read returned None at block {block_no}. Aborting scan.")
+                self._last_halt_time = time.monotonic()
+                return ("error", "Read failed.\nLift card and try again.")
 
             blocks_read += 1
             if b'\x00' in data:
@@ -268,8 +275,10 @@ class RFIDService:
         return result
 
     def _read_encrypted_payload(self, uid):
-        """Read a voter card (AES-256-GCM encrypted)."""
-        result = self._read_aes_payload(uid)
+        """Read a voter card (AES-256-GCM encrypted).
+        AES-GCM payload (nonce+ct+tag) base64-encoded fits in ~10 blocks max.
+        Capping avoids reading 45 blocks when only 6-10 have data."""
+        result = self._read_aes_payload(uid, max_data_blocks=16)
         if result and result[0] != "error":
             import json
             try:
