@@ -426,19 +426,7 @@ class VotingApp:
                 self._show_custom_messagebox("Printer Error", "No USB thermal printer detected! Cannot safely run election. Please connect printer and restart system.", alert_type='error')
                 return
 
-            try:
-                if not self.print_enabled:
-                    print("Printing disabled: skipping startup cut.")
-                else:
-                    # Just do an initial feed+cut to clear any previous partial print on the roll.
-                    # The genesis/startup ticket is printed later when the election window first activates.
-                    self.printer_service.printer.text("\n\n\n\n\n\n\n\n\n\n") # Feed past blade
-                    self.printer_service.printer.cut()
-                    self.printer_service.printer.text("\n\n\n\n\n\n") # Extra feed after cut
-                    print("Printer initialized with a startup cut.")
-            except Exception as e:
-                self._show_custom_messagebox("Printer Error", f"Startup print failed, printer may be jammed: {e}", alert_type='error')
-                return
+            print("Printer connected. Skipping startup cut.")
                     
             # Initialize RFID
             self.rfid_service.load_key()
@@ -2795,11 +2783,14 @@ class VotingApp:
 
         def _fail(err):
             self.close_printing_modal()
-            self._show_custom_messagebox(
+            if self._show_custom_confirm(
                 "Export Failed",
-                f"Could not archive session data:\n{err}\n\nRemove the USB drive, re-insert it, then try Export again.",
-                alert_type="error"
-            )
+                f"Could not archive session data:\n{err}\n\nRemove the USB drive, re-insert it firmly, then click Retry.",
+                yes_text="Retry",
+                no_text="Cancel"
+            ):
+                self.show_printing_modal(text="Archiving session data…\nPlease wait.")
+                threading.Thread(target=_worker, daemon=True).start()
 
         threading.Thread(target=_worker, daemon=True).start()
 
