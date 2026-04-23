@@ -3258,6 +3258,9 @@ class VotingApp:
             cmds = [
                 ["sudo", "rfkill", "unblock", "wifi"],
                 ["sudo", "rfkill", "unblock", "bluetooth"],
+                ["sudo", "systemctl", "unmask",  "NetworkManager"],
+                ["sudo", "systemctl", "enable",  "NetworkManager"],
+                ["sudo", "systemctl", "start",   "NetworkManager"],
                 ["sudo", "systemctl", "unmask",  "ssh"],
                 ["sudo", "systemctl", "enable",  "ssh"],
                 ["sudo", "systemctl", "start",   "ssh"],

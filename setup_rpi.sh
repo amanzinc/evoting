@@ -24,7 +24,6 @@ DISABLED_SERVICES=(
     avahi-daemon
     triggerhappy
     wpa_supplicant
-    NetworkManager
     ModemManager
     vncserver-x11-serviced
     vncserver-virtuald
