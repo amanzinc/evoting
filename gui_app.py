@@ -1251,7 +1251,15 @@ class VotingApp:
             font=('Helvetica', 38, 'bold'),
             bg="#E8F5E9",
             fg="#1B5E20"
-        ).pack(pady=(180, 24))
+        ).pack(pady=(150, 12))
+
+        tk.Label(
+            frame,
+            text="Your Vote is Successfully Recorded",
+            font=('Helvetica', 22),
+            bg="#E8F5E9",
+            fg="#2E7D32"
+        ).pack(pady=(0, 24))
 
         countdown_label = tk.Label(
             frame,
@@ -1818,20 +1826,11 @@ class VotingApp:
 
         tk.Label(
             frame,
-            text="Your Vote is Successfully Recorded",
+            text="VVPAT printed.",
             font=('Helvetica', 28, 'bold'),
             bg="#FFF8E1",
-            fg="#2E7D32",
-            anchor='center',
-        ).pack(fill=tk.X, pady=(100, 8))
-        tk.Label(
-            frame,
-            text="VVPAT printed.",
-            font=('Helvetica', 18),
-            bg="#FFF8E1",
-            fg="#6D4C41",
-            anchor='center',
-        ).pack(fill=tk.X, pady=(0, 30))
+            fg="#6D4C41"
+        ).pack(pady=(150, 30))
 
         self.vvpat_countdown_after_id = None
 
