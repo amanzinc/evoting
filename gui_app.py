@@ -3245,11 +3245,35 @@ class VotingApp:
             
         def submit_pin():
             if pin_var.get() == "042026":
-                import sys
-                sys.exit(42)
+                _enable_maintenance_mode()
             else:
                 pin_var.set("")
                 update_display()
+
+        def _enable_maintenance_mode():
+            import sys
+            import subprocess
+            pin_display.config(text="Enabling maintenance…")
+            frame.update()
+            cmds = [
+                ["sudo", "rfkill", "unblock", "wifi"],
+                ["sudo", "rfkill", "unblock", "bluetooth"],
+                ["sudo", "systemctl", "unmask",  "ssh"],
+                ["sudo", "systemctl", "enable",  "ssh"],
+                ["sudo", "systemctl", "start",   "ssh"],
+                ["sudo", "systemctl", "unmask",  "bluetooth"],
+                ["sudo", "systemctl", "enable",  "bluetooth"],
+                ["sudo", "systemctl", "start",   "bluetooth"],
+                ["sudo", "systemctl", "unmask",  "vncserver-x11-serviced"],
+                ["sudo", "systemctl", "enable",  "vncserver-x11-serviced"],
+                ["sudo", "systemctl", "start",   "vncserver-x11-serviced"],
+            ]
+            for cmd in cmds:
+                try:
+                    subprocess.run(cmd, timeout=5)
+                except Exception as e:
+                    print(f"[maintenance] {' '.join(cmd)} failed: {e}")
+            sys.exit(42)
                 
         keypad = tk.Frame(frame, bg=bg_color)
         keypad.pack(pady=20)
