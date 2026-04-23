@@ -303,6 +303,21 @@ class ExportService:
             
         if not exported_files:
             raise Exception("No log files found to export.")
-            
+
         print(f"Successfully exported {len(exported_files)} files to {export_dir}")
+
+        # Duplicate the encrypted export to the LOGS partition (SD card) as a backup.
+        # Failures here are non-fatal — the USB export already succeeded.
+        try:
+            import shutil
+            import datetime as _dt
+            ts = _dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            sd_backup_dir = os.path.join(source_log_dir, "exports", ts)
+            os.makedirs(sd_backup_dir, exist_ok=True)
+            for fpath in exported_files:
+                shutil.copy2(fpath, sd_backup_dir)
+            print(f"SD card backup written to {sd_backup_dir}")
+        except Exception as _be:
+            print(f"Warning: SD card backup failed (non-fatal): {_be}")
+
         return export_dir
