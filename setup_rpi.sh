@@ -15,6 +15,23 @@
 
 set -e
 
+# Services disabled for BMD security hardening (no network interfaces allowed)
+DISABLED_SERVICES=(
+    ssh
+    sshd
+    bluetooth
+    hciuart
+    avahi-daemon
+    triggerhappy
+    wpa_supplicant
+    NetworkManager
+    ModemManager
+    vncserver-x11-serviced
+    vncserver-virtuald
+    realvnc-vnc-server
+    raspi-config        # prevents re-enable via GUI
+)
+
 # ── Detect running user ───────────────────────────────────────────────────────
 # When run with sudo, SUDO_USER is the real user; fall back to current user.
 APP_USER="${SUDO_USER:-$USER}"
@@ -44,7 +61,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # ── 1. System packages ────────────────────────────────────────────────────────
-echo "[1/8] Installing system packages..."
+echo "[1/9] Installing system packages..."
 apt-get update -q
 apt-get install -y \
     python3-tk python3-pip python3-venv \
@@ -53,12 +70,12 @@ apt-get install -y \
     python3-pil.imagetk i2c-tools python3-smbus
 
 # ── 2. Python venv ────────────────────────────────────────────────────────────
-echo "[2/8] Setting up Python virtual environment..."
+echo "[2/9] Setting up Python virtual environment..."
 sudo -u "$APP_USER" python3 -m venv --system-site-packages "$VENV_DIR"
 sudo -u "$APP_USER" "$VENV_DIR/bin/pip" install --quiet -r "$PROJECT_DIR/requirements.txt"
 
 # ── 3. Permissions ───────────────────────────────────────────────────────────
-echo "[3/8] Configuring printer / USB / I2C permissions..."
+echo "[3/9] Configuring printer / USB / I2C permissions..."
 usermod -a -G lp,dialout,i2c "$APP_USER"
 raspi-config nonint do_i2c 0 2>/dev/null || true
 
@@ -73,7 +90,7 @@ udevadm control --reload-rules
 udevadm trigger
 
 # ── 4. Disable USB automount popups ──────────────────────────────────────────
-echo "[4/8] Disabling USB automount popups..."
+echo "[4/9] Disabling USB automount popups..."
 rm -f "$APP_HOME/.config/pcmanfm/LXDE-pi/pcmanfm.conf"
 GLOBAL_CONF="/etc/xdg/pcmanfm/LXDE-pi/pcmanfm.conf"
 if [ -f "$GLOBAL_CONF" ]; then
@@ -88,7 +105,7 @@ if command -v gsettings >/dev/null 2>&1; then
 fi
 
 # ── 5. LightDM autologin ──────────────────────────────────────────────────────
-echo "[5/8] Configuring autologin for user '$APP_USER'..."
+echo "[5/9] Configuring autologin for user '$APP_USER'..."
 LDMCONF="/etc/lightdm/lightdm.conf"
 if [ -f "$LDMCONF" ]; then
     sed -i "/\[Seat:\*\]/,/\[/ {
@@ -102,7 +119,7 @@ else
 fi
 
 # ── 6. Screen blanking ────────────────────────────────────────────────────────
-echo "[6/8] Disabling screen blanking..."
+echo "[6/9] Disabling screen blanking..."
 raspi-config nonint do_blanking 1 2>/dev/null || true
 cat > "$APP_HOME/.Xsessionrc" << 'XSESS'
 xset s off
@@ -112,7 +129,7 @@ XSESS
 chown "$APP_USER:$APP_USER" "$APP_HOME/.Xsessionrc"
 
 # ── 7. Desktop autostart (Primary GUI Autostart) ──────────────────────────────
-echo "[7/8] Writing desktop autostart entries..."
+echo "[7/9] Writing desktop autostart entries..."
 chmod +x "$PROJECT_DIR/start_evoting.sh"
 
 # LXDE (Bullseye / Bookworm-X11)
@@ -151,7 +168,7 @@ DESKTOP
 chown -R "$APP_USER:$APP_USER" "$XDG_DIR"
 
 # ── 8. Remove legacy systemd service (if present) ────────────────────────────
-echo "[8/8] Cleaning up legacy systemd service..."
+echo "[8/9] Cleaning up legacy systemd service..."
 
 SERVICE_DEST="/etc/systemd/system/evoting.service"
 if [ -f "$SERVICE_DEST" ]; then
@@ -169,6 +186,46 @@ if [ -f "$PROJECT_DIR/evoting-rtc-sync.service" ]; then
     systemctl enable evoting-rtc-sync.service
     echo "    evoting-rtc-sync.service enabled."
 fi
+
+# ── 9. Disable network/remote-access interfaces ──────────────────────────────
+echo "[9/9] Disabling WiFi, Bluetooth, SSH, VNC..."
+
+# Disable via raspi-config where available
+raspi-config nonint do_wifi_country "" 2>/dev/null || true   # clears country = blocks wifi driver
+raspi-config nonint do_ssh 1           2>/dev/null || true   # 1 = disable
+raspi-config nonint do_vnc 1           2>/dev/null || true   # 1 = disable
+raspi-config nonint do_bluetooth 1     2>/dev/null || true   # 1 = disable (RPi OS >= Bullseye)
+
+# Block WiFi and Bluetooth at the kernel RF-kill level (persists across reboots)
+rfkill block wifi      2>/dev/null || true
+rfkill block bluetooth 2>/dev/null || true
+
+# Write a rfkill rule so the block is re-applied on every boot
+cat > /etc/udev/rules.d/70-bmd-rfkill.rules << 'RFKILL'
+# BMD security: keep WiFi and Bluetooth hard-blocked at boot
+SUBSYSTEM=="rfkill", ATTR{type}=="wlan",      ATTR{state}="0"
+SUBSYSTEM=="rfkill", ATTR{type}=="bluetooth", ATTR{state}="0"
+RFKILL
+udevadm control --reload-rules
+
+# Disable / mask systemd services
+for svc in "${DISABLED_SERVICES[@]}"; do
+    if systemctl list-unit-files "${svc}.service" 2>/dev/null | grep -q "${svc}"; then
+        systemctl stop    "${svc}.service" 2>/dev/null || true
+        systemctl disable "${svc}.service" 2>/dev/null || true
+        systemctl mask    "${svc}.service" 2>/dev/null || true
+        echo "    Masked: ${svc}"
+    fi
+done
+
+# Disable wpa_supplicant config at boot via /etc/network/interfaces (belt-and-suspenders)
+if [ -f /etc/wpa_supplicant/wpa_supplicant.conf ]; then
+    mv /etc/wpa_supplicant/wpa_supplicant.conf \
+       /etc/wpa_supplicant/wpa_supplicant.conf.bmd_disabled
+    echo "    Renamed wpa_supplicant.conf → .bmd_disabled"
+fi
+
+echo "    WiFi, Bluetooth, SSH, VNC disabled."
 
 echo ""
 echo "============================================="
