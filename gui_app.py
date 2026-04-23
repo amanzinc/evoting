@@ -38,6 +38,15 @@ class VotingApp:
             print(f"[journal] Could not init VoteJournal: {_je}")
             self._vote_journal = None
 
+        # Block WiFi and Bluetooth while app is running.
+        # Unblocked on exit via developer PIN (_enable_maintenance_mode).
+        import subprocess as _sp
+        for _t in ("wifi", "bluetooth"):
+            try:
+                _sp.run(["sudo", "rfkill", "block", _t], timeout=5)
+            except Exception:
+                pass
+
         # Hidden polling-officer menu trigger: typing "Aman" opens the panel.
         self._admin_key_buffer = ""
         self._admin_overlay = None

@@ -77,6 +77,13 @@ echo "[3/9] Configuring printer / USB / I2C permissions..."
 usermod -a -G lp,dialout,i2c "$APP_USER"
 raspi-config nonint do_i2c 0 2>/dev/null || true
 
+# Allow the app user to run rfkill without a password prompt,
+# so the app can block WiFi on startup and unblock it on exit.
+SUDOERS_FILE="/etc/sudoers.d/evoting-rfkill"
+echo "$APP_USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill" > "$SUDOERS_FILE"
+chmod 0440 "$SUDOERS_FILE"
+echo "    sudoers entry written: $SUDOERS_FILE"
+
 cat > /etc/udev/rules.d/99-escpos.rules << 'UDEV'
 # Generic POS Printers
 SUBSYSTEM=="usb", ATTRS{idVendor}=="04b8", ATTRS{idProduct}=="0202", MODE="0664", GROUP="lp"
@@ -192,13 +199,7 @@ echo "[9/9] Disabling WiFi, Bluetooth, SSH, VNC..."
 raspi-config nonint do_ssh 1           2>/dev/null || true   # 1 = disable
 raspi-config nonint do_vnc 1           2>/dev/null || true   # 1 = disable
 
-# Block WiFi and Bluetooth at the kernel RF-kill level.
-# We use rfkill soft-block only (no persistent udev rule), so that
-# 'sudo rfkill unblock wifi' in maintenance mode takes effect immediately
-# without fighting a udev rule that would re-block on hotplug.
-rfkill block wifi      2>/dev/null || true
-rfkill block bluetooth 2>/dev/null || true
-# Remove any previously-written persistent rfkill udev rule
+# Remove any previously-written persistent rfkill udev rule (legacy cleanup)
 rm -f /etc/udev/rules.d/70-bmd-rfkill.rules
 udevadm control --reload-rules
 
