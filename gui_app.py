@@ -3255,30 +3255,11 @@ class VotingApp:
             import subprocess
             pin_display.config(text="Enabling maintenance…")
             frame.update()
-            cmds = [
-                ["sudo", "rfkill", "unblock", "wifi"],
-                ["sudo", "rfkill", "unblock", "bluetooth"],
-                ["sudo", "systemctl", "unmask",  "wpa_supplicant"],
-                ["sudo", "systemctl", "enable",  "wpa_supplicant"],
-                ["sudo", "systemctl", "start",   "wpa_supplicant"],
-                ["sudo", "systemctl", "unmask",  "NetworkManager"],
-                ["sudo", "systemctl", "enable",  "NetworkManager"],
-                ["sudo", "systemctl", "start",   "NetworkManager"],
-                ["sudo", "systemctl", "unmask",  "ssh"],
-                ["sudo", "systemctl", "enable",  "ssh"],
-                ["sudo", "systemctl", "start",   "ssh"],
-                ["sudo", "systemctl", "unmask",  "bluetooth"],
-                ["sudo", "systemctl", "enable",  "bluetooth"],
-                ["sudo", "systemctl", "start",   "bluetooth"],
-                ["sudo", "systemctl", "unmask",  "vncserver-x11-serviced"],
-                ["sudo", "systemctl", "enable",  "vncserver-x11-serviced"],
-                ["sudo", "systemctl", "start",   "vncserver-x11-serviced"],
-            ]
-            for cmd in cmds:
+            for target in ("wifi", "bluetooth"):
                 try:
-                    subprocess.run(cmd, timeout=5)
+                    subprocess.run(["sudo", "rfkill", "unblock", target], timeout=5)
                 except Exception as e:
-                    print(f"[maintenance] {' '.join(cmd)} failed: {e}")
+                    print(f"[maintenance] rfkill unblock {target} failed: {e}")
             sys.exit(42)
                 
         keypad = tk.Frame(frame, bg=bg_color)

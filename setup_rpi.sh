@@ -194,16 +194,14 @@ raspi-config nonint do_ssh 1           2>/dev/null || true   # 1 = disable
 raspi-config nonint do_vnc 1           2>/dev/null || true   # 1 = disable
 raspi-config nonint do_bluetooth 1     2>/dev/null || true   # 1 = disable (RPi OS >= Bullseye)
 
-# Block WiFi and Bluetooth at the kernel RF-kill level (persists across reboots)
+# Block WiFi and Bluetooth at the kernel RF-kill level.
+# We use rfkill soft-block only (no persistent udev rule), so that
+# 'sudo rfkill unblock wifi' in maintenance mode takes effect immediately
+# without fighting a udev rule that would re-block on hotplug.
 rfkill block wifi      2>/dev/null || true
 rfkill block bluetooth 2>/dev/null || true
-
-# Write a rfkill rule so the block is re-applied on every boot
-cat > /etc/udev/rules.d/70-bmd-rfkill.rules << 'RFKILL'
-# BMD security: keep WiFi and Bluetooth hard-blocked at boot
-SUBSYSTEM=="rfkill", ATTR{type}=="wlan",      ATTR{state}="0"
-SUBSYSTEM=="rfkill", ATTR{type}=="bluetooth", ATTR{state}="0"
-RFKILL
+# Remove any previously-written persistent rfkill udev rule
+rm -f /etc/udev/rules.d/70-bmd-rfkill.rules
 udevadm control --reload-rules
 
 # Disable / mask systemd services
