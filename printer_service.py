@@ -120,6 +120,19 @@ class PrinterService:
             return f"{candidate_name} ({candidate_number})"
         return candidate_name or candidate_number or str(cid)
 
+    def _get_candidate_name_and_number(self, cid):
+        """Return (name_str, number_str) separately for structured VVPAT printing."""
+        cand = self.data_handler.get_candidate_by_id(cid)
+        if not cand:
+            return str(cid), ""
+        name = str(
+            cand.get("name") or cand.get("candidate_name") or cand.get("candidate_number") or cid
+        ).strip()
+        number = str(cand.get("candidate_number") or cand.get("id") or cid).strip()
+        if name == number:
+            number = ""
+        return name, number
+
     def _build_vote_print_context(self, mode, selections):
         ballot_id = self.data_handler.get_short_ballot_id()
         station_id = "PS-105-DELHI"
@@ -128,9 +141,14 @@ class PrinterService:
         if mode == 'normal':
             cid = selections.get(1)
             vvpat_sel_str = self._get_candidate_display_text(cid)
+            vvpat_candidates = None  # not needed for normal mode
         else:
             ranks = sorted(selections.keys())
-            vvpat_sel_str = ", ".join(self._get_candidate_display_text(selections[r]) for r in ranks)
+            # For block voting: list of (name, number) in rank order
+            vvpat_candidates = [self._get_candidate_name_and_number(selections[r]) for r in ranks]
+            vvpat_sel_str = ", ".join(
+                f"{name} ({num})" if num else name for name, num in vvpat_candidates
+            )
 
         qr_choice_data = self.data_handler.build_receipt_qr_payload(selections, mode)
         short_b_id = self.data_handler.get_short_ballot_id(ballot_id)
@@ -139,6 +157,7 @@ class PrinterService:
             "station_id": station_id,
             "timestamp": timestamp,
             "vvpat_sel_str": vvpat_sel_str,
+            "vvpat_candidates": vvpat_candidates,  # None for normal, list for block
             "qr_choice_data": qr_choice_data,
             "short_b_id": short_b_id,
         }
@@ -159,12 +178,25 @@ class PrinterService:
         if os.path.exists(temp_img):
             os.remove(temp_img)
 
-        # Label on its own line; name on next line(s) wrapped at full paper width
-        p.set(align='left', bold=True)
-        p.text("Choice:\n")
-        p.set(align='left', bold=False)
-        for line in textwrap.wrap(context['vvpat_sel_str'], width=w):
-            p.text(line + "\n")
+        candidates = context.get('vvpat_candidates')
+        if candidates:
+            # Block voting: print each candidate as Name / Entry Number pair
+            p.set(align='left', bold=True)
+            p.text("Choices:\n")
+            p.set(align='left', bold=False)
+            for name, number in candidates:
+                for line in textwrap.wrap(name, width=w):
+                    p.text(line + "\n")
+                if number:
+                    p.text(number + "\n")
+                p.text("\n")
+        else:
+            # Normal voting: single choice
+            p.set(align='left', bold=True)
+            p.text("Choice:\n")
+            p.set(align='left', bold=False)
+            for line in textwrap.wrap(context['vvpat_sel_str'], width=w):
+                p.text(line + "\n")
 
         p.text("\n")
 
