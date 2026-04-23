@@ -71,26 +71,69 @@ class PrinterService:
             return "OFF"
         return text.upper()
 
+    def _get_rfkill_blocked(self, rfkill_type):
+        """Return True if the given rfkill type ('wlan'/'bluetooth') is hard- or soft-blocked."""
+        output = self._run_command_text(["rfkill", "list"])
+        if not output:
+            return None  # rfkill not available
+        # Parse blocks like:
+        #   0: phy0: Wireless LAN
+        #       Soft blocked: yes
+        #       Hard blocked: yes
+        current_type = None
+        for line in output.splitlines():
+            lower = line.strip().lower()
+            if rfkill_type in lower:
+                current_type = rfkill_type
+            if current_type == rfkill_type:
+                if "soft blocked: yes" in lower or "hard blocked: yes" in lower:
+                    return True
+                if "soft blocked: no" in lower:
+                    # keep scanning for hard blocked line
+                    pass
+        return False
+
     def _get_wifi_status(self):
+        blocked = self._get_rfkill_blocked("wlan")
+        if blocked is True:
+            return "OFF"
+        if blocked is False:
+            # rfkill says unblocked — check if interface is actually up
+            output = self._run_command_text(["ip", "link", "show", "wlan0"])
+            if output and "state UP" in output:
+                return "ON"
+            return "OFF"
+        # rfkill unavailable — fall back to nmcli
         if shutil.which("nmcli"):
             output = self._run_command_text(["nmcli", "-t", "-f", "WIFI", "general"])
             if output:
                 return self._yes_no_unknown(output)
-        return self._yes_no_unknown(self._run_command_text(["bash", "-lc", "ip link show wlan0 2>/dev/null | grep -q 'state UP' && echo ON || echo OFF"]))
+        return "UNKNOWN"
 
     def _get_ssh_status(self):
         if shutil.which("systemctl"):
             for service_name in ("ssh", "sshd"):
                 output = self._run_command_text(["systemctl", "is-active", service_name])
-                if output and output != "unknown":
-                    return self._yes_no_unknown(output)
+                if output and output.strip() not in ("", "unknown"):
+                    return self._yes_no_unknown(output.strip())
         return "UNKNOWN"
 
     def _get_bluetooth_status(self):
+        blocked = self._get_rfkill_blocked("bluetooth")
+        if blocked is True:
+            return "OFF"
+        if blocked is False:
+            # rfkill unblocked — confirm service is running
+            if shutil.which("systemctl"):
+                output = self._run_command_text(["systemctl", "is-active", "bluetooth"])
+                if output:
+                    return self._yes_no_unknown(output.strip())
+            return "ON"
+        # rfkill unavailable — fall back to systemctl
         if shutil.which("systemctl"):
             output = self._run_command_text(["systemctl", "is-active", "bluetooth"])
-            if output and output != "unknown":
-                return self._yes_no_unknown(output)
+            if output and output.strip() not in ("", "unknown"):
+                return self._yes_no_unknown(output.strip())
         return "UNKNOWN"
 
     def _count_votes_cast(self, log_dir):
