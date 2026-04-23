@@ -2856,11 +2856,11 @@ class VotingApp:
         phase1.lift()
         phase1.focus_force()
 
-        tk.Label(phase1, text="⚠", font=('Helvetica', 72), bg="#1a0000", fg="#ff4444").pack(pady=(60, 0))
-        tk.Label(phase1, text="POWER LOSS DETECTED",
-                 font=('Helvetica', 28, 'bold'), bg="#1a0000", fg="white").pack(pady=(0, 8))
+        tk.Label(phase1, text="✓", font=('Helvetica', 72), bg="#1a0000", fg="#66bb6a").pack(pady=(60, 0))
+        tk.Label(phase1, text="VOTE SUCCESSFULLY RECORDED",
+                 font=('Helvetica', 28, 'bold'), bg="#1a0000", fg="#66bb6a").pack(pady=(0, 8))
         tk.Label(phase1,
-                 text="A vote may not have been recorded properly.\nPlease call a Polling Officer for verification.",
+                 text="Your vote has been saved.\nHowever, the printed slip may be incomplete due to a power interruption.\nA Polling Officer must verify the paper slip before this machine continues.",
                  font=('Helvetica', 16), bg="#1a0000", fg="#ffaaaa",
                  justify=tk.CENTER).pack(pady=(0, 40))
 
