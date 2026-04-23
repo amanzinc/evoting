@@ -1818,11 +1818,20 @@ class VotingApp:
 
         tk.Label(
             frame,
-            text="VVPAT printed.",
+            text="Your Vote is Successfully Recorded",
             font=('Helvetica', 28, 'bold'),
             bg="#FFF8E1",
-            fg="#6D4C41"
-        ).pack(pady=(150, 30))
+            fg="#2E7D32",
+            anchor='center',
+        ).pack(fill=tk.X, pady=(100, 8))
+        tk.Label(
+            frame,
+            text="VVPAT printed.",
+            font=('Helvetica', 18),
+            bg="#FFF8E1",
+            fg="#6D4C41",
+            anchor='center',
+        ).pack(fill=tk.X, pady=(0, 30))
 
         self.vvpat_countdown_after_id = None
 
@@ -2963,7 +2972,39 @@ class VotingApp:
                     except AttributeError:
                         pass
                     print(f"[recovery] Committed {entry['id']} without reprint.")
-                _run_with_modal("Committing Vote…\nPlease wait.", _work, "Recovery Error")
+                    ps = getattr(self, 'printer_service', None)
+                    if ps:
+                        try:
+                            ps.print_blank_eject()
+                        except Exception as _pe:
+                            print(f"[recovery] blank eject failed: {_pe}")
+
+                def _after_commit():
+                    self.close_printing_modal()
+                    _done()
+                    self._show_custom_messagebox(
+                        "Vote Committed",
+                        "Vote successfully committed.\nThe paper slip has been ejected.",
+                    )
+
+                self.show_printing_modal(text="Committing Vote…\nPlease wait.")
+                dlg.grab_release()
+
+                def _thread():
+                    err = None
+                    try:
+                        _work()
+                    except Exception as e:
+                        err = str(e)
+                    def _finish():
+                        if err:
+                            self.close_printing_modal()
+                            self._show_custom_messagebox("Recovery Error", err, alert_type="error")
+                        else:
+                            _after_commit()
+                    self.root.after(0, _finish)
+
+                threading.Thread(target=_thread, daemon=True).start()
 
             def _reprint_commit():
                 ps = getattr(self, 'printer_service', None)

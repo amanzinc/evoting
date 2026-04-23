@@ -546,6 +546,20 @@ class PrinterService:
         finally:
             self._set_reverse_print_mode(False)
 
+    def print_blank_eject(self):
+        """Feed and cut to eject any slip that may be stuck at the printer head."""
+        if not self.printer:
+            self.connect_printer()
+        if not self.printer:
+            return
+        try:
+            self.printer.text("\n" * 6)
+            self.printer.cut(mode='FULL')
+            time.sleep(0.3)
+            self.printer.text("\n" * 4)
+        except Exception:
+            pass
+
     def _generate_vvpat_qr(self, choice_data, ballot_id):
         try:
             qr_c = qrcode.make(choice_data)
