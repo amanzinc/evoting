@@ -2776,6 +2776,9 @@ class VotingApp:
                     pass
 
                 print(f"[export_reset] Archived {len(moved)} items to {archive_dir}. Errors: {errors}")
+                if errors:
+                    self.root.after(0, lambda errs=errors: _fail("\n".join(errs)))
+                    return
                 self.root.after(0, _restart)
             except Exception as e:
                 self.root.after(0, lambda err=str(e): _fail(err))
@@ -2792,7 +2795,11 @@ class VotingApp:
 
         def _fail(err):
             self.close_printing_modal()
-            self._show_custom_messagebox("Export Error", f"Failed to archive session:\n{err}", alert_type="error")
+            self._show_custom_messagebox(
+                "Export Failed",
+                f"Could not archive session data:\n{err}\n\nRemove the USB drive, re-insert it, then try Export again.",
+                alert_type="error"
+            )
 
         threading.Thread(target=_worker, daemon=True).start()
 
