@@ -89,11 +89,50 @@ class VotingApp:
         self.failed_usb_mount_path = None
         self.last_usb_import_error = None
 
+        # Per-thread stop events — avoids the shared stop_scanning flag causing
+        # races between voter and officer loops, and makes it possible to join
+        # old threads before starting new ones so the PN532 is never hammered
+        # by multiple concurrent callers.
+        self._voter_stop = threading.Event()
+        self._officer_stop = threading.Event()
+        self._voter_thread = None
+        self._officer_thread = None
+
         self.main_container = tk.Frame(self.root, bg="#ffffff")
         self.main_container.pack(fill=tk.BOTH, expand=True)
         
         # Start with Hardware Check Screen
         self.show_hardware_check_screen()
+
+    def _start_voter_scan(self):
+        """Stop any running voter scan thread, then start a fresh one."""
+        self._voter_stop.set()
+        if self._voter_thread and self._voter_thread.is_alive():
+            self._voter_thread.join(timeout=2.0)
+        self._voter_stop.clear()
+        self.scan_queue = queue.Queue()
+        self._voter_thread = threading.Thread(target=self.rfid_scan_loop, daemon=True)
+        self._voter_thread.start()
+
+    def _start_officer_scan(self):
+        """Stop any running officer scan thread, then start a fresh one."""
+        self._officer_stop.set()
+        if self._officer_thread and self._officer_thread.is_alive():
+            self._officer_thread.join(timeout=2.0)
+        self._officer_stop.clear()
+        self.officer_scan_queue = queue.Queue()
+        self._officer_thread = threading.Thread(target=self.officer_scan_loop, daemon=True)
+        self._officer_thread.start()
+
+    def _stop_all_scan_threads(self):
+        """Signal and join both scan threads. Safe to call from any context."""
+        self._voter_stop.set()
+        self._officer_stop.set()
+        for t in (self._voter_thread, self._officer_thread):
+            if t and t.is_alive():
+                t.join(timeout=2.0)
+        self._voter_thread = None
+        self._officer_thread = None
 
     def show_hardware_check_screen(self):
         self.clear_container()
@@ -208,11 +247,7 @@ class VotingApp:
             print(f"RFID init warning on USB wait screen: {e}")
 
         # USB waiting screen allows polling officer menu access only via RFID authorization.
-        self.stop_scanning = False
-        self.officer_scan_queue = queue.Queue()
-        self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
-        self.officer_scan_thread.daemon = True
-        self.officer_scan_thread.start()
+        self._start_officer_scan()
         self.check_officer_scan_queue()
 
         self.check_usb_loop()
@@ -235,7 +270,7 @@ class VotingApp:
 
         if ballot_path and os.path.exists(ballot_path):
             # Found USB with encrypted ballot folder - trigger import
-            self.stop_scanning = True
+            self._stop_all_scan_threads()
             self.last_usb_import_error = None
             self.ballot_manager.usb_mount_point = usb_path
             self.import_encrypted_ballots(usb_path)
@@ -246,7 +281,7 @@ class VotingApp:
 
     def import_encrypted_ballots(self, usb_path):
         """Import encrypted ballots from USB and prepare for voting."""
-        self.stop_scanning = True
+        self._stop_all_scan_threads()
         self.clear_container()
         frame = tk.Frame(self.main_container, bg="#E8F5E9")
         frame.pack(expand=True, fill=tk.BOTH)
@@ -313,7 +348,7 @@ class VotingApp:
     def end_election(self):
         """Triggers secure export process without automatic shutdown."""
         if self._show_custom_confirm("Confirm End Election", "Are you sure you want to officially end the election?\nThis will export data to USB."):
-            self.stop_scanning = True
+            self._stop_all_scan_threads()
             
             try:
                 schedule = self._load_election_schedule()
@@ -719,11 +754,7 @@ class VotingApp:
         self.clock_label.place(relx=0.985, rely=0.03, anchor='ne')
         self._refresh_clock_label()
 
-        self.stop_scanning = False
-        self.officer_scan_queue = queue.Queue()
-        self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
-        self.officer_scan_thread.daemon = True
-        self.officer_scan_thread.start()
+        self._start_officer_scan()
         self.check_officer_scan_queue()
 
         self._schedule_inactive_recheck()
@@ -818,36 +849,36 @@ class VotingApp:
         self._refresh_clock_label()
 
         # Start Scanning Thread — handles both voter and officer cards (AES mode).
-        self.stop_scanning = False
-        self.scan_queue = queue.Queue()
-        self.scan_thread = threading.Thread(target=self.rfid_scan_loop)
-        self.scan_thread.daemon = True
-        self.scan_thread.start()
-        
+        self._start_voter_scan()
         self.check_scan_queue()
 
     def rfid_scan_loop(self):
-        while not self.stop_scanning:
+        while not self._voter_stop.is_set():
             if not getattr(self.rfid_service, 'connected', False):
                 try:
                     self.rfid_service.connect()
                 except Exception:
                     pass
-                time.sleep(0.5)
+                if self._voter_stop.wait(timeout=0.5):
+                    break
                 continue
 
             # Both voter and officer cards are AES-encrypted — single scan path.
             # on_card_scanned routes officer phrases to on_officer_card_scanned.
             result = self.rfid_service.read_card(mode='encrypted')
+            if self._voter_stop.is_set():
+                break
             if result:
                 self.scan_queue.put(result)
                 if result[0] != "error":
                     break
                 # Error (e.g. unprovisioned card): show in UI but keep scanning.
-                time.sleep(1.0)
+                if self._voter_stop.wait(timeout=1.0):
+                    break
                 continue
             # No card or transient failure — short poll before next attempt.
-            time.sleep(0.15)
+            if self._voter_stop.wait(timeout=0.15):
+                break
 
     def check_scan_queue(self):
         try:
@@ -883,7 +914,7 @@ class VotingApp:
             self._show_custom_messagebox("Error", f"Failed to reset log: {e}", alert_type='error')
 
     def skip_rfid_check(self):
-        self.stop_scanning = True
+        self._voter_stop.set()
         # Simulate a dev token that grants access only to election_id_1.
         payload = '{"v":"DEV_SKIP_' + str(int(time.time())) + '","e":"election_id_1","b":1}'
         self.on_card_scanned(payload)
@@ -2179,11 +2210,7 @@ class VotingApp:
             command=self.show_polling_officer_action_menu
         ).pack(pady=10)
 
-        self.stop_scanning = False
-        self.officer_scan_queue = queue.Queue()
-        self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
-        self.officer_scan_thread.daemon = True
-        self.officer_scan_thread.start()
+        self._start_officer_scan()
         self.check_officer_scan_queue()
 
     def _on_polling_officer_button_clicked(self):
@@ -2195,7 +2222,7 @@ class VotingApp:
         voters return to normal waiting without leaving the unit in a broken state.
         """
         # Pause voter scan loop
-        self.stop_scanning = True
+        self._voter_stop.set()
 
         # ── Officer scan overlay ──────────────────────────────────────────────
         overlay = tk.Toplevel(self.root)
@@ -2247,11 +2274,7 @@ class VotingApp:
             overlay.grab_release()
             overlay.destroy()
             # Resume normal voter scanning
-            self.stop_scanning = False
-            self.scan_queue = queue.Queue()
-            self.scan_thread = threading.Thread(target=self.rfid_scan_loop)
-            self.scan_thread.daemon = True
-            self.scan_thread.start()
+            self._start_voter_scan()
             self.check_scan_queue()
 
         tk.Button(
@@ -2310,11 +2333,7 @@ class VotingApp:
                 overlay.destroy()
                 if res is None:
                     # Timeout — update status and resume voter scan
-                    self.stop_scanning = False
-                    self.scan_queue = queue.Queue()
-                    self.scan_thread = threading.Thread(target=self.rfid_scan_loop)
-                    self.scan_thread.daemon = True
-                    self.scan_thread.start()
+                    self._start_voter_scan()
                     self.check_scan_queue()
                     self._show_custom_messagebox(
                         "Timeout",
@@ -2340,30 +2359,35 @@ class VotingApp:
         self.root.after(400, _check_officer_q)
 
     def officer_scan_loop(self):
-        while not self.stop_scanning:
+        while not self._officer_stop.is_set():
             # Reconnect automatically if RFID wasn't initialized yet.
             if not getattr(self.rfid_service, 'connected', False):
                 try:
                     self.rfid_service.connect()
                 except Exception:
                     pass
-                time.sleep(0.5)
+                if self._officer_stop.wait(timeout=0.5):
+                    break
                 continue
 
             # Admin/officer cards carry an AES-encrypted phrase — use explicit plain mode.
             result = self.rfid_service.read_card(mode='plain')
+            if self._officer_stop.is_set():
+                break
             if result:
                 if result[0] != "error":
                     self.officer_scan_queue.put(result)
                     break
                 # Unprovisioned card — log and keep scanning.
                 print(f"Officer scan: {result[1]}, retrying.")
-                time.sleep(1.0)
+                if self._officer_stop.wait(timeout=1.0):
+                    break
                 continue
-            time.sleep(0.5)
+            if self._officer_stop.wait(timeout=0.5):
+                break
 
     def check_officer_scan_queue(self):
-        if self.stop_scanning:
+        if self._officer_stop.is_set():
             return
 
         try:
@@ -2372,9 +2396,7 @@ class VotingApp:
                 uid, token_payload = result
                 if uid == "ERROR":
                     # Restart the background thread, then show a message box
-                    self.stop_scanning = False
-                    import threading
-                    threading.Thread(target=self.officer_scan_loop, daemon=True).start()
+                    self._start_officer_scan()
                     self.root.after(500, self.check_officer_scan_queue)
                     
                     try:
@@ -2501,7 +2523,7 @@ class VotingApp:
         )
 
     def _run_end_election_without_prompt(self):
-        self.stop_scanning = True
+        self._stop_all_scan_threads()
         self.show_printing_modal(text="Ending election and exporting logs...")
         threading.Thread(target=self._end_election_worker, daemon=True).start()
 
@@ -2557,41 +2579,29 @@ class VotingApp:
         token_upper = token_text.upper()
         if token_text and len(token_text) < len(self.polling_officer_phrase) and phrase_upper.startswith(token_upper):
             self._show_custom_messagebox("Incomplete Card Data", "Polling officer card data appears incomplete.\nPlease scan again or rewrite the card payload.", alert_type='error')
-            self.stop_scanning = False
-            self.officer_scan_queue = queue.Queue()
-            self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
-            self.officer_scan_thread.daemon = True
-            self.officer_scan_thread.start()
+            self._start_officer_scan()
             self.check_officer_scan_queue()
             return
 
         if not self._is_polling_officer_token(token_payload):
             self._show_custom_messagebox("Authorization Failed", "This card is not authorized.\nUse the configured phrase card for polling-officer access.", alert_type='error')
-            self.stop_scanning = False
-            self.officer_scan_queue = queue.Queue()
-            self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
-            self.officer_scan_thread.daemon = True
-            self.officer_scan_thread.start()
+            self._start_officer_scan()
             self.check_officer_scan_queue()
             return
 
-        self.stop_scanning = True
+        self._officer_stop.set()
         command, args = self._extract_polling_officer_command(token_payload)
         if command:
             ran = self._execute_officer_command(command, args)
             if not ran:
-                self.stop_scanning = False
-                self.officer_scan_queue = queue.Queue()
-                self.officer_scan_thread = threading.Thread(target=self.officer_scan_loop)
-                self.officer_scan_thread.daemon = True
-                self.officer_scan_thread.start()
+                self._start_officer_scan()
                 self.check_officer_scan_queue()
             return
 
         self.show_polling_officer_action_menu()
 
     def show_polling_officer_action_menu(self):
-        self.stop_scanning = True
+        self._stop_all_scan_threads()
         self.show_admin_menu()
 
     def _on_key_press(self, event):
@@ -2831,7 +2841,7 @@ class VotingApp:
             return
 
         # Pause regular voter scan loop for the duration of recovery.
-        self.stop_scanning = True
+        self._stop_all_scan_threads()
 
         entry     = pending_entries[0]
         remaining = pending_entries[1:]
@@ -3050,7 +3060,7 @@ class VotingApp:
         on_retry()           — called when officer chooses to retry printing.
         on_cancel_session()  — called when officer chooses to cancel/take down the BMD.
         """
-        self.stop_scanning = True
+        self._stop_all_scan_threads()
 
         # ── Phase 1: full-screen "call officer" screen ────────────────────────
         phase1 = tk.Toplevel(self.root)
@@ -3128,7 +3138,6 @@ class VotingApp:
             def _done():
                 dlg.grab_release()
                 dlg.destroy()
-                self.stop_scanning = False
 
             # Header
             hdr = tk.Frame(dlg, bg="#7f7f00", pady=10)
