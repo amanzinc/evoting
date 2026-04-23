@@ -3040,6 +3040,160 @@ class VotingApp:
                 tk.Label(dlg, text=f"{len(remaining)} more pending vote(s) after this.",
                          font=('Helvetica', 11, 'italic'), bg="#1a0000", fg="#ffcc00").pack(pady=(6, 0))
 
+    def _show_printer_error_recovery(self, error_msg, on_retry, on_cancel_session):
+        """
+        Two-phase printer-error recovery screen.
+
+        Phase 1 — full-screen alert, waits for polling officer RFID card.
+        Phase 2 — compact dialog with Retry Print / Cancel Session buttons.
+
+        on_retry()           — called when officer chooses to retry printing.
+        on_cancel_session()  — called when officer chooses to cancel/take down the BMD.
+        """
+        self.stop_scanning = True
+
+        # ── Phase 1: full-screen "call officer" screen ────────────────────────
+        phase1 = tk.Toplevel(self.root)
+        phase1.overrideredirect(True)
+        phase1.attributes('-fullscreen', True)
+        phase1.attributes('-topmost', True)
+        phase1.configure(bg="#1a1a00")
+        phase1.grab_set()
+        phase1.lift()
+        phase1.focus_force()
+
+        tk.Label(phase1, text="⚠", font=('Helvetica', 72), bg="#1a1a00", fg="#ffcc00").pack(pady=(60, 0))
+        tk.Label(phase1, text="PRINTER ERROR",
+                 font=('Helvetica', 28, 'bold'), bg="#1a1a00", fg="white").pack(pady=(0, 8))
+        tk.Label(phase1,
+                 text=f"{error_msg}\n\nPlease call a Polling Officer for verification.",
+                 font=('Helvetica', 16), bg="#1a1a00", fg="#ffeeaa",
+                 justify=tk.CENTER, wraplength=700).pack(pady=(0, 40))
+
+        tk.Frame(phase1, bg="#7f7f00", height=2).pack(fill=tk.X, padx=80)
+
+        tk.Label(phase1, text="Polling Officer: scan your RFID card to proceed",
+                 font=('Helvetica', 15, 'italic'), bg="#1a1a00", fg="#ffdd88").pack(pady=(30, 10))
+
+        status_lbl = tk.Label(phase1, text="Waiting for officer card…",
+                              font=('Helvetica', 13), bg="#1a1a00", fg="#888888")
+        status_lbl.pack()
+
+        scan_active = [True]
+
+        def _stop_scan():
+            scan_active[0] = False
+
+        def _scan_loop():
+            while scan_active[0]:
+                try:
+                    result = self.rfid_service.read_card(mode='encrypted')
+                    if result and result[0] != 'error':
+                        payload = result[1] if len(result) > 1 else result[0]
+                        if self._is_polling_officer_token(payload):
+                            phase1.after(0, _officer_verified)
+                            return
+                        else:
+                            phase1.after(0, lambda: status_lbl.config(
+                                text="Not an officer card. Try again.", fg="#ff8888"))
+                except Exception:
+                    pass
+                import time as _t
+                _t.sleep(0.3)
+
+        def _officer_verified():
+            _stop_scan()
+            phase1.grab_release()
+            phase1.destroy()
+            self.root.after(100, _show_phase2)
+
+        threading.Thread(target=_scan_loop, daemon=True).start()
+
+        # ── Phase 2: compact action dialog ────────────────────────────────────
+        def _show_phase2():
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            dw, dh = min(720, sw - 40), min(480, sh - 40)
+            dx = (sw - dw) // 2
+            dy = (sh - dh) // 2
+
+            dlg = tk.Toplevel(self.root)
+            dlg.overrideredirect(True)
+            dlg.geometry(f"{dw}x{dh}+{dx}+{dy}")
+            dlg.attributes('-topmost', True)
+            dlg.configure(bg="#1a1a00")
+            dlg.grab_set()
+            dlg.lift()
+
+            def _done():
+                dlg.grab_release()
+                dlg.destroy()
+                self.stop_scanning = False
+
+            # Header
+            hdr = tk.Frame(dlg, bg="#7f7f00", pady=10)
+            hdr.pack(fill=tk.X)
+            tk.Label(hdr, text="⚠  Printer Error — Officer Verified",
+                     font=('Helvetica', 16, 'bold'), bg="#7f7f00", fg="white").pack()
+
+            # Error detail
+            info = tk.Frame(dlg, bg="#2d2d00", pady=10)
+            info.pack(fill=tk.X, padx=16, pady=(12, 6))
+            tk.Label(info, text="Error:", font=('Helvetica', 12, 'bold'),
+                     bg="#2d2d00", fg="#ffdd88", anchor='w').pack(fill=tk.X, padx=12)
+            tk.Label(info, text=str(error_msg), font=('Helvetica', 12),
+                     bg="#2d2d00", fg="white", anchor='w', wraplength=dw - 60,
+                     justify=tk.LEFT).pack(fill=tk.X, padx=12, pady=(2, 6))
+
+            # Instruction
+            tk.Label(dlg,
+                     text="Fix the printer issue (clear jam, check paper/cable),\nthen choose an action below.",
+                     font=('Helvetica', 13), bg="#1a1a00", fg="#ffeeaa",
+                     justify=tk.CENTER).pack(pady=(12, 6))
+
+            # Action buttons
+            btn_frame = tk.Frame(dlg, bg="#1a1a00")
+            btn_frame.pack(pady=20, padx=30, fill=tk.X)
+
+            def _do_retry():
+                _done()
+                self.root.after(100, on_retry)
+
+            def _do_cancel():
+                _done()
+                self.root.after(100, on_cancel_session)
+
+            tk.Button(
+                btn_frame,
+                text="Retry Print",
+                command=_do_retry,
+                font=('Helvetica', 15, 'bold'),
+                bg="#2e7d32", fg="white",
+                relief=tk.FLAT, bd=0,
+                padx=30, pady=14,
+                cursor="hand2"
+            ).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 10))
+
+            tk.Button(
+                btn_frame,
+                text="Cancel Session\n(Take down BMD)",
+                command=_do_cancel,
+                font=('Helvetica', 14, 'bold'),
+                bg="#b71c1c", fg="white",
+                relief=tk.FLAT, bd=0,
+                padx=30, pady=14,
+                cursor="hand2"
+            ).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(10, 0))
+
+    def _printer_error_cancel_session(self):
+        """Called when officer chooses to take down the BMD after a printer error."""
+        self._show_custom_messagebox(
+            "Session Cancelled",
+            "This BMD session has been cancelled.\n\nPlease shut down the device and arrange for repairs.\nDo NOT restart until the printer is fixed.",
+            alert_type="error"
+        )
+        self.show_idle_screen()
+
     def _recovery_save_vote(self, entry):
         """Save a recovered vote record directly to the votes log and mark DB."""
         vote_record = entry.get('vote_record')
@@ -4259,8 +4413,12 @@ class VotingApp:
             else:
                 self._cast_vote_in_progress = False
                 print(f"Async print error: {result}")
-                if self._show_custom_confirm("Printer Error", f"Printing Failed: {result}\n\nRetry?", yes_text="Retry", no_text="Cancel"):
-                    self.cast_vote()
+                self.close_printing_modal()
+                self._show_printer_error_recovery(
+                    f"Printing failed: {result}",
+                    on_retry=self.cast_vote,
+                    on_cancel_session=self._printer_error_cancel_session,
+                )
             return
         except queue.Empty:
             pass
@@ -4269,8 +4427,11 @@ class VotingApp:
         if elapsed > 20:
             self._cast_vote_in_progress = False
             self.close_printing_modal()
-            if self._show_custom_confirm("Printer Timeout", "Printer is taking too long.\n\nRetry?", yes_text="Retry", no_text="Cancel"):
-                self.cast_vote()
+            self._show_printer_error_recovery(
+                "Printer is not responding (timeout).\nCheck paper, cable, and power.",
+                on_retry=self.cast_vote,
+                on_cancel_session=self._printer_error_cancel_session,
+            )
             return
 
         self.print_status_after_id = self.root.after(500, self.check_print_status)
