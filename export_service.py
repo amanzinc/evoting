@@ -250,9 +250,37 @@ class ExportService:
         bmd_id = self._resolve_bmd_id()
         print(f"Using BMD ID for export naming: {bmd_id}")
         
-        # Files to export
-        votes_log = os.path.join(source_log_dir, "votes.json")
+        # Files to export — fall back to most-recent archive subdir if missing
+        votes_log  = os.path.join(source_log_dir, "votes.json")
         tokens_log = os.path.join(source_log_dir, "tokens.log")
+
+        def _find_in_archive(filename):
+            """Return the path to filename in the most-recent timestamped archive subdir."""
+            try:
+                subdirs = sorted([
+                    os.path.join(source_log_dir, d)
+                    for d in os.listdir(source_log_dir)
+                    if os.path.isdir(os.path.join(source_log_dir, d))
+                ], reverse=True)
+                for sd in subdirs:
+                    candidate = os.path.join(sd, filename)
+                    if os.path.exists(candidate):
+                        return candidate
+            except Exception:
+                pass
+            return None
+
+        if not os.path.exists(votes_log):
+            fallback = _find_in_archive("votes.json")
+            if fallback:
+                print(f"votes.json not at primary path; using archive copy: {fallback}")
+                votes_log = fallback
+
+        if not os.path.exists(tokens_log):
+            fallback = _find_in_archive("tokens.log")
+            if fallback:
+                print(f"tokens.log not at primary path; using archive copy: {fallback}")
+                tokens_log = fallback
 
         # Load stored AES key from ballot import stage.
         aes_key = self._load_stored_aes_key()

@@ -410,10 +410,9 @@ class VotingApp:
             for fpath in files_to_transfer:
                 if fpath and os.path.exists(fpath):
                     try:
-                        shutil.move(fpath, local_export_dir)
-                    except Exception as move_err:
-                        print(f"Move failed for {fpath}, falling back to copy: {move_err}")
                         shutil.copy2(fpath, local_export_dir)
+                    except Exception as copy_err:
+                        print(f"Local archive copy failed for {fpath}: {copy_err}")
                         
             print(f"Transferred local log files to {local_export_dir}")
         except Exception as e:
