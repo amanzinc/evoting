@@ -655,9 +655,9 @@ class DataHandler:
             "timestamp": timestamp
         }
         
-        # Advance the chain in memory for the next vote
-        self.last_hash = current_hash
-        
+        # Do NOT advance last_hash here — save_json does it when the record
+        # is actually persisted, so a challenged or discarded vote doesn't
+        # corrupt the chain.
         return vote_record
 
     def save_json(self, record):
@@ -665,6 +665,10 @@ class DataHandler:
         try:
             with open(self.log_file, "a", encoding='utf-8') as f:
                 f.write(json.dumps(record) + "\n")
+            # Advance the chain only once the record is safely on disk.
+            saved_hash = record.get("hash_value")
+            if saved_hash:
+                self.last_hash = saved_hash
             print("Vote committed to JSON log.")
         except Exception as e:
             print(f"Error saving JSON: {e}")

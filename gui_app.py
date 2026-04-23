@@ -30,6 +30,7 @@ class VotingApp:
 
         # Two-phase commit journal — tracks PENDING/COMMITTED per VVPAT print
         self._pending_journal_id = None
+        self._pre_vote_hash_snapshot = None
         self._journal_startup_checked = False
         try:
             from vote_journal import VoteJournal
@@ -1716,19 +1717,24 @@ class VotingApp:
 
         # Pre-generate log JSON while context is valid.
         # Block mode produces multiple equal-weight single-choice records.
+        # Snapshot hash so we can roll back if vote is challenged/discarded.
+        self._pre_vote_hash_snapshot = self.data_handler.last_hash
+
         if self.voting_mode == 'block':
             vote_record = []
             for rank in sorted(self.selections.keys()):
                 cid = self.selections[rank]
-                vote_record.append(
-                    self.data_handler.generate_vote_json(
-                        {'selections': {1: cid}, 'timestamp': timestamp},
-                        'normal',
-                        getattr(self, 'current_voter_id', 'UNKNOWN'),
-                        getattr(self, 'current_booth', 1),
-                        getattr(self, 'current_token_id', 'UNKNOWN')
-                    )
+                rec = self.data_handler.generate_vote_json(
+                    {'selections': {1: cid}, 'timestamp': timestamp},
+                    'normal',
+                    getattr(self, 'current_voter_id', 'UNKNOWN'),
+                    getattr(self, 'current_booth', 1),
+                    getattr(self, 'current_token_id', 'UNKNOWN')
                 )
+                # Advance last_hash between each block-mode record so the
+                # next record's previous_hash chains correctly off this one.
+                self.data_handler.last_hash = rec['hash_value']
+                vote_record.append(rec)
         else:
             vote_record = self.data_handler.generate_vote_json(
                 {'selections': self.selections, 'timestamp': timestamp},
@@ -1989,6 +1995,7 @@ class VotingApp:
             if self._vote_journal:
                 self._vote_journal.write_committed(self._pending_journal_id)
             self._pending_journal_id = None
+            self._pre_vote_hash_snapshot = None
 
             self.pending_print_job = None
             self._cast_vote_in_progress = False
@@ -2048,6 +2055,11 @@ class VotingApp:
             no_text="No"
         ):
             return
+
+        # Roll back last_hash to pre-vote snapshot — this vote is not being saved.
+        if hasattr(self, '_pre_vote_hash_snapshot') and self._pre_vote_hash_snapshot:
+            self.data_handler.last_hash = self._pre_vote_hash_snapshot
+            self._pre_vote_hash_snapshot = None
 
         ballot_id = self.data_handler.ballot_id
         timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
