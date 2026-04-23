@@ -188,11 +188,9 @@ fi
 # ── 9. Disable network/remote-access interfaces ──────────────────────────────
 echo "[9/9] Disabling WiFi, Bluetooth, SSH, VNC..."
 
-# Disable via raspi-config where available
-raspi-config nonint do_wifi_country "" 2>/dev/null || true   # clears country = blocks wifi driver
+# Disable SSH and VNC via raspi-config
 raspi-config nonint do_ssh 1           2>/dev/null || true   # 1 = disable
 raspi-config nonint do_vnc 1           2>/dev/null || true   # 1 = disable
-raspi-config nonint do_bluetooth 1     2>/dev/null || true   # 1 = disable (RPi OS >= Bullseye)
 
 # Block WiFi and Bluetooth at the kernel RF-kill level.
 # We use rfkill soft-block only (no persistent udev rule), so that
