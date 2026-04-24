@@ -203,6 +203,8 @@ class PrinterService:
             "vvpat_candidates": vvpat_candidates,  # None for normal, list for block
             "qr_choice_data": qr_choice_data,
             "short_b_id": short_b_id,
+            "election_id": getattr(self.data_handler, 'election_id', ''),
+            "election_name": getattr(self.data_handler, 'election_name', ''),
         }
 
     def _print_vote_vvpat_section(self, p, context):
@@ -247,6 +249,12 @@ class PrinterService:
         p.text(self._center_line("** VVPAT SLIP **") + "\n")
         p.text(bar + "\n")
         p.set(align='left', bold=False)
+        eid = context.get('election_id', '')
+        ename = context.get('election_name', '')
+        if ename:
+            p.text(f"Election : {ename}\n")
+        if eid:
+            p.text(f"Elec. ID : {eid}\n")
 
         p.text("\n\n\n\n\n\n")
 

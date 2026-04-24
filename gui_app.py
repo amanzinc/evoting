@@ -774,6 +774,8 @@ class VotingApp:
 
     def _schedule_inactive_recheck(self):
         if self._is_election_active_now():
+            # Stop the idle-screen officer scan before switching to voter scan.
+            self._stop_all_scan_threads()
             self.show_rfid_screen()
             return
         self.inactive_check_after_id = self.root.after(5000, self._schedule_inactive_recheck)
@@ -1311,9 +1313,14 @@ class VotingApp:
         tk.Label(frame, text="❌ Access Denied", font=('Helvetica', 32, 'bold'), bg="#FFEBEE", fg="#D32F2F").pack(pady=(150, 20))
         tk.Label(frame, text=message, font=('Helvetica', 24), bg="#FFEBEE", fg="#555").pack(pady=20)
         
-        # Auto-retry after 3 seconds
+        # Auto-retry after 3 seconds — go back to RFID screen if election is active
         tk.Label(frame, text="(Resetting in 3 seconds...)", font=('Helvetica', 16), bg="#FFEBEE", fg="#777").pack(pady=40)
-        self.root.after(3000, self.show_idle_screen)
+        def _retry():
+            if self._is_election_active_now():
+                self.show_rfid_screen()
+            else:
+                self.show_idle_screen()
+        self.root.after(3000, _retry)
 
     def start_session(self, election_id=None):
         """Fetches a fresh ballot for the new session."""
