@@ -84,6 +84,7 @@ class VotingApp:
         self.clock_after_id = None
         self.clock_label = None
         self.inactive_check_after_id = None
+        self.active_check_after_id = None
         self.election_schedule = None
         self.election_schedule_path = None
         self._last_schedule_active = None
@@ -519,6 +520,13 @@ class VotingApp:
                 pass
             self.inactive_check_after_id = None
 
+        if self.active_check_after_id:
+            try:
+                self.root.after_cancel(self.active_check_after_id)
+            except Exception:
+                pass
+            self.active_check_after_id = None
+
         for widget in self.main_container.winfo_children():
             widget.destroy()
 
@@ -780,6 +788,14 @@ class VotingApp:
             return
         self.inactive_check_after_id = self.root.after(5000, self._schedule_inactive_recheck)
 
+    def _schedule_active_recheck(self):
+        """Runs while RFID screen is showing; returns to idle when election window ends."""
+        if not self._is_election_active_now():
+            self._stop_all_scan_threads()
+            self.show_idle_screen()
+            return
+        self.active_check_after_id = self.root.after(10000, self._schedule_active_recheck)
+
     def _refresh_clock_label(self):
         if not self.clock_label or not self.clock_label.winfo_exists():
             self.clock_after_id = None
@@ -866,6 +882,9 @@ class VotingApp:
         # Start Scanning Thread — handles both voter and officer cards (AES mode).
         self._start_voter_scan()
         self.check_scan_queue()
+
+        # Periodically check if the election window has ended and return to idle.
+        self._schedule_active_recheck()
 
     def rfid_scan_loop(self):
         while not self._voter_stop.is_set():
