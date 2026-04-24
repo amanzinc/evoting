@@ -181,13 +181,17 @@ class PrinterService:
         station_id = "PS-105-DELHI"
         timestamp = datetime.datetime.now().strftime("%d-%m-%y %H:%M:%S")
 
+        def _choice_id(cid):
+            """Return the choice number shown in the UI (cand['id'] == pref_id)."""
+            cand = self.data_handler.get_candidate_by_id(cid)
+            return str(cand['id']) if cand else str(cid)
+
         if mode == 'normal':
             cid = selections.get(1)
             name, number = self._get_candidate_name_and_number(cid)
             vvpat_sel_str = f"{name} ({number})" if number and name != number else name
             vvpat_candidates = None  # not needed for normal mode
-            # QR encodes the candidate number (human-verifiable), not the commitment
-            qr_choice_number = number or name
+            qr_choice_number = _choice_id(cid)
         else:
             ranks = sorted(selections.keys())
             # For block voting: list of (name, number) in rank order
@@ -195,7 +199,7 @@ class PrinterService:
             vvpat_sel_str = ", ".join(
                 f"{name} ({num})" if num else name for name, num in vvpat_candidates
             )
-            qr_choice_number = ", ".join(num if num else name for name, num in vvpat_candidates)
+            qr_choice_number = ", ".join(_choice_id(selections[r]) for r in ranks)
 
         short_b_id = self.data_handler.get_short_ballot_id(ballot_id)
         return {
@@ -248,7 +252,7 @@ class PrinterService:
             choice_num = context.get('qr_choice_number', '')
             if choice_num:
                 p.set(align='left', bold=True)
-                p.text(f"No. {choice_num}\n")
+                p.text(f"Choice No. {choice_num}\n")
                 p.set(align='left', bold=False)
 
         p.text("\n")

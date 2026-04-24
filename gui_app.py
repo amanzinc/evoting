@@ -1707,9 +1707,7 @@ class VotingApp:
         # Prepare strings
         def _get_choice_number(cid):
             cand = self.data_handler.get_candidate_by_id(cid)
-            if not cand:
-                return str(cid)
-            return str(cand.get('candidate_number') or cand.get('entry_number') or cand.get('id') or cid).strip()
+            return str(cand['id']) if cand else str(cid)
 
         if self.voting_mode == 'normal':
             cid = self.selections.get(1)
