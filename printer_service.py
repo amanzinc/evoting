@@ -183,8 +183,11 @@ class PrinterService:
 
         if mode == 'normal':
             cid = selections.get(1)
-            vvpat_sel_str = self._get_candidate_display_text(cid)
+            name, number = self._get_candidate_name_and_number(cid)
+            vvpat_sel_str = f"{name} ({number})" if number and name != number else name
             vvpat_candidates = None  # not needed for normal mode
+            # QR encodes the candidate number (human-verifiable), not the commitment
+            qr_choice_number = number or name
         else:
             ranks = sorted(selections.keys())
             # For block voting: list of (name, number) in rank order
@@ -192,8 +195,8 @@ class PrinterService:
             vvpat_sel_str = ", ".join(
                 f"{name} ({num})" if num else name for name, num in vvpat_candidates
             )
+            qr_choice_number = ", ".join(num if num else name for name, num in vvpat_candidates)
 
-        qr_choice_data = self.data_handler.build_receipt_qr_payload(selections, mode)
         short_b_id = self.data_handler.get_short_ballot_id(ballot_id)
         return {
             "ballot_id": ballot_id,
@@ -201,7 +204,7 @@ class PrinterService:
             "timestamp": timestamp,
             "vvpat_sel_str": vvpat_sel_str,
             "vvpat_candidates": vvpat_candidates,  # None for normal, list for block
-            "qr_choice_data": qr_choice_data,
+            "qr_choice_number": qr_choice_number,
             "short_b_id": short_b_id,
             "election_id": getattr(self.data_handler, 'election_id', ''),
             "election_name": getattr(self.data_handler, 'election_name', ''),
@@ -215,7 +218,7 @@ class PrinterService:
         p.text("\n")
         p.text(bar + "\n")
 
-        temp_img = self._generate_vvpat_qr(context["qr_choice_data"], context["short_b_id"])
+        temp_img = self._generate_vvpat_qr(context["qr_choice_number"], context["short_b_id"])
         p.text("\n")
         p.set(align='left')
         p.image(temp_img)
@@ -236,12 +239,17 @@ class PrinterService:
                     p.text(number + "\n")
                 p.text("\n")
         else:
-            # Normal voting: single choice
+            # Normal voting: single choice — print name then number on separate lines
             p.set(align='left', bold=True)
             p.text("Choice:\n")
             p.set(align='left', bold=False)
             for line in textwrap.wrap(context['vvpat_sel_str'], width=w):
                 p.text(line + "\n")
+            choice_num = context.get('qr_choice_number', '')
+            if choice_num:
+                p.set(align='left', bold=True)
+                p.text(f"No. {choice_num}\n")
+                p.set(align='left', bold=False)
 
         p.text("\n")
 
@@ -762,7 +770,7 @@ class PrinterService:
                     idx = len(receipts_list) - i
                     p.text(DIVIDER + "\n")
 
-                    qr_data = r['qr_choice_data']
+                    qr_data = r.get('qr_choice_number') or r.get('qr_choice_data', '')
                     short_b_id = self.data_handler.get_short_ballot_id(r['ballot_id'])
                     temp_qr = self._generate_vvpat_qr(qr_data, short_b_id)
 

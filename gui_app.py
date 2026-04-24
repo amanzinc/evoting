@@ -1705,22 +1705,32 @@ class VotingApp:
             return str(cid)
 
         # Prepare strings
+        def _get_choice_number(cid):
+            cand = self.data_handler.get_candidate_by_id(cid)
+            if not cand:
+                return str(cid)
+            return str(cand.get('candidate_number') or cand.get('entry_number') or cand.get('id') or cid).strip()
+
         if self.voting_mode == 'normal':
             cid = self.selections.get(1)
             sel_str = get_cand_display(cid)
             vvpat_sel_str = get_vvpat_display(cid)
             qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
+            qr_choice_number = _get_choice_number(cid)
         else:
             ranks = sorted(self.selections.keys())
             vals = []
             vvpat_vals = []
+            choice_nums = []
             for r in ranks:
                 c = self.selections[r]
                 vals.append(get_cand_display(c))
                 vvpat_vals.append(get_vvpat_display(c))
+                choice_nums.append(_get_choice_number(c))
             sel_str = ", ".join(vals)
             vvpat_sel_str = ", ".join(vvpat_vals)
             qr_data = self.data_handler.build_receipt_qr_payload(self.selections, self.voting_mode)
+            qr_choice_number = ", ".join(choice_nums)
 
         # Pre-generate log JSON while context is valid.
         # Block mode produces multiple equal-weight single-choice records.
@@ -1762,6 +1772,7 @@ class VotingApp:
             'choice_str': sel_str,
             'vvpat_choice_str': vvpat_sel_str,
             'qr_choice_data': qr_data,
+            'qr_choice_number': qr_choice_number,
             'voter_qr_data': voter_qr_data,
             'election_hash': self.data_handler.election_hash,
             # Data for deferred logging
