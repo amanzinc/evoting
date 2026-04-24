@@ -794,7 +794,7 @@ class VotingApp:
             self._stop_all_scan_threads()
             self.show_idle_screen()
             return
-        self.active_check_after_id = self.root.after(10000, self._schedule_active_recheck)
+        self.active_check_after_id = self.root.after(60000, self._schedule_active_recheck)
 
     def _refresh_clock_label(self):
         if not self.clock_label or not self.clock_label.winfo_exists():
