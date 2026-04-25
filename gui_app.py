@@ -4447,6 +4447,7 @@ class VotingApp:
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def show_printing_modal(self, text="Printing VVPAT..."):
+        self.close_printing_modal()  # close any stale overlay before creating a new one
         self.printing_overlay = tk.Toplevel(self.root)
         self.printing_overlay.title("Processing")
         w, h = 560, 260
